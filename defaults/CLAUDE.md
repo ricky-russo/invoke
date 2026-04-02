@@ -1,20 +1,31 @@
 # Invoke Pipeline
 
-This project uses **invoke** for AI-assisted development. Invoke skills are installed in `.claude/skills/` and an MCP server is registered in `.mcp.json`.
+This project uses **invoke** for ALL development work. Invoke skills are installed in `.claude/skills/` and an MCP server is registered in `.mcp.json`.
 
-## Required Behavior
+## HARD RULES — READ BEFORE DOING ANYTHING
 
-**You MUST use invoke skills for all pipeline operations.** Do not manually perform actions that an invoke skill handles.
+1. **NEVER start development work, planning, research, or code review without first loading the appropriate invoke skill.** This is not optional.
+2. **NEVER explore the codebase yourself to gather context.** Invoke dispatches researcher agents for this. Use `invoke-scope`.
+3. **NEVER write implementation plans yourself.** Invoke dispatches planner agents. Use `invoke-plan`.
+4. **NEVER build features directly.** Invoke dispatches builder agents into worktrees. Use `invoke-build`.
+5. **NEVER review code yourself.** Invoke dispatches reviewer agents. Use `invoke-review`.
+6. **NEVER manually edit `.invoke/` files.** Use `invoke-manage` which validates via MCP.
 
-- **Creating/editing/removing roles, reviewers, strategies, agents** → use `invoke-manage` skill
-- **Starting new development work** → use `invoke-scope` skill
-- **Creating implementation plans** → use `invoke-plan` skill
-- **Breaking plans into tasks** → use `invoke-orchestrate` skill
-- **Dispatching build agents** → use `invoke-build` skill
-- **Running code reviews** → use `invoke-review` skill
-- **Resuming an active pipeline** → use `invoke-resume` skill
+## When the user asks you to build, implement, plan, develop, create, or fix anything:
 
-Never manually edit `.invoke/pipeline.yaml`, `.invoke/roles/`, or `.invoke/strategies/` — always use the invoke-manage skill which calls the proper MCP tools with validation.
+**STOP. Load `invoke-scope` FIRST.** Do not explore the codebase. Do not ask clarifying questions. Do not start planning. The invoke-scope skill handles all of this by dispatching researcher agents and guiding a structured scoping conversation.
+
+## Skill → Trigger Mapping
+
+| User says something like... | Load this skill |
+|---|---|
+| "build X", "implement X", "create X", "add X", "develop X", "fix X" | `invoke-scope` |
+| "plan this", "how should we implement", "create a plan" | `invoke-plan` |
+| "break this into tasks", "orchestrate" | `invoke-orchestrate` |
+| "build it", "start building", "dispatch builders" | `invoke-build` |
+| "review the code", "run reviewers" | `invoke-review` |
+| "continue", "resume", "where was I" | `invoke-resume` |
+| "create a reviewer", "add a role", "edit strategy", "configure" | `invoke-manage` |
 
 ## MCP Tools
 
