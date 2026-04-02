@@ -185,6 +185,35 @@ describe('initProject', () => {
     expect(settings.hooks.PostToolUse).toBeTruthy()
   })
 
+  // --- CLAUDE.md ---
+
+  it('creates CLAUDE.md with invoke directives', async () => {
+    await initProject(TEST_DIR)
+
+    expect(existsSync(path.join(TEST_DIR, 'CLAUDE.md'))).toBe(true)
+
+    const content = await readFile(path.join(TEST_DIR, 'CLAUDE.md'), 'utf-8')
+    expect(content).toContain('# Invoke Pipeline')
+    expect(content).toContain('invoke-manage')
+    expect(content).toContain('invoke-scope')
+  })
+
+  it('appends to existing CLAUDE.md without duplicating', async () => {
+    await writeFile(path.join(TEST_DIR, 'CLAUDE.md'), '# My Project\n\nExisting content here.')
+
+    await initProject(TEST_DIR)
+
+    const content = await readFile(path.join(TEST_DIR, 'CLAUDE.md'), 'utf-8')
+    expect(content).toContain('# My Project')
+    expect(content).toContain('# Invoke Pipeline')
+
+    // Run again — should not duplicate
+    await initProject(TEST_DIR)
+    const content2 = await readFile(path.join(TEST_DIR, 'CLAUDE.md'), 'utf-8')
+    const count = (content2.match(/# Invoke Pipeline/g) || []).length
+    expect(count).toBe(1)
+  })
+
   it('preserves existing settings when adding hooks', async () => {
     await mkdir(path.join(TEST_DIR, '.claude'), { recursive: true })
     await writeFile(path.join(TEST_DIR, '.claude', 'settings.json'), JSON.stringify({

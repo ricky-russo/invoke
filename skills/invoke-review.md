@@ -1,6 +1,6 @@
 ---
 name: invoke-review
-description: Use when build is complete and code needs review, or when a build-review loop iteration needs to start — typically after invoke-build completes
+description: "MUST USE when build is complete and code needs review, or when a build-review loop iteration starts. Triggers after invoke-build completes. Do not dispatch reviewers without this skill."
 ---
 
 # Invoke — Review Stage

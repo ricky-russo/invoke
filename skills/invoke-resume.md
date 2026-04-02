@@ -1,6 +1,6 @@
 ---
 name: invoke-resume
-description: Use when the user returns to a project that has an in-progress invoke pipeline, or when a session-start hook detects active pipeline state
+description: "MUST USE when the user returns to a project with an active invoke pipeline, or when session-start hook detects active state. Triggers on: 'continue', 'resume', 'where was I', 'pick up where I left off', active pipeline detected."
 ---
 
 # Invoke — Resume Pipeline

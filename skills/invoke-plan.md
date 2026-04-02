@@ -1,6 +1,6 @@
 ---
 name: invoke-plan
-description: Use when a spec has been approved and needs an implementation plan — typically after invoke-scope completes or when the user has a ready spec
+description: "MUST USE when a spec has been approved and needs an implementation plan. Triggers after invoke-scope completes or when the user has a ready spec. Do not write implementation plans without this skill."
 ---
 
 # Invoke — Plan Stage

@@ -1,6 +1,6 @@
 ---
 name: invoke-scope
-description: Use when the user wants to build a feature, add functionality, fix something complex, or start new development work that would benefit from a structured pipeline
+description: "MUST USE when the user wants to build a feature, add functionality, fix something complex, or start new development work. Triggers on: 'build', 'implement', 'create feature', 'add functionality', 'develop'. Always invoke this skill before starting any implementation work."
 ---
 
 # Invoke — Scope Stage

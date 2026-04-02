@@ -1,6 +1,6 @@
 ---
 name: invoke-build
-description: Use when an orchestrated task breakdown has been approved and is ready to build — typically after invoke-orchestrate completes
+description: "MUST USE when an orchestrated task breakdown has been approved and is ready to build. Triggers after invoke-orchestrate completes. Do not dispatch build agents without this skill."
 ---
 
 # Invoke — Build Stage

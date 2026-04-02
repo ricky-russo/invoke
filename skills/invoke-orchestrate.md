@@ -1,6 +1,6 @@
 ---
 name: invoke-orchestrate
-description: Use when an implementation plan has been approved and needs to be broken into executable tasks — typically after invoke-plan completes
+description: "MUST USE when an implementation plan has been approved and needs to be broken into executable tasks. Triggers after invoke-plan completes. Do not break plans into tasks without this skill."
 ---
 
 # Invoke — Orchestrate Stage

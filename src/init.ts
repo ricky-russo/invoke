@@ -9,8 +9,27 @@ const PACKAGE_ROOT = path.join(__dirname, '..')
 export async function initProject(projectDir: string): Promise<void> {
   await setupInvokeDir(projectDir)
   await installSkills(projectDir)
+  await installClaudeMd(projectDir)
   await registerMcpServer(projectDir)
   await installHooks(projectDir)
+}
+
+// --- CLAUDE.md: enforce invoke skill usage ---
+
+async function installClaudeMd(projectDir: string): Promise<void> {
+  const destPath = path.join(projectDir, 'CLAUDE.md')
+  const srcPath = path.join(PACKAGE_ROOT, 'defaults', 'CLAUDE.md')
+
+  if (existsSync(destPath)) {
+    // Append invoke section if not already present
+    const existing = await readFile(destPath, 'utf-8')
+    if (!existing.includes('# Invoke Pipeline')) {
+      const invokeSection = await readFile(srcPath, 'utf-8')
+      await writeFile(destPath, existing + '\n\n' + invokeSection)
+    }
+  } else {
+    await cp(srcPath, destPath)
+  }
 }
 
 // --- .invoke/ directory: config, roles, strategies, output dirs ---

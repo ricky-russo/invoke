@@ -1,6 +1,6 @@
 ---
 name: invoke-manage
-description: Use when the user wants to create, edit, remove, or list invoke roles, strategies, reviewers, or pipeline configuration
+description: "MUST USE when creating, editing, removing, or listing invoke roles, reviewers, researchers, builders, planners, strategies, sub-roles, or agents. Triggers on: 'create a reviewer', 'add a new agent', 'new sub-role', 'remove reviewer', 'edit strategy', 'list roles', 'configure pipeline', 'add provider'. Always use this skill instead of manually editing .invoke/ files."
 ---
 
 # Invoke — Manage Configuration
