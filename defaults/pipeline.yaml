@@ -5,10 +5,10 @@
 providers:
   claude:
     cli: claude
-    args: ["--print", "--model", "{{model}}"]
+    args: ["--model", "{{model}}", "--dangerously-skip-permissions"]
   codex:
     cli: codex
-    args: ["--model", "{{model}}", "--reasoning-effort", "{{effort}}"]
+    args: ["--model", "{{model}}", "--reasoning-effort", "{{effort}}", "--full-auto"]
 
 roles:
   researcher:
