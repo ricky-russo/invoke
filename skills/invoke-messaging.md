@@ -7,7 +7,149 @@ description: Internal reference — do not trigger directly. Defines consistent 
 
 All invoke skills must follow these formatting standards when presenting information to the user. Consistency builds trust and makes the pipeline predictable.
 
-## Agent Dispatch
+## Interactive Selection — ALWAYS use AskUserQuestion
+
+**When asking the user to choose from options, ALWAYS use the `AskUserQuestion` tool.** Do not print formatted text and wait for free-form input. Use the tool's native UI.
+
+### Selecting Roles/Agents (researchers, planners, builders, reviewers)
+
+Use `AskUserQuestion` with `multiSelect: true`:
+
+```
+AskUserQuestion({
+  questions: [{
+    question: "Which [role type] should I dispatch?",
+    header: "[Role type]",
+    multiSelect: true,
+    options: [
+      {
+        label: "[subrole] (Recommended)",
+        description: "[provider1] ([model1]) + [provider2] ([model2]) | Effort: [effort]"
+      },
+      {
+        label: "[subrole]",
+        description: "[provider] ([model]) | Effort: [effort]"
+      }
+    ]
+  }]
+})
+```
+
+Put "(Recommended)" on the first option if you have a recommendation.
+
+### Selecting Build Strategy
+
+Use `AskUserQuestion` with `multiSelect: false`:
+
+```
+AskUserQuestion({
+  questions: [{
+    question: "Which build strategy should agents use?",
+    header: "Strategy",
+    multiSelect: false,
+    options: [
+      { label: "TDD (Recommended)", description: "Write failing tests first, then implement. Default strategy." },
+      { label: "Implementation-first", description: "Build the feature, then add tests after." },
+      { label: "Prototype", description: "Quick spike, no tests. For exploration only." },
+      { label: "Bug-fix", description: "Reproduce with failing test, then fix." }
+    ]
+  }]
+})
+```
+
+### Commit Strategy
+
+Use `AskUserQuestion` with `multiSelect: false`:
+
+```
+AskUserQuestion({
+  questions: [{
+    question: "How should I commit the final result?",
+    header: "Commits",
+    multiSelect: false,
+    options: [
+      { label: "Per batch (Recommended)", description: "[N] commits — one per orchestration batch" },
+      { label: "One commit", description: "Squash everything into a single commit" },
+      { label: "Per task", description: "[N] commits — one per build task" },
+      { label: "Custom", description: "Define your own grouping" }
+    ]
+  }]
+})
+```
+
+### Error Recovery
+
+Use `AskUserQuestion` with `multiSelect: false`:
+
+```
+AskUserQuestion({
+  questions: [{
+    question: "[task_id] failed: [brief error]. What should I do?",
+    header: "Recovery",
+    multiSelect: false,
+    options: [
+      { label: "Retry", description: "Dispatch the agent again for this task" },
+      { label: "Skip", description: "Skip this task and continue with the batch" },
+      { label: "Abort", description: "Stop the entire batch" }
+    ]
+  }]
+})
+```
+
+### Triage Findings
+
+Use `AskUserQuestion` with `multiSelect: true` to let the user select which findings to accept:
+
+```
+AskUserQuestion({
+  questions: [{
+    question: "Which findings should be fixed? (unselected will be dismissed)",
+    header: "Triage",
+    multiSelect: true,
+    options: [
+      {
+        label: "🔴 HIGH — SQL injection",
+        description: "src/auth/token.ts:42 — Use parameterized queries (agreed: claude, codex)"
+      },
+      {
+        label: "🟡 MEDIUM — Token in localStorage",
+        description: "src/auth/session.ts:15 — Use HttpOnly cookies"
+      },
+      {
+        label: "🟢 LOW — Verbose errors",
+        description: "src/api/handler.ts:88 — Sanitize error output"
+      }
+    ]
+  }]
+})
+```
+
+Note: AskUserQuestion supports max 4 options per question. If there are more than 4 findings, group them into multiple questions by reviewer or severity, or use a question per reviewer.
+
+### Resume Options
+
+Use `AskUserQuestion` with `multiSelect: false`:
+
+```
+AskUserQuestion({
+  questions: [{
+    question: "Found an active pipeline at [stage] stage. What would you like to do?",
+    header: "Resume",
+    multiSelect: false,
+    options: [
+      { label: "Continue (Recommended)", description: "Pick up where you left off at the [stage] stage" },
+      { label: "Redo stage", description: "Restart the [stage] stage from scratch" },
+      { label: "Abort", description: "Clean up and start fresh" }
+    ]
+  }]
+})
+```
+
+## Text Output Formats
+
+These formats are for informational output (not user decisions). Print them as formatted text.
+
+### Agent Dispatch
 
 When dispatching agents, always show:
 
@@ -36,7 +178,7 @@ For batch dispatches:
    Worktrees: [yes/no]
 ```
 
-## Progress Updates
+### Progress Updates
 
 While agents are working:
 
@@ -47,9 +189,7 @@ While agents are working:
    └─ [task_id]: ⏳ pending
 ```
 
-## Agent Results — Success
-
-When an agent completes successfully:
+### Agent Results — Success
 
 ```
 ✅ [role]/[subrole] completed ([duration]s)
@@ -57,9 +197,7 @@ When an agent completes successfully:
    Summary: [first 1-2 sentences of output]
 ```
 
-## Agent Results — Error
-
-When an agent fails:
+### Agent Results — Error
 
 ```
 ❌ [role]/[subrole] failed ([duration]s)
@@ -69,14 +207,14 @@ When an agent fails:
    > [first 5 lines of output]
 ```
 
-## Agent Results — Timeout
+### Agent Results — Timeout
 
 ```
 ⏰ [role]/[subrole] timed out after [timeout]ms
    Provider: [provider] ([model])
 ```
 
-## Review Findings
+### Review Findings
 
 Present findings grouped by reviewer, sorted by severity:
 
@@ -87,36 +225,12 @@ Present findings grouped by reviewer, sorted by severity:
 
 | # | Severity | File | Line | Issue |
 |---|----------|------|------|-------|
-| 1 | 🔴 HIGH | src/auth/token.ts | 42 | SQL injection in query param |
+| 1 | 🔴 HIGH | src/auth/token.ts | 42 | SQL injection (**agreed: claude, codex**) |
 | 2 | 🟡 MEDIUM | src/auth/session.ts | 15 | Session token in localStorage |
 | 3 | 🟢 LOW | src/api/handler.ts | 88 | Verbose error messages |
 ```
 
-When multiple providers agree on a finding:
-
-```
-| 1 | 🔴 HIGH | src/auth/token.ts | 42 | SQL injection (**agreed: claude, codex**) |
-```
-
-## Triage Prompt
-
-```
-📝 Triage findings — accept (a) or dismiss (d) each:
-
-  1. [HIGH] SQL injection in src/auth/token.ts:42
-     → Suggestion: Use parameterized queries
-     [a/d]:
-
-  2. [MEDIUM] Session token in localStorage src/auth/session.ts:15
-     → Suggestion: Use HttpOnly cookies
-     [a/d]:
-
-  Or: accept all (aa), dismiss all (dd), accept all from [reviewer] (a:security)
-```
-
-## Pipeline Stage Transitions
-
-When moving between stages:
+### Pipeline Stage Transitions
 
 ```
 ──────────────────────────────────────
@@ -125,7 +239,7 @@ When moving between stages:
 ──────────────────────────────────────
 ```
 
-## Pipeline Status (Resume)
+### Pipeline Status (Resume)
 
 ```
 📊 Invoke Pipeline Status
@@ -139,49 +253,13 @@ When moving between stages:
    └─ Work Branch: [branch or "not created"]
 ```
 
-## Commit Strategy Selection
-
-```
-📦 Pipeline complete — choose commit style:
-
-  1. One commit (squash all changes)
-  2. Per batch ([N] commits):
-     ├─ "feat: [batch 1 description]"
-     ├─ "feat: [batch 2 description]"
-     └─ "feat: [batch 3 description]"
-  3. Per task ([N] commits)
-  4. Custom grouping
-```
-
-## Selection Prompts
-
-When asking the user to select from configured items:
-
-```
-🔧 Available [role type]:
-   ├─ [1] [subrole] — [provider] ([model]) | Effort: [effort]
-   ├─ [2] [subrole] — [provider1]+[provider2] | Effort: [effort]
-   └─ [3] [subrole] — [provider] ([model]) | Effort: [effort]
-
-   Select (comma-separated, or 'all'): 
-```
-
-## Error Recovery
-
-```
-⚠️  [task_id] failed — [brief error]
-   Options:
-   ├─ [r] Retry
-   ├─ [s] Skip this task
-   └─ [a] Abort batch
-```
-
 ## Rules
 
-1. Always show provider and model when dispatching or reporting results
-2. Always show duration for completed agents
-3. Use the severity emoji mapping: 🔴 critical/high, 🟡 medium, 🟢 low
-4. Truncate raw output to 5 lines in error reports — offer full output on request
-5. Use tree-style (├─ └─) for hierarchical information
-6. Keep progress updates on one screen — don't flood with per-second updates
-7. Bold the provider agreement indicator (**agreed: claude, codex**) in findings
+1. **ALWAYS use `AskUserQuestion` for user decisions.** Never print options as text and wait for free-form input.
+2. Always show provider and model when dispatching or reporting results
+3. Always show duration for completed agents
+4. Use the severity emoji mapping: 🔴 critical/high, 🟡 medium, 🟢 low
+5. Truncate raw output to 5 lines in error reports — offer full output on request
+6. Use tree-style (├─ └─) for hierarchical information in text output
+7. Keep progress updates on one screen — don't flood with per-second updates
+8. Bold the provider agreement indicator (**agreed: claude, codex**) in findings
