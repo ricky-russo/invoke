@@ -1,6 +1,7 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
 import { ConfigManager } from './config-manager.js'
+import type { ConfigOperation } from './config-manager.js'
 
 const ProviderEntrySchema = z.object({
   provider: z.string(),
@@ -14,42 +15,29 @@ export function registerConfigUpdateTools(server: McpServer, projectDir: string)
   server.registerTool(
     'invoke_update_config',
     {
-      description: 'Update pipeline.yaml configuration. Supports adding/removing roles, strategies, and updating settings.',
-      inputSchema: z.discriminatedUnion('operation', [
-        z.object({
-          operation: z.literal('add_role'),
-          role: z.string().describe('Role group (e.g. reviewer, researcher, builder, planner)'),
-          subrole: z.string().describe('Sub-role name (e.g. psr-compliance, security)'),
-          config: z.object({
-            prompt: z.string().describe('Path to the prompt .md file'),
-            providers: z.array(ProviderEntrySchema).describe('Provider configurations'),
-          }),
-        }),
-        z.object({
-          operation: z.literal('remove_role'),
-          role: z.string().describe('Role group'),
-          subrole: z.string().describe('Sub-role name to remove'),
-        }),
-        z.object({
-          operation: z.literal('add_strategy'),
-          strategy: z.string().describe('Strategy name'),
-          config: z.object({
-            prompt: z.string().describe('Path to the strategy prompt .md file'),
-          }),
-        }),
-        z.object({
-          operation: z.literal('remove_strategy'),
-          strategy: z.string().describe('Strategy name to remove'),
-        }),
-        z.object({
-          operation: z.literal('update_settings'),
-          settings: z.record(z.string(), z.unknown()).describe('Settings fields to update'),
-        }),
-      ]),
+      description: 'Update pipeline.yaml configuration. Supports: add_role, remove_role, add_strategy, remove_strategy, update_settings.',
+      inputSchema: z.object({
+        operation: z.enum(['add_role', 'remove_role', 'add_strategy', 'remove_strategy', 'update_settings'])
+          .describe('The operation to perform'),
+        role: z.string().optional()
+          .describe('Role group (for add_role/remove_role, e.g. reviewer, researcher, builder, planner)'),
+        subrole: z.string().optional()
+          .describe('Sub-role name (for add_role/remove_role, e.g. psr-compliance, security)'),
+        strategy: z.string().optional()
+          .describe('Strategy name (for add_strategy/remove_strategy)'),
+        config: z.object({
+          prompt: z.string().describe('Path to the prompt .md file'),
+          providers: z.array(ProviderEntrySchema).optional().describe('Provider configurations (for add_role)'),
+        }).optional()
+          .describe('Configuration for add_role or add_strategy'),
+        settings: z.record(z.string(), z.unknown()).optional()
+          .describe('Settings fields to update (for update_settings)'),
+      }),
     },
     async (input) => {
       try {
-        const result = await configManager.execute(input)
+        const op = buildOperation(input)
+        const result = await configManager.execute(op)
         return {
           content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
         }
@@ -61,4 +49,64 @@ export function registerConfigUpdateTools(server: McpServer, projectDir: string)
       }
     }
   )
+}
+
+function buildOperation(input: {
+  operation: string
+  role?: string
+  subrole?: string
+  strategy?: string
+  config?: { prompt: string; providers?: Array<{ provider: string; model: string; effort: string }> }
+  settings?: Record<string, unknown>
+}): ConfigOperation {
+  switch (input.operation) {
+    case 'add_role': {
+      if (!input.role || !input.subrole || !input.config?.providers) {
+        throw new Error('add_role requires: role, subrole, config.prompt, config.providers')
+      }
+      return {
+        operation: 'add_role',
+        role: input.role,
+        subrole: input.subrole,
+        config: {
+          prompt: input.config.prompt,
+          providers: input.config.providers.map(p => ({
+            provider: p.provider,
+            model: p.model,
+            effort: p.effort as 'low' | 'medium' | 'high',
+          })),
+        },
+      }
+    }
+    case 'remove_role': {
+      if (!input.role || !input.subrole) {
+        throw new Error('remove_role requires: role, subrole')
+      }
+      return { operation: 'remove_role', role: input.role, subrole: input.subrole }
+    }
+    case 'add_strategy': {
+      if (!input.strategy || !input.config) {
+        throw new Error('add_strategy requires: strategy, config.prompt')
+      }
+      return {
+        operation: 'add_strategy',
+        strategy: input.strategy,
+        config: { prompt: input.config.prompt },
+      }
+    }
+    case 'remove_strategy': {
+      if (!input.strategy) {
+        throw new Error('remove_strategy requires: strategy')
+      }
+      return { operation: 'remove_strategy', strategy: input.strategy }
+    }
+    case 'update_settings': {
+      if (!input.settings) {
+        throw new Error('update_settings requires: settings')
+      }
+      return { operation: 'update_settings', settings: input.settings }
+    }
+    default:
+      throw new Error(`Unknown operation: ${input.operation}`)
+  }
 }
