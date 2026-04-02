@@ -9,11 +9,21 @@ const ProviderConfigSchema = z.object({
   args: z.array(z.string()),
 })
 
-const RoleConfigSchema = z.object({
-  prompt: z.string(),
+const ProviderEntrySchema = z.object({
   provider: z.string(),
   model: z.string(),
   effort: z.enum(['low', 'medium', 'high']),
+})
+
+// Accept either single-provider shorthand or providers array
+const RawRoleConfigSchema = z.object({
+  prompt: z.string(),
+  // Single-provider shorthand fields (optional)
+  provider: z.string().optional(),
+  model: z.string().optional(),
+  effort: z.enum(['low', 'medium', 'high']).optional(),
+  // Multi-provider array (optional)
+  providers: z.array(ProviderEntrySchema).optional(),
 })
 
 const StrategyConfigSchema = z.object({
@@ -27,16 +37,53 @@ const SettingsSchema = z.object({
   work_branch_prefix: z.string(),
 })
 
-const InvokeConfigSchema = z.object({
+const RawInvokeConfigSchema = z.object({
   providers: z.record(z.string(), ProviderConfigSchema),
-  roles: z.record(z.string(), z.record(z.string(), RoleConfigSchema)),
+  roles: z.record(z.string(), z.record(z.string(), RawRoleConfigSchema)),
   strategies: z.record(z.string(), StrategyConfigSchema),
   settings: SettingsSchema,
 })
+
+function normalizeConfig(raw: z.infer<typeof RawInvokeConfigSchema>): InvokeConfig {
+  const roles: InvokeConfig['roles'] = {}
+
+  for (const [roleGroup, subroles] of Object.entries(raw.roles)) {
+    roles[roleGroup] = {}
+    for (const [subroleName, subrole] of Object.entries(subroles)) {
+      if (subrole.providers && subrole.providers.length > 0) {
+        roles[roleGroup][subroleName] = {
+          prompt: subrole.prompt,
+          providers: subrole.providers,
+        }
+      } else if (subrole.provider && subrole.model && subrole.effort) {
+        roles[roleGroup][subroleName] = {
+          prompt: subrole.prompt,
+          providers: [{
+            provider: subrole.provider,
+            model: subrole.model,
+            effort: subrole.effort,
+          }],
+        }
+      } else {
+        throw new Error(
+          `Role ${roleGroup}.${subroleName} must have either 'providers' array or 'provider'/'model'/'effort' fields`
+        )
+      }
+    }
+  }
+
+  return {
+    providers: raw.providers,
+    roles,
+    strategies: raw.strategies,
+    settings: raw.settings,
+  }
+}
 
 export async function loadConfig(projectDir: string): Promise<InvokeConfig> {
   const configPath = path.join(projectDir, '.invoke', 'pipeline.yaml')
   const content = await readFile(configPath, 'utf-8')
   const raw = parse(content)
-  return InvokeConfigSchema.parse(raw)
+  const validated = RawInvokeConfigSchema.parse(raw)
+  return normalizeConfig(validated)
 }
