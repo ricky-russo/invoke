@@ -15,7 +15,7 @@ When the user wants to see what's configured:
 1. Call `invoke_get_config`
 2. Present a formatted summary:
    - Providers and their CLI commands
-   - Roles grouped by type (researcher, planner, builder, reviewer) with model/effort
+   - Roles grouped by type (researcher, planner, builder, reviewer) with providers/models/effort
    - Strategies
    - Current settings
 
@@ -31,15 +31,16 @@ When the user wants to add a new role (e.g., "create a reviewer for PSR complian
    - Any specific files or patterns to focus on
    - Output format requirements (must use the standard Finding format for reviewers)
 
-3. **Choose provider/model/effort**: "Which provider and model should run this reviewer?"
+3. **Choose providers**: "Which provider(s) and model(s) should run this?"
    - Present available providers from config
+   - Allow multiple providers for cross-validation (e.g., run on both Claude and Codex)
    - Suggest a default based on the role type
 
-4. **Generate prompt**: Create the `.md` prompt file based on the conversation. For reviewers, ensure the output format section uses the standard Finding format.
+4. **Generate and preview prompt**: Create the `.md` prompt file based on the conversation. For reviewers, ensure the output format section uses the standard Finding format. Present the prompt to the user for review before saving.
 
 5. **Save**:
-   - Write the prompt file to `.invoke/roles/[type]/[name].md` using `invoke_save_artifact`
-   - Read the current `pipeline.yaml`, add the new role entry, write it back
+   - Write the prompt file: `invoke_save_artifact` with `stage: "roles/<type>"`, `filename: "<name>.md"`
+   - Register in config: `invoke_update_config` with `operation: "add_role"`
 
 6. **Confirm**: "Added reviewer/psr-compliance. It'll appear in your reviewer list next review cycle."
 
@@ -47,38 +48,47 @@ When the user wants to add a new role (e.g., "create a reviewer for PSR complian
 
 When the user wants to modify an existing role:
 
-1. Read the current prompt file using `invoke_read_artifact`
+1. Read the current prompt file using `invoke_read_artifact` with `stage: "roles/<type>"`, `filename: "<name>.md"`
 2. Present the current content
 3. Discuss changes with the user
-4. Update the prompt file
-5. If provider/model/effort changed, update `pipeline.yaml` too
+4. Update the prompt file using `invoke_save_artifact` (overwrites existing)
+5. If providers/model/effort changed, use `invoke_update_config` with `remove_role` then `add_role`
 
 ### Delete Role
 
 When the user wants to remove a role:
 
 1. Confirm: "Delete reviewer/[name]? This will remove the prompt file and config entry."
-2. Remove the entry from `pipeline.yaml`
-3. Note: we can't delete files via MCP tools, so instruct the user to remove the `.md` file manually, or use Bash to remove it
+2. Remove config entry: `invoke_update_config` with `operation: "remove_role"`
+3. Remove prompt file: `invoke_delete_artifact` with `stage: "roles/<type>"`, `filename: "<name>.md"`
 
 ### Create Strategy
 
 Same flow as Create Role but for strategies:
 1. Ask what the strategy should enforce
-2. Generate the prompt template with standard `{{variables}}`
-3. Save to `.invoke/strategies/[name].md`
-4. Add to `pipeline.yaml`
+2. Generate the prompt template with standard `{{variables}}`: `{{task_description}}`, `{{acceptance_criteria}}`, `{{relevant_files}}`, `{{interfaces}}`
+3. Preview with user
+4. Save prompt: `invoke_save_artifact` with `stage: "strategies"`, `filename: "<name>.md"`
+5. Register: `invoke_update_config` with `operation: "add_strategy"`
+
+### Delete Strategy
+
+1. Confirm with user
+2. Remove config entry: `invoke_update_config` with `operation: "remove_strategy"`
+3. Remove prompt file: `invoke_delete_artifact` with `stage: "strategies"`, `filename: "<name>.md"`
 
 ### Edit Settings
 
 When the user wants to change settings:
-1. Present current settings
-2. Apply the change to `pipeline.yaml`
-3. Confirm
+1. Call `invoke_get_config` to show current settings
+2. Discuss changes
+3. Apply: `invoke_update_config` with `operation: "update_settings"`
+4. Confirm the change
 
 ## Key Principles
 
 - Always confirm before making changes
 - Preview generated prompts before saving
 - Reviewer prompts must include the standard Finding output format
+- Multi-provider configs are supported — ask if the user wants cross-validation
 - Keep the user in control — never auto-generate without review
