@@ -1,0 +1,68 @@
+---
+name: invoke-plan
+description: Use when a spec has been approved and needs an implementation plan — typically after invoke-scope completes or when the user has a ready spec
+---
+
+# Invoke — Plan Stage
+
+You are running the plan stage of the invoke pipeline. Your job is to dispatch planners to generate competing implementation plans, then help the user choose the best one.
+
+## Flow
+
+### 1. Verify State
+
+Call `invoke_get_state` to verify we're at the plan stage. Read the spec from `invoke_read_artifact` with `stage: "specs"`, `filename: "spec.md"`.
+
+### 2. Dispatch Planners
+
+Read the pipeline config with `invoke_get_config` to see available planners.
+
+Present available planners to the user:
+> "Ready to plan. Available planners: [list sub-roles under planner]. Which ones should I dispatch? Running multiple gives you competing approaches to compare."
+
+Wait for user selection, then dispatch selected planners using `invoke_dispatch_batch`:
+- `create_worktrees: false`
+- `task_context: { task_description: "<full spec content>", research_context: "<research reports if available>" }`
+
+Poll `invoke_get_batch_status` until complete.
+
+### 3. Present Plans
+
+Read the results from each planner. Present them to the user:
+
+For each plan:
+- Summarize the approach (2-3 sentences)
+- Highlight key technical decisions
+- Note what it optimizes for
+
+Then compare:
+- Where the plans agree
+- Where they differ
+- Trade-offs between approaches
+- Your recommendation and why
+
+### 4. User Chooses
+
+Let the user pick:
+- One plan as-is
+- A hybrid combining elements from multiple plans
+- Request a re-plan with additional constraints
+
+### 5. Save Plan
+
+Save the chosen plan using `invoke_save_artifact`:
+- `stage: "plans"`
+- `filename: "plan.md"`
+
+### 6. Update State
+
+Call `invoke_set_state` with:
+- `current_stage: "orchestrate"`
+- `plan: "plans/plan.md"`
+
+The orchestrate stage skill will auto-trigger from here.
+
+## Error Handling
+
+- If a planner fails, present the error. If only one planner succeeded, ask if the user wants to proceed with that single plan or retry.
+- If all planners fail, investigate the error and offer to retry or fall back to manual planning.
