@@ -5,11 +5,15 @@ export interface ProviderConfig {
   args: string[]
 }
 
-export interface RoleConfig {
-  prompt: string
+export interface ProviderEntry {
   provider: string
   model: string
   effort: 'low' | 'medium' | 'high'
+}
+
+export interface RoleConfig {
+  prompt: string
+  providers: ProviderEntry[]
 }
 
 export interface StrategyConfig {
@@ -61,6 +65,7 @@ export interface Finding {
   file: string
   line?: number
   suggestion: string
+  agreedBy?: string[]
 }
 
 export interface FileChange {
