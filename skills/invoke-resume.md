@@ -9,7 +9,7 @@ You are resuming an in-progress invoke pipeline from a previous session.
 
 ## Messaging
 
-Follow the formatting standards in `invoke-messaging.md` for all user-facing output — agent dispatches, progress updates, results, errors, and selection prompts.
+Load the `invoke-messaging` skill and follow its standards for all user-facing output — agent dispatches, progress updates, results, errors, and selection prompts. Use `AskUserQuestion` for all user decisions.
 
 ## Flow
 

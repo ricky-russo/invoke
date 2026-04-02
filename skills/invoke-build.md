@@ -9,7 +9,7 @@ You are running the build stage. Your job is to dispatch builder agents for each
 
 ## Messaging
 
-Follow the formatting standards in `invoke-messaging.md` for all user-facing output — agent dispatches, progress updates, results, errors, and selection prompts.
+Load the `invoke-messaging` skill and follow its standards for all user-facing output — agent dispatches, progress updates, results, errors, and selection prompts. Use `AskUserQuestion` for all user decisions.
 
 ## Flow
 
@@ -27,7 +27,7 @@ For each batch in order:
 
 #### a. Select Builders
 
-Present available builders using the **Selection Prompt** format from `invoke-messaging.md`, noting the batch number and task count. Include provider, model, and effort for each.
+Present available builders using `AskUserQuestion` with `multiSelect: true`, noting the batch number and task count in the question text. Each option's description includes provider(s), model(s), and effort.
 
 #### b. Dispatch Batch
 

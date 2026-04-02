@@ -9,7 +9,7 @@ You are running the scope stage of the invoke pipeline. Your job is to produce a
 
 ## Messaging
 
-Follow the formatting standards in `invoke-messaging.md` for all user-facing output — agent dispatches, progress updates, results, errors, and selection prompts.
+Load the `invoke-messaging` skill and follow its standards for all user-facing output — agent dispatches, progress updates, results, errors, and selection prompts. Use `AskUserQuestion` for all user decisions.
 
 ## Flow
 
@@ -23,7 +23,7 @@ Call `invoke_set_state` to create or verify pipeline state:
 
 Read the pipeline config with `invoke_get_config` to see which researchers are available.
 
-Present the available researchers using the **Selection Prompt** format from `invoke-messaging.md`. Include provider, model, and effort for each. The user can respond with numbers, names, or "all".
+Present the available researchers using `AskUserQuestion` with `multiSelect: true`. Each option's label is the subrole name, description includes provider(s), model(s), and effort level.
 
 Wait for user selection, then dispatch the selected researchers using `invoke_dispatch_batch`:
 - `create_worktrees: false` (researchers don't modify code)

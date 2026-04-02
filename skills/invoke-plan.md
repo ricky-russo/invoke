@@ -9,7 +9,7 @@ You are running the plan stage of the invoke pipeline. Your job is to dispatch p
 
 ## Messaging
 
-Follow the formatting standards in `invoke-messaging.md` for all user-facing output — agent dispatches, progress updates, results, errors, and selection prompts.
+Load the `invoke-messaging` skill and follow its standards for all user-facing output — agent dispatches, progress updates, results, errors, and selection prompts. Use `AskUserQuestion` for all user decisions.
 
 ## Flow
 
@@ -21,7 +21,7 @@ Call `invoke_get_state` to verify we're at the plan stage. Read the spec from `i
 
 Read the pipeline config with `invoke_get_config` to see available planners.
 
-Present available planners using the **Selection Prompt** format from `invoke-messaging.md`. Include provider, model, and effort for each. Note that running multiple gives competing approaches to compare.
+Present available planners using `AskUserQuestion` with `multiSelect: true`. Each option's label is the subrole name, description includes provider(s), model(s), and effort. Note that running multiple gives competing approaches to compare.
 
 Wait for user selection, then dispatch selected planners using `invoke_dispatch_batch`:
 - `create_worktrees: false`

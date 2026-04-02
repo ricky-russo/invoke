@@ -9,7 +9,7 @@ You are running the review stage. Your job is to dispatch reviewers, present fin
 
 ## Messaging
 
-Follow the formatting standards in `invoke-messaging.md` for all user-facing output — agent dispatches, progress updates, results, errors, and selection prompts.
+Load the `invoke-messaging` skill and follow its standards for all user-facing output — agent dispatches, progress updates, results, errors, and selection prompts. Use `AskUserQuestion` for all user decisions.
 
 ## Flow
 
@@ -21,7 +21,7 @@ Call `invoke_get_state` to verify we're at the review stage.
 
 Read the config with `invoke_get_config` to see available reviewers.
 
-Present available reviewers using the **Selection Prompt** format from `invoke-messaging.md`. Include provider, model, and effort for each. Read the actual configured reviewers from `invoke_get_config` — do not hardcode the list.
+Present available reviewers using `AskUserQuestion` with `multiSelect: true`. Each option's label is the subrole name, description includes provider(s), model(s), and effort. Read the actual configured reviewers from `invoke_get_config` — do not hardcode the list.
 
 ### 3. Dispatch Reviewers
 

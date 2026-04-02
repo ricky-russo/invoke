@@ -9,7 +9,7 @@ You are running the orchestrate stage. Your job is to break the approved plan in
 
 ## Messaging
 
-Follow the formatting standards in `invoke-messaging.md` for all user-facing output — agent dispatches, progress updates, results, errors, and selection prompts.
+Load the `invoke-messaging` skill and follow its standards for all user-facing output — agent dispatches, progress updates, results, errors, and selection prompts. Use `AskUserQuestion` for all user decisions.
 
 ## Flow
 
@@ -21,7 +21,7 @@ Call `invoke_get_state` to verify we're at the orchestrate stage. Read the plan 
 
 Read the config with `invoke_get_config` to see available strategies.
 
-Present available strategies using the **Selection Prompt** format from `invoke-messaging.md`. Note which is the default from `settings.default_strategy`.
+Present available strategies using `AskUserQuestion` with `multiSelect: false`. Mark the default strategy (from `settings.default_strategy`) with "(Recommended)" in its label.
 
 ### 3. Break Down Tasks
 
