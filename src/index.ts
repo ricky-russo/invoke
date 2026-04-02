@@ -15,6 +15,7 @@ import { registerDispatchTools } from './tools/dispatch-tools.js'
 import { registerWorktreeTools } from './tools/worktree-tools.js'
 import { registerStateTools } from './tools/state-tools.js'
 import { registerArtifactTools } from './tools/artifact-tools.js'
+import { registerConfigUpdateTools } from './tools/config-update-tools.js'
 
 async function main() {
   const projectDir = process.cwd()
@@ -43,6 +44,7 @@ async function main() {
   registerArtifactTools(server, artifactManager)
   registerWorktreeTools(server, worktreeManager)
   registerConfigTools(server, projectDir)
+  registerConfigUpdateTools(server, projectDir)
 
   // Register dispatch tools (need config)
   if (config) {
