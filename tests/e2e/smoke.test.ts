@@ -97,3 +97,28 @@ describe('E2E: MCP Server Components', () => {
     expect(files).toContain('test-spec.md')
   })
 })
+
+describe('E2E: Init + Config', () => {
+  it('init creates a valid config that loads successfully', async () => {
+    const { initProject } = await import('../../src/init.js')
+
+    const initDir = path.join(import.meta.dirname, 'fixtures', 'e2e-init-test')
+    await mkdir(initDir, { recursive: true })
+
+    try {
+      await initProject(initDir)
+
+      // Config should load and validate
+      const config = await loadConfig(initDir)
+      expect(config.providers.claude).toBeTruthy()
+      expect(config.roles.researcher).toBeTruthy()
+      expect(config.roles.planner).toBeTruthy()
+      expect(config.roles.builder).toBeTruthy()
+      expect(config.roles.reviewer).toBeTruthy()
+      expect(config.strategies.tdd).toBeTruthy()
+      expect(config.settings.default_strategy).toBe('tdd')
+    } finally {
+      await rm(initDir, { recursive: true, force: true })
+    }
+  })
+})
