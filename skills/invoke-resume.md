@@ -7,6 +7,10 @@ description: Use when the user returns to a project that has an in-progress invo
 
 You are resuming an in-progress invoke pipeline from a previous session.
 
+## Messaging
+
+Follow the formatting standards in `invoke-messaging.md` for all user-facing output — agent dispatches, progress updates, results, errors, and selection prompts.
+
 ## Flow
 
 ### 1. Read State

@@ -7,6 +7,10 @@ description: Use when an orchestrated task breakdown has been approved and is re
 
 You are running the build stage. Your job is to dispatch builder agents for each batch, manage worktrees, merge results, and track progress.
 
+## Messaging
+
+Follow the formatting standards in `invoke-messaging.md` for all user-facing output — agent dispatches, progress updates, results, errors, and selection prompts.
+
 ## Flow
 
 ### 1. Verify State

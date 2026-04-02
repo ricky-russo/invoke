@@ -7,6 +7,10 @@ description: Use when a spec has been approved and needs an implementation plan 
 
 You are running the plan stage of the invoke pipeline. Your job is to dispatch planners to generate competing implementation plans, then help the user choose the best one.
 
+## Messaging
+
+Follow the formatting standards in `invoke-messaging.md` for all user-facing output — agent dispatches, progress updates, results, errors, and selection prompts.
+
 ## Flow
 
 ### 1. Verify State

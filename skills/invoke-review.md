@@ -7,6 +7,10 @@ description: Use when build is complete and code needs review, or when a build-r
 
 You are running the review stage. Your job is to dispatch reviewers, present findings, let the user triage, and loop back to build for fixes.
 
+## Messaging
+
+Follow the formatting standards in `invoke-messaging.md` for all user-facing output — agent dispatches, progress updates, results, errors, and selection prompts.
+
 ## Flow
 
 ### 1. Verify State

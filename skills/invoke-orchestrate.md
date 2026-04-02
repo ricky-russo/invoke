@@ -7,6 +7,10 @@ description: Use when an implementation plan has been approved and needs to be b
 
 You are running the orchestrate stage. Your job is to break the approved plan into small, isolated, context-safe tasks grouped into sequential batches.
 
+## Messaging
+
+Follow the formatting standards in `invoke-messaging.md` for all user-facing output — agent dispatches, progress updates, results, errors, and selection prompts.
+
 ## Flow
 
 ### 1. Verify State
