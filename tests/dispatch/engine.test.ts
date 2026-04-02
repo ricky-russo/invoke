@@ -4,12 +4,10 @@ import type { InvokeConfig } from '../../src/types.js'
 import type { Provider } from '../../src/providers/base.js'
 import type { Parser } from '../../src/parsers/base.js'
 
-// Mock child_process.spawn
 vi.mock('child_process', () => ({
   spawn: vi.fn(),
 }))
 
-// Mock composePrompt so tests don't try to read real files
 vi.mock('../../src/dispatch/prompt-composer.js', () => ({
   composePrompt: vi.fn().mockResolvedValue('mocked prompt content'),
 }))
@@ -26,7 +24,6 @@ function mockSpawn(stdout: string, exitCode: number): void {
   const mockSpawnFn = vi.mocked(spawn)
   mockSpawnFn.mockReturnValue(proc)
 
-  // Emit exit after a tick
   setTimeout(() => proc.emit('close', exitCode), 10)
 }
 
@@ -35,6 +32,14 @@ const mockProvider: Provider = {
   buildCommand: vi.fn().mockReturnValue({
     cmd: 'claude',
     args: ['--print', 'test prompt'],
+  }),
+}
+
+const mockCodexProvider: Provider = {
+  name: 'codex',
+  buildCommand: vi.fn().mockReturnValue({
+    cmd: 'codex',
+    args: ['--model', 'gpt-5.4', 'test prompt'],
   }),
 }
 
@@ -51,7 +56,20 @@ const mockParser: Parser = {
   }),
 }
 
-const mockConfig: InvokeConfig = {
+const mockCodexParser: Parser = {
+  name: 'codex',
+  parse: vi.fn().mockReturnValue({
+    role: 'researcher',
+    subrole: 'codebase',
+    provider: 'codex',
+    model: 'gpt-5.4',
+    status: 'success',
+    output: { summary: 'Codex done', raw: 'Codex output' },
+    duration: 200,
+  }),
+}
+
+const singleProviderConfig: InvokeConfig = {
   providers: {
     claude: { cli: 'claude', args: ['--print', '--model', '{{model}}'] },
   },
@@ -59,9 +77,32 @@ const mockConfig: InvokeConfig = {
     researcher: {
       codebase: {
         prompt: '.invoke/roles/researcher/codebase.md',
-        provider: 'claude',
-        model: 'opus-4.6',
-        effort: 'high',
+        providers: [{ provider: 'claude', model: 'opus-4.6', effort: 'high' }],
+      },
+    },
+  },
+  strategies: {},
+  settings: {
+    default_strategy: 'tdd',
+    agent_timeout: 5000,
+    commit_style: 'per-batch',
+    work_branch_prefix: 'invoke/work',
+  },
+}
+
+const multiProviderConfig: InvokeConfig = {
+  providers: {
+    claude: { cli: 'claude', args: ['--print', '--model', '{{model}}'] },
+    codex: { cli: 'codex', args: ['--model', '{{model}}'] },
+  },
+  roles: {
+    reviewer: {
+      security: {
+        prompt: '.invoke/roles/reviewer/security.md',
+        providers: [
+          { provider: 'claude', model: 'opus-4.6', effort: 'high' },
+          { provider: 'codex', model: 'gpt-5.4', effort: 'high' },
+        ],
       },
     },
   },
@@ -75,69 +116,86 @@ const mockConfig: InvokeConfig = {
 }
 
 describe('DispatchEngine', () => {
-  let engine: DispatchEngine
+  it('dispatches to a single provider and returns result', async () => {
+    mockSpawn('Research output', 0)
 
-  beforeEach(() => {
     const providers = new Map([['claude', mockProvider]])
     const parsers = new Map([['claude', mockParser]])
-    engine = new DispatchEngine({
-      config: mockConfig,
+    const engine = new DispatchEngine({
+      config: singleProviderConfig,
       providers,
       parsers,
       projectDir: '/tmp/test-project',
     })
-  })
-
-  it('dispatches a single agent and returns a result', async () => {
-    mockSpawn('Research output here', 0)
 
     const result = await engine.dispatch({
       role: 'researcher',
       subrole: 'codebase',
-      taskContext: { task_description: 'Analyze the codebase' },
+      taskContext: { task_description: 'Analyze' },
     })
 
     expect(mockProvider.buildCommand).toHaveBeenCalled()
     expect(result.status).toBe('success')
   })
 
-  it('returns error when role is not found in config', async () => {
-    await expect(
-      engine.dispatch({
-        role: 'nonexistent',
-        subrole: 'test',
-        taskContext: {},
-      })
-    ).rejects.toThrow('Role not found: nonexistent.test')
-  })
+  it('dispatches to multiple providers and returns merged result', async () => {
+    mockSpawn('Review output', 0)
 
-  it('returns error when provider is not found', async () => {
-    const badConfig = {
-      ...mockConfig,
-      roles: {
-        researcher: {
-          codebase: {
-            ...mockConfig.roles.researcher.codebase,
-            provider: 'unknown',
-          },
-        },
-      },
-    }
-    const providers = new Map([['claude', mockProvider]])
-    const parsers = new Map([['claude', mockParser]])
-    const badEngine = new DispatchEngine({
-      config: badConfig,
+    const providers = new Map([['claude', mockProvider], ['codex', mockCodexProvider]])
+    const parsers = new Map([['claude', mockParser], ['codex', mockCodexParser]])
+    const engine = new DispatchEngine({
+      config: multiProviderConfig,
       providers,
       parsers,
       projectDir: '/tmp/test-project',
     })
 
+    const result = await engine.dispatch({
+      role: 'reviewer',
+      subrole: 'security',
+      taskContext: { task_description: 'Review auth' },
+    })
+
+    expect(result.status).toBe('success')
+    expect(mockProvider.buildCommand).toHaveBeenCalled()
+    expect(mockCodexProvider.buildCommand).toHaveBeenCalled()
+  })
+
+  it('throws when role is not found', async () => {
+    const engine = new DispatchEngine({
+      config: singleProviderConfig,
+      providers: new Map([['claude', mockProvider]]),
+      parsers: new Map([['claude', mockParser]]),
+      projectDir: '/tmp/test',
+    })
+
     await expect(
-      badEngine.dispatch({
-        role: 'researcher',
-        subrole: 'codebase',
-        taskContext: {},
-      })
+      engine.dispatch({ role: 'nonexistent', subrole: 'test', taskContext: {} })
+    ).rejects.toThrow('Role not found: nonexistent.test')
+  })
+
+  it('throws when provider is not found', async () => {
+    const badConfig: InvokeConfig = {
+      ...singleProviderConfig,
+      roles: {
+        researcher: {
+          codebase: {
+            prompt: '.invoke/roles/researcher/codebase.md',
+            providers: [{ provider: 'unknown', model: 'x', effort: 'high' }],
+          },
+        },
+      },
+    }
+
+    const engine = new DispatchEngine({
+      config: badConfig,
+      providers: new Map([['claude', mockProvider]]),
+      parsers: new Map([['claude', mockParser]]),
+      projectDir: '/tmp/test',
+    })
+
+    await expect(
+      engine.dispatch({ role: 'researcher', subrole: 'codebase', taskContext: {} })
     ).rejects.toThrow('Provider not found: unknown')
   })
 })
