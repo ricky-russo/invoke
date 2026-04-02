@@ -1,4 +1,4 @@
-import { readFile, writeFile, mkdir, readdir } from 'fs/promises'
+import { readFile, writeFile, mkdir, readdir, unlink } from 'fs/promises'
 import path from 'path'
 
 export class ArtifactManager {
@@ -28,5 +28,10 @@ export class ArtifactManager {
     } catch {
       return []
     }
+  }
+
+  async delete(stage: string, filename: string): Promise<void> {
+    const filePath = path.join(this.baseDir, stage, filename)
+    await unlink(filePath)
   }
 }

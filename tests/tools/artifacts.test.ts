@@ -51,4 +51,16 @@ describe('ArtifactManager', () => {
     expect(files).toContain('cycle-1.json')
     expect(files).toContain('cycle-2.json')
   })
+
+  it('deletes an artifact', async () => {
+    await artifacts.save('specs', 'to-delete.md', 'content')
+    expect(await artifacts.read('specs', 'to-delete.md')).toBe('content')
+
+    await artifacts.delete('specs', 'to-delete.md')
+    await expect(artifacts.read('specs', 'to-delete.md')).rejects.toThrow()
+  })
+
+  it('throws when deleting nonexistent artifact', async () => {
+    await expect(artifacts.delete('specs', 'nonexistent.md')).rejects.toThrow()
+  })
 })

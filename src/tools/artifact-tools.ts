@@ -44,4 +44,28 @@ export function registerArtifactTools(server: McpServer, artifactManager: Artifa
       }
     }
   )
+
+  server.registerTool(
+    'invoke_delete_artifact',
+    {
+      description: 'Delete a file from the .invoke/ directory.',
+      inputSchema: z.object({
+        stage: z.string().describe('Stage directory (e.g. roles/reviewer, strategies)'),
+        filename: z.string().describe('Filename to delete'),
+      }),
+    },
+    async ({ stage, filename }) => {
+      try {
+        await artifactManager.delete(stage, filename)
+        return {
+          content: [{ type: 'text', text: JSON.stringify({ deleted: `${stage}/${filename}` }) }],
+        }
+      } catch (err) {
+        return {
+          content: [{ type: 'text', text: `Delete error: ${err instanceof Error ? err.message : String(err)}` }],
+          isError: true,
+        }
+      }
+    }
+  )
 }
