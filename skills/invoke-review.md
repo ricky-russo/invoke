@@ -21,15 +21,7 @@ Call `invoke_get_state` to verify we're at the review stage.
 
 Read the config with `invoke_get_config` to see available reviewers.
 
-Present the reviewer list to the user:
-> "Build complete. Which reviewers should I run? Available:"
-> - security — Security vulnerability analysis
-> - code-quality — Code quality and maintainability
-> - performance — Performance analysis
-> - ux — User experience review
-> - accessibility — Accessibility compliance
->
-> "Select the reviewers for this cycle (e.g., 'security, code-quality, performance'):"
+Present available reviewers using the **Selection Prompt** format from `invoke-messaging.md`. Include provider, model, and effort for each. Read the actual configured reviewers from `invoke_get_config` — do not hardcode the list.
 
 ### 3. Dispatch Reviewers
 

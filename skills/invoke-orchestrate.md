@@ -21,8 +21,7 @@ Call `invoke_get_state` to verify we're at the orchestrate stage. Read the plan 
 
 Read the config with `invoke_get_config` to see available strategies.
 
-Ask the user:
-> "Which build strategy should agents use? Available: [list strategies]. Default: [settings.default_strategy]"
+Present available strategies using the **Selection Prompt** format from `invoke-messaging.md`. Note which is the default from `settings.default_strategy`.
 
 ### 3. Break Down Tasks
 

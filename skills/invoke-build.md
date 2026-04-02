@@ -27,8 +27,7 @@ For each batch in order:
 
 #### a. Select Builders
 
-Ask the user which builder roles to use for this batch:
-> "Batch N ready ([X] tasks). Available builders: [list sub-roles under builder]. Which builders should handle these tasks?"
+Present available builders using the **Selection Prompt** format from `invoke-messaging.md`, noting the batch number and task count. Include provider, model, and effort for each.
 
 #### b. Dispatch Batch
 

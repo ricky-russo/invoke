@@ -23,8 +23,7 @@ Call `invoke_set_state` to create or verify pipeline state:
 
 Read the pipeline config with `invoke_get_config` to see which researchers are available.
 
-Present the available researchers to the user:
-> "Before we scope this out, I can dispatch researchers to gather context. Available researchers: [list sub-roles under researcher]. Which ones should I run?"
+Present the available researchers using the **Selection Prompt** format from `invoke-messaging.md`. Include provider, model, and effort for each. The user can respond with numbers, names, or "all".
 
 Wait for user selection, then dispatch the selected researchers using `invoke_dispatch_batch`:
 - `create_worktrees: false` (researchers don't modify code)

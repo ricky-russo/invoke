@@ -21,8 +21,7 @@ Call `invoke_get_state` to verify we're at the plan stage. Read the spec from `i
 
 Read the pipeline config with `invoke_get_config` to see available planners.
 
-Present available planners to the user:
-> "Ready to plan. Available planners: [list sub-roles under planner]. Which ones should I dispatch? Running multiple gives you competing approaches to compare."
+Present available planners using the **Selection Prompt** format from `invoke-messaging.md`. Include provider, model, and effort for each. Note that running multiple gives competing approaches to compare.
 
 Wait for user selection, then dispatch selected planners using `invoke_dispatch_batch`:
 - `create_worktrees: false`
