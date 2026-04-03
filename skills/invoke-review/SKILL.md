@@ -31,6 +31,8 @@ Dispatch selected reviewers using `invoke_dispatch_batch`:
 
 Call `invoke_get_batch_status` with the batch ID — it will wait up to 60 seconds for a status change before returning. Keep calling until complete. Do NOT use `sleep` between calls.
 
+**CRITICAL: Do NOT proceed to step 4 while any dispatched reviewers are still running.** You must wait for all reviewers to complete or fail. If reviewers have been running for more than 5 minutes, use `AskUserQuestion` to ask the user whether to keep waiting, proceed with partial results, or cancel.
+
 ### 4. Present Findings
 
 Collect findings from all reviewers. Present them grouped by reviewer:

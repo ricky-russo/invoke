@@ -42,7 +42,7 @@ Each task's prompt is composed by the MCP from the builder role template + strat
 Call `invoke_get_batch_status` with the batch ID — it will wait up to 60 seconds for a status change before returning. Keep calling until the batch completes. Do NOT use `sleep` between calls. Report progress to the user:
 > "Batch N progress: task-1 ✅, task-2 running, task-3 running"
 
-Allow the user to interact while waiting (e.g., "how's it going?").
+**CRITICAL: Do NOT proceed to step d while any tasks in the batch are still running.** You must wait for all tasks to complete or fail. If the batch has been running for more than 10 minutes, use `AskUserQuestion` to ask the user whether to keep waiting, cancel remaining tasks and proceed with completed ones, or abort the batch.
 
 #### d. Collect Results
 

@@ -29,6 +29,8 @@ Wait for user selection, then dispatch selected planners using `invoke_dispatch_
 
 Call `invoke_get_batch_status` with the batch ID — it will wait up to 60 seconds for a status change before returning. Keep calling until complete. Do NOT use `sleep` between calls.
 
+**CRITICAL: Do NOT proceed to step 3 while any dispatched agents are still running.** You must wait for all agents to complete or fail. If agents have been running for more than 5 minutes, use `AskUserQuestion` to ask the user whether to keep waiting, proceed with partial results, or cancel.
+
 ### 3. Present Plans
 
 Read the results from each planner. Present them to the user:

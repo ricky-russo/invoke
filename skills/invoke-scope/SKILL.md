@@ -56,11 +56,45 @@ Read the pipeline config with `invoke_get_config` to see which researchers are a
 
 Present the available researchers using `AskUserQuestion` with `multiSelect: true`. Each option's label is the subrole name, description includes provider(s), model(s), and effort level.
 
+#### Focus research tasks
+
+Before dispatching, break the user's request into **focused research topics** — one per researcher dispatch. Do NOT pass the entire user request as a single task_description. Each researcher should investigate one specific area.
+
+For example, if the user asks to "build an MVC framework with auth, routing, and a Vue frontend":
+- `codebase` researcher gets: "Analyze the existing project structure, dependencies, and patterns"
+- `best-practices` researcher gets: "Research PSR-compliant MVC routing patterns and middleware design"
+- A second `best-practices` dispatch gets: "Research Vue + InertiaJS adapter patterns for PHP frameworks"
+
+If the request covers more than 3 distinct topics, dispatch multiple batches of researchers rather than one overloaded batch. Each research task should be completable in under 5 minutes.
+
 Wait for user selection, then dispatch the selected researchers using `invoke_dispatch_batch`:
 - `create_worktrees: false` (researchers don't modify code)
-- `task_context: { task_description: "<user's initial request>" }`
+- `task_context: { task_description: "<focused research topic, NOT the full user request>" }`
+
+#### Wait for completion
 
 Call `invoke_get_batch_status` with the batch ID — it will wait up to 60 seconds for a status change before returning. Keep calling until all researchers complete. Do NOT use `sleep` between calls — the tool handles waiting internally. Let the user know agents are working.
+
+**CRITICAL: Do NOT proceed to step 4 while any dispatched agents are still running.** You must wait for all agents to complete or fail before moving on.
+
+If agents have been running for more than 5 minutes, ask the user what to do using `AskUserQuestion`:
+
+```
+AskUserQuestion({
+  questions: [{
+    question: "Researchers have been running for over 5 minutes. What would you like to do?",
+    header: "Long-running agents",
+    multiSelect: false,
+    options: [
+      { label: "Keep waiting", description: "Continue waiting for all agents to finish" },
+      { label: "Proceed with partial results", description: "Cancel remaining agents and use what we have so far" },
+      { label: "Cancel all", description: "Cancel all agents and abort research" }
+    ]
+  }]
+})
+```
+
+Only the user decides when to skip — never make this decision yourself.
 
 ### 4. Review Research
 
