@@ -73,9 +73,9 @@ If satisfied: proceed to completion.
 
 ### 8. Complete Pipeline
 
-Save the review history using `invoke_save_artifact`:
+Use the same slug from the spec/plan filenames. Save the review history using `invoke_save_artifact`:
 - `stage: "reviews"`
-- `filename: "review-cycle-N.json"`
+- `filename: "YYYY-MM-DD-<slug>-review-N.json"` (e.g., `2026-04-03-auth-middleware-review-1.json`)
 
 ### 9. Commit Strategy
 

@@ -53,15 +53,17 @@ Let the user pick:
 
 ### 5. Save Plan
 
+Generate a short, descriptive filename slug matching the spec name (e.g., if the spec is `2026-04-03-auth-middleware-spec.md`, the plan is `2026-04-03-auth-middleware-plan.md`).
+
 Save the chosen plan using `invoke_save_artifact`:
 - `stage: "plans"`
-- `filename: "plan.md"`
+- `filename: "YYYY-MM-DD-<slug>-plan.md"` (e.g., `2026-04-03-auth-middleware-plan.md`)
 
 ### 6. Update State
 
 Call `invoke_set_state` with:
 - `current_stage: "orchestrate"`
-- `plan: "plans/plan.md"`
+- `plan: "plans/YYYY-MM-DD-<slug>-plan.md"`
 
 The orchestrate stage skill will auto-trigger from here.
 

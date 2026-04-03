@@ -51,15 +51,17 @@ When scope is clear, write a spec document covering:
 - **Acceptance Criteria** — how we know it's done
 - **Out of Scope** — explicitly excluded items
 
+Generate a short, descriptive filename slug from the feature being scoped (e.g., "auth-middleware", "car-crud-api", "payment-integration"). Use the format `YYYY-MM-DD-<slug>-spec.md`.
+
 Save the spec using `invoke_save_artifact`:
 - `stage: "specs"`
-- `filename: "spec.md"`
+- `filename: "YYYY-MM-DD-<slug>-spec.md"` (e.g., `2026-04-03-auth-middleware-spec.md`)
 
 ### 6. Update State
 
 Call `invoke_set_state` with:
 - `current_stage: "scope"` (until user approves)
-- `spec: "specs/spec.md"`
+- `spec: "specs/YYYY-MM-DD-<slug>-spec.md"`
 
 ### 7. Get Approval
 

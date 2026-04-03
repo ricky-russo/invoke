@@ -61,9 +61,11 @@ Ask:
 
 ### 6. Save Tasks
 
+Use the same slug from the plan filename (e.g., if plan is `2026-04-03-auth-middleware-plan.md`, tasks file is `2026-04-03-auth-middleware-tasks.json`).
+
 Save the task breakdown using `invoke_save_artifact`:
 - `stage: "plans"`
-- `filename: "tasks.json"`
+- `filename: "YYYY-MM-DD-<slug>-tasks.json"` (e.g., `2026-04-03-auth-middleware-tasks.json`)
 
 The format:
 ```json
