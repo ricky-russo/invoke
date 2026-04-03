@@ -106,6 +106,7 @@ export interface AgentStatus {
 export interface PipelineState {
   pipeline_id: string
   started: string
+  last_updated: string
   current_stage: 'scope' | 'plan' | 'orchestrate' | 'build' | 'review' | 'complete'
   work_branch?: string
   spec?: string
@@ -124,8 +125,10 @@ export interface BatchState {
 export interface TaskState {
   id: string
   status: 'pending' | 'dispatched' | 'running' | 'completed' | 'error' | 'timeout'
-  worktree?: string | null
-  result?: AgentResult
+  worktree_path?: string
+  worktree_branch?: string
+  result_summary?: string
+  result_status?: 'success' | 'error' | 'timeout'
 }
 
 export interface ReviewCycle {
