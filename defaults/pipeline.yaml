@@ -1,6 +1,12 @@
 # Invoke Pipeline Configuration
 # This file defines providers, roles, strategies, and settings for your invoke pipeline.
 # Customize roles and strategies by editing the referenced .md files.
+#
+# Cost guide:
+#   Opus is ~5x more expensive than Sonnet per token.
+#   Use Opus for tasks requiring strong reasoning (planning, spec-compliance review).
+#   Use Sonnet for mechanical tasks (research, building, pattern-matching reviews).
+#   Single-provider is cheaper than dual-provider — reserve dual for critical reviews.
 
 providers:
   claude:
@@ -16,33 +22,21 @@ roles:
       prompt: .invoke/roles/researcher/codebase.md
       providers:
         - provider: claude
-          model: claude-opus-4-6
-          effort: high
-          timeout: 600
-        - provider: codex
-          model: o3
-          effort: high
+          model: claude-sonnet-4-6
+          effort: medium
           timeout: 600
     best-practices:
       prompt: .invoke/roles/researcher/best-practices.md
       providers:
         - provider: claude
-          model: claude-opus-4-6
-          effort: medium
-          timeout: 600
-        - provider: codex
-          model: o3
+          model: claude-sonnet-4-6
           effort: medium
           timeout: 600
     dependencies:
       prompt: .invoke/roles/researcher/dependencies.md
       providers:
         - provider: claude
-          model: claude-opus-4-6
-          effort: medium
-          timeout: 600
-        - provider: codex
-          model: o3
+          model: claude-sonnet-4-6
           effort: medium
           timeout: 600
 
@@ -54,19 +48,11 @@ roles:
           model: claude-opus-4-6
           effort: high
           timeout: 600
-        - provider: codex
-          model: o3
-          effort: high
-          timeout: 600
     alternative:
       prompt: .invoke/roles/planner/alternative.md
       providers:
         - provider: claude
           model: claude-opus-4-6
-          effort: high
-          timeout: 600
-        - provider: codex
-          model: o3
           effort: high
           timeout: 600
 
@@ -76,11 +62,7 @@ roles:
       providers:
         - provider: claude
           model: claude-sonnet-4-6
-          effort: high
-          timeout: 300
-        - provider: codex
-          model: o3
-          effort: high
+          effort: medium
           timeout: 300
 
   reviewer:
@@ -91,63 +73,39 @@ roles:
           model: claude-opus-4-6
           effort: high
           timeout: 300
-        - provider: codex
-          model: o3
-          effort: high
-          timeout: 300
     security:
       prompt: .invoke/roles/reviewer/security.md
       providers:
         - provider: claude
-          model: claude-opus-4-6
-          effort: high
-          timeout: 300
-        - provider: codex
-          model: o3
+          model: claude-sonnet-4-6
           effort: high
           timeout: 300
     code-quality:
       prompt: .invoke/roles/reviewer/code-quality.md
       providers:
         - provider: claude
-          model: claude-opus-4-6
-          effort: medium
-          timeout: 300
-        - provider: codex
-          model: o3
+          model: claude-sonnet-4-6
           effort: medium
           timeout: 300
     performance:
       prompt: .invoke/roles/reviewer/performance.md
       providers:
         - provider: claude
-          model: claude-opus-4-6
-          effort: high
-          timeout: 300
-        - provider: codex
-          model: o3
-          effort: high
+          model: claude-sonnet-4-6
+          effort: medium
           timeout: 300
     ux:
       prompt: .invoke/roles/reviewer/ux.md
       providers:
         - provider: claude
-          model: claude-opus-4-6
-          effort: medium
-          timeout: 300
-        - provider: codex
-          model: o3
+          model: claude-sonnet-4-6
           effort: medium
           timeout: 300
     accessibility:
       prompt: .invoke/roles/reviewer/accessibility.md
       providers:
         - provider: claude
-          model: claude-opus-4-6
-          effort: medium
-          timeout: 300
-        - provider: codex
-          model: o3
+          model: claude-sonnet-4-6
           effort: medium
           timeout: 300
 
