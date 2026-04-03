@@ -49,15 +49,14 @@ Within each batch, tasks must be independent — no task in the same batch can d
 
 ### 5. Present for Approval
 
-Present the task breakdown to the user:
+**Print the full task breakdown as text output first** so the user can read it:
 
 For each batch:
 > **Batch N** (parallel)
 > - Task: [id] — [description] (files: [list])
 > - Task: [id] — [description] (files: [list])
 
-Ask:
-> "Does this breakdown look right? Any tasks to split, merge, or reorder?"
+THEN, in a separate message, ask for approval using `AskUserQuestion`. Do NOT combine the breakdown and the approval prompt.
 
 ### 6. Save Tasks
 

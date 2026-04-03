@@ -33,9 +33,7 @@ Call `invoke_get_batch_status` with the batch ID — it will wait up to 60 secon
 
 ### 3. Present Plans
 
-Read the results from each planner. Present them to the user:
-
-For each plan:
+**Print the full plan comparison as text output first** so the user can read it. For each plan:
 - Summarize the approach (2-3 sentences)
 - Highlight key technical decisions
 - Note what it optimizes for
@@ -48,7 +46,7 @@ Then compare:
 
 ### 4. User Chooses
 
-Let the user pick:
+THEN, in a separate message, ask the user to choose using `AskUserQuestion`. Do NOT combine the plan comparison and the selection prompt. Let the user pick:
 - One plan as-is
 - A hybrid combining elements from multiple plans
 - Request a re-plan with additional constraints

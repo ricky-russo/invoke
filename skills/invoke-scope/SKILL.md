@@ -132,7 +132,9 @@ Call `invoke_set_state` with:
 
 ### 8. Get Approval
 
-Present the spec to the user for approval. Once approved, update state to `current_stage: "plan"`.
+**Print the full spec as text output first** so the user can read it. THEN, in a separate message, ask for approval using `AskUserQuestion`. Do NOT combine the spec content and the approval prompt.
+
+Once approved, update state to `current_stage: "plan"`. If the user wants changes, revise the spec and repeat.
 
 The plan stage skill will auto-trigger from here.
 

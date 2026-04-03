@@ -35,7 +35,7 @@ Call `invoke_get_batch_status` with the batch ID — it will wait up to 60 secon
 
 ### 4. Present Findings
 
-Collect findings from all reviewers. Present them grouped by reviewer:
+**Print the full findings as text output first** so the user can read them. Group by reviewer:
 
 > **Security Review** (3 findings)
 > 1. [HIGH] SQL injection in src/db/query.ts:42 — Use parameterized queries
@@ -47,8 +47,7 @@ Collect findings from all reviewers. Present them grouped by reviewer:
 
 ### 5. User Triage
 
-For each finding, ask the user:
-> "Accept or dismiss? (You can also accept/dismiss all from a reviewer)"
+THEN, in a separate message, ask the user to triage using `AskUserQuestion`. Do NOT combine the findings and the triage prompt.
 
 Options:
 - **Accept** — will be sent to build agents for fixing

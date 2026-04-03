@@ -36,7 +36,7 @@ When the user wants to add a new role (e.g., "create a reviewer for PSR complian
    - Allow multiple providers for cross-validation (e.g., run on both Claude and Codex)
    - Suggest a default based on the role type
 
-4. **Generate and preview prompt**: Create the `.md` prompt file based on the conversation. For reviewers, ensure the output format section uses the standard Finding format. Present the prompt to the user for review before saving.
+4. **Generate and preview prompt**: Create the `.md` prompt file based on the conversation. For reviewers, ensure the output format section uses the standard Finding format. **Print the full prompt as text output first** so the user can read it. THEN, in a separate message, ask for approval using `AskUserQuestion` before saving. Do NOT combine the preview and the approval prompt.
 
 5. **Save**:
    - Write the prompt file: `invoke_save_artifact` with `stage: "roles/<type>"`, `filename: "<name>.md"`
