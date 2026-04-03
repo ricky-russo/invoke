@@ -88,7 +88,7 @@ async function main() {
     const parsers = createParserRegistry()
     const engine = new DispatchEngine({ providers, parsers, projectDir })
     const batchManager = new BatchManager(engine, worktreeManager, stateManager)
-    registerDispatchTools(server, engine, batchManager)
+    registerDispatchTools(server, engine, batchManager, projectDir)
   }
 
   // Connect via stdio

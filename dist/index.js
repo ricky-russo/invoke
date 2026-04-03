@@ -39116,7 +39116,8 @@ function registerConfigTools(server, projectDir) {
 
 // src/tools/dispatch-tools.ts
 init_zod();
-function registerDispatchTools(server, engine, batchManager) {
+init_config();
+function registerDispatchTools(server, engine, batchManager, projectDir) {
   server.registerTool(
     "invoke_dispatch",
     {
@@ -39162,6 +39163,22 @@ function registerDispatchTools(server, engine, batchManager) {
       })
     },
     async ({ tasks, create_worktrees }) => {
+      let taskProviders = [];
+      try {
+        const config2 = await loadConfig(projectDir);
+        taskProviders = tasks.map((t) => {
+          const roleConfig = config2.roles[t.role]?.[t.subrole];
+          return {
+            task_id: t.task_id,
+            providers: roleConfig?.providers.map((p) => ({
+              provider: p.provider,
+              model: p.model,
+              effort: p.effort
+            })) ?? []
+          };
+        });
+      } catch {
+      }
       const batchId = batchManager.dispatchBatch({
         tasks: tasks.map((t) => ({
           taskId: t.task_id,
@@ -39172,7 +39189,11 @@ function registerDispatchTools(server, engine, batchManager) {
         createWorktrees: create_worktrees
       });
       return {
-        content: [{ type: "text", text: JSON.stringify({ batch_id: batchId, status: "dispatched" }) }]
+        content: [{ type: "text", text: JSON.stringify({
+          batch_id: batchId,
+          status: "dispatched",
+          tasks: taskProviders
+        }) }]
       };
     }
   );
@@ -39854,7 +39875,7 @@ async function main() {
     const parsers = createParserRegistry();
     const engine = new DispatchEngine({ providers, parsers, projectDir });
     const batchManager = new BatchManager(engine, worktreeManager, stateManager);
-    registerDispatchTools(server, engine, batchManager);
+    registerDispatchTools(server, engine, batchManager, projectDir);
   }
   const transport = new StdioServerTransport();
   await server.connect(transport);

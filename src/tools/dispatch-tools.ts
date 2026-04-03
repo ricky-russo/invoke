@@ -2,11 +2,13 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
 import type { DispatchEngine } from '../dispatch/engine.js'
 import type { BatchManager } from '../dispatch/batch-manager.js'
+import { loadConfig } from '../config.js'
 
 export function registerDispatchTools(
   server: McpServer,
   engine: DispatchEngine,
-  batchManager: BatchManager
+  batchManager: BatchManager,
+  projectDir: string
 ): void {
   server.registerTool(
     'invoke_dispatch',
@@ -54,6 +56,25 @@ export function registerDispatchTools(
       }),
     },
     async ({ tasks, create_worktrees }) => {
+      // Read current config to report accurate provider info
+      let taskProviders: { task_id: string; providers: { provider: string; model: string; effort: string }[] }[] = []
+      try {
+        const config = await loadConfig(projectDir)
+        taskProviders = tasks.map(t => {
+          const roleConfig = config.roles[t.role]?.[t.subrole]
+          return {
+            task_id: t.task_id,
+            providers: roleConfig?.providers.map(p => ({
+              provider: p.provider,
+              model: p.model,
+              effort: p.effort,
+            })) ?? [],
+          }
+        })
+      } catch {
+        // Config read failed — return without provider info
+      }
+
       const batchId = batchManager.dispatchBatch({
         tasks: tasks.map(t => ({
           taskId: t.task_id,
@@ -65,7 +86,11 @@ export function registerDispatchTools(
       })
 
       return {
-        content: [{ type: 'text', text: JSON.stringify({ batch_id: batchId, status: 'dispatched' }) }],
+        content: [{ type: 'text', text: JSON.stringify({
+          batch_id: batchId,
+          status: 'dispatched',
+          tasks: taskProviders,
+        }) }],
       }
     }
   )

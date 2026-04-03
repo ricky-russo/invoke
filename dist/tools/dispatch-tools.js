@@ -1,5 +1,6 @@
 import { z } from 'zod';
-export function registerDispatchTools(server, engine, batchManager) {
+import { loadConfig } from '../config.js';
+export function registerDispatchTools(server, engine, batchManager, projectDir) {
     server.registerTool('invoke_dispatch', {
         description: 'Dispatch a single agent by role and subrole. Blocks until the agent completes.',
         inputSchema: z.object({
@@ -39,6 +40,25 @@ export function registerDispatchTools(server, engine, batchManager) {
             create_worktrees: z.boolean().describe('Whether to create git worktrees for each task'),
         }),
     }, async ({ tasks, create_worktrees }) => {
+        // Read current config to report accurate provider info
+        let taskProviders = [];
+        try {
+            const config = await loadConfig(projectDir);
+            taskProviders = tasks.map(t => {
+                const roleConfig = config.roles[t.role]?.[t.subrole];
+                return {
+                    task_id: t.task_id,
+                    providers: roleConfig?.providers.map(p => ({
+                        provider: p.provider,
+                        model: p.model,
+                        effort: p.effort,
+                    })) ?? [],
+                };
+            });
+        }
+        catch {
+            // Config read failed — return without provider info
+        }
         const batchId = batchManager.dispatchBatch({
             tasks: tasks.map(t => ({
                 taskId: t.task_id,
@@ -49,7 +69,11 @@ export function registerDispatchTools(server, engine, batchManager) {
             createWorktrees: create_worktrees,
         });
         return {
-            content: [{ type: 'text', text: JSON.stringify({ batch_id: batchId, status: 'dispatched' }) }],
+            content: [{ type: 'text', text: JSON.stringify({
+                        batch_id: batchId,
+                        status: 'dispatched',
+                        tasks: taskProviders,
+                    }) }],
         };
     });
     server.registerTool('invoke_get_batch_status', {
