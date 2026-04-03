@@ -84,7 +84,7 @@ const singleProviderConfig: InvokeConfig = {
   strategies: {},
   settings: {
     default_strategy: 'tdd',
-    agent_timeout: 5000,
+    agent_timeout: 5,
     commit_style: 'per-batch',
     work_branch_prefix: 'invoke/work',
   },
@@ -109,7 +109,7 @@ const multiProviderConfig: InvokeConfig = {
   strategies: {},
   settings: {
     default_strategy: 'tdd',
-    agent_timeout: 5000,
+    agent_timeout: 5,
     commit_style: 'per-batch',
     work_branch_prefix: 'invoke/work',
   },
