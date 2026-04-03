@@ -7,7 +7,12 @@ const TEST_DIR = path.join(import.meta.dirname, 'fixtures', 'prompt-test')
 
 beforeEach(async () => {
   await mkdir(path.join(TEST_DIR, '.invoke', 'roles', 'reviewer'), { recursive: true })
+  await mkdir(path.join(TEST_DIR, '.invoke', 'roles', 'test'), { recursive: true })
   await mkdir(path.join(TEST_DIR, '.invoke', 'strategies'), { recursive: true })
+  await writeFile(
+    path.join(TEST_DIR, '.invoke', 'roles', 'test', 'prompt.md'),
+    '# Test Role\n\n## Task\n{{task_description}}\n\n## Context\n{{project_context}}\n'
+  )
 })
 
 afterEach(async () => {
@@ -108,5 +113,30 @@ Review for OWASP top 10 vulnerabilities.`
         taskContext: {},
       })
     ).rejects.toThrow()
+  })
+
+  it('injects project_context from context.md when available', async () => {
+    await writeFile(
+      path.join(TEST_DIR, '.invoke', 'context.md'),
+      '# Project Context\n\n## Architecture\n\nThis is a REST API'
+    )
+
+    const result = await composePrompt({
+      projectDir: TEST_DIR,
+      promptPath: '.invoke/roles/test/prompt.md',
+      taskContext: { task_description: 'Build feature' },
+    })
+
+    expect(result).toContain('This is a REST API')
+  })
+
+  it('sets project_context to empty string when no context.md', async () => {
+    const result = await composePrompt({
+      projectDir: TEST_DIR,
+      promptPath: '.invoke/roles/test/prompt.md',
+      taskContext: { task_description: 'Build feature' },
+    })
+
+    expect(result).not.toContain('{{project_context}}')
   })
 })

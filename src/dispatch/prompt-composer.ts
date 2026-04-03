@@ -1,5 +1,8 @@
 import { readFile } from 'fs/promises'
+import { existsSync } from 'fs'
 import path from 'path'
+
+const CONTEXT_MAX_LENGTH = 4000
 
 interface ComposeOptions {
   projectDir: string
@@ -25,6 +28,17 @@ export async function composePrompt(options: ComposeOptions): Promise<string> {
     )
     composed = composed + '\n\n---\n\n' + strategyPrompt
   }
+
+  // Inject project context if available
+  const contextPath = path.join(projectDir, '.invoke', 'context.md')
+  let projectContext = ''
+  if (existsSync(contextPath)) {
+    projectContext = await readFile(contextPath, 'utf-8')
+    if (projectContext.length > CONTEXT_MAX_LENGTH) {
+      projectContext = projectContext.slice(0, CONTEXT_MAX_LENGTH) + '\n\n(truncated)'
+    }
+  }
+  composed = composed.replaceAll('{{project_context}}', projectContext)
 
   for (const [key, value] of Object.entries(taskContext)) {
     composed = composed.replaceAll(`{{${key}}}`, value)
