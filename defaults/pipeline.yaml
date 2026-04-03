@@ -84,6 +84,17 @@ roles:
           timeout: 300
 
   reviewer:
+    spec-compliance:
+      prompt: .invoke/roles/reviewer/spec-compliance.md
+      providers:
+        - provider: claude
+          model: claude-opus-4-6
+          effort: high
+          timeout: 300
+        - provider: codex
+          model: o3
+          effort: high
+          timeout: 300
     security:
       prompt: .invoke/roles/reviewer/security.md
       providers:

@@ -64,6 +64,26 @@ The post-merge validation hook will run automatically (lint, tests). If it fails
 
 Update the batch status in the pipeline state via `invoke_set_state`.
 
+#### h. Inter-Batch Review (optional)
+
+After each batch is merged and validated, ask the user if they want to run reviewers before proceeding to the next batch. Use `AskUserQuestion`:
+
+```
+AskUserQuestion({
+  questions: [{
+    question: "Batch [N] complete and merged. Run reviewers before batch [N+1]?",
+    header: "Inter-batch review",
+    multiSelect: false,
+    options: [
+      { label: "Select reviewers", description: "Choose which reviewers to dispatch against the current codebase" },
+      { label: "Skip", description: "Proceed to batch [N+1] without review" }
+    ]
+  }]
+})
+```
+
+If the user selects reviewers, present the available reviewers from `invoke_get_config` using `AskUserQuestion` with `multiSelect: true` (same as the review stage selection). Then follow the standard review flow: dispatch selected reviewers, present findings, let user triage, dispatch fix tasks if needed. Once satisfied, continue to the next batch.
+
 ### 4. Build Complete
 
 When all batches are done, update state:
