@@ -47,11 +47,24 @@ Call `invoke_get_batch_status` with the batch ID — it will wait up to 60 secon
 
 ### 5. User Triage
 
-THEN, in a separate message, ask the user to triage using `AskUserQuestion`. Do NOT combine the findings and the triage prompt.
+THEN, in a separate message, ask the user how to handle the findings using `AskUserQuestion`. Always offer bulk options first:
 
-Options:
-- **Accept** — will be sent to build agents for fixing
-- **Dismiss** — false positive or intentional, skip it
+```
+AskUserQuestion({
+  questions: [{
+    question: "[N] findings from [M] reviewers. How would you like to proceed?",
+    header: "Review triage",
+    multiSelect: false,
+    options: [
+      { label: "Fix all", description: "Accept all findings and dispatch fix agents" },
+      { label: "Dismiss all", description: "Dismiss all findings and proceed" },
+      { label: "Triage individually", description: "Review each finding and choose accept or dismiss" }
+    ]
+  }]
+})
+```
+
+If the user chooses **Triage individually**, present findings grouped by reviewer using `AskUserQuestion` with `multiSelect: true` — selected findings are accepted, unselected are dismissed. Note: `AskUserQuestion` supports max 4 options per question. If there are more than 4 findings, group into multiple questions by reviewer.
 
 ### 6. Auto-Fix Accepted Findings
 
