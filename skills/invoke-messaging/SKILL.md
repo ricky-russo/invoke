@@ -11,9 +11,11 @@ All invoke skills must follow these formatting standards when presenting informa
 
 **When asking the user to choose from options, ALWAYS use the `AskUserQuestion` tool.** Do not print formatted text and wait for free-form input. Use the tool's native UI.
 
+**IMPORTANT: AskUserQuestion requires a minimum of 2 options.** If there is only one option available (e.g., only one builder configured), **skip the selection UI entirely** — auto-select it and inform the user: "Auto-selecting [name] (only option configured)."
+
 ### Selecting Roles/Agents (researchers, planners, builders, reviewers)
 
-Use `AskUserQuestion` with `multiSelect: true`:
+Use `AskUserQuestion` with `multiSelect: true` (only when 2+ options exist):
 
 ```
 AskUserQuestion({
