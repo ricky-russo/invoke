@@ -7,25 +7,9 @@ description: "MUST USE when the user wants to build a feature, add functionality
 
 You are running the scope stage of the invoke pipeline. Your job is to produce a clear, validated spec by first dispatching researchers and then asking the user smart clarifying questions.
 
-## Messaging Rules
+## Messaging
 
-**ALWAYS use `AskUserQuestion` for user decisions.** Never print options as text and wait for free-form input. This includes clarifying questions during scoping — present them as interactive choices whenever possible.
-
-If `AskUserQuestion` requires minimum 2 options and you only have 1, auto-select it and inform the user.
-
-For dispatch output, use the compact format:
-```
-🔄 Dispatching researchers:
-  • [subrole] → [provider] ([model], [effort])
-```
-
-For stage transitions:
-```
-──────────────────────────────────────
-✅ Scope complete
-➡️  Moving to Plan
-──────────────────────────────────────
-```
+Load the `invoke-messaging` skill and follow its standards for all user-facing output — agent dispatches, progress updates, results, errors, and selection prompts. Use `AskUserQuestion` for all user decisions.
 
 ## Flow
 
