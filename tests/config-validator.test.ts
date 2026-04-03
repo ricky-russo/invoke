@@ -166,9 +166,11 @@ describe('validateConfig', () => {
     const result = await validateConfig(config, TEST_DIR)
     expect(result.valid).toBe(true) // warnings don't invalidate
     expect(result.warnings).toHaveLength(1)
-    expect(result.warnings[0].level).toBe('warning')
-    expect(result.warnings[0].message).toContain('opus-4.6')
-    expect(result.warnings[0].message).toContain('claude-opus-4-6')
+    expect(result.warnings[0]).toEqual(expect.objectContaining({
+      level: 'warning',
+      path: 'roles.reviewer.security.providers[0].model',
+      suggestion: "Did you mean 'claude-opus-4-6'?",
+    }))
   })
 
   it('returns an error for a missing prompt file', async () => {
@@ -177,9 +179,10 @@ describe('validateConfig', () => {
 
     const result = await validateConfig(config, TEST_DIR)
     expect(result.valid).toBe(false)
-    const errors = result.warnings.filter(w => w.level === 'error')
-    expect(errors.length).toBeGreaterThan(0)
-    expect(errors[0].message).toContain('missing-prompt.md')
+    expect(result.warnings).toContainEqual(expect.objectContaining({
+      level: 'error',
+      path: 'roles.reviewer.security.prompt',
+    }))
   })
 
   it('returns an error for an undefined provider reference in a role', async () => {
@@ -188,9 +191,11 @@ describe('validateConfig', () => {
 
     const result = await validateConfig(config, TEST_DIR)
     expect(result.valid).toBe(false)
-    const errors = result.warnings.filter(w => w.level === 'error')
-    expect(errors.length).toBeGreaterThan(0)
-    expect(errors[0].message).toContain('nonexistent-provider')
+    expect(result.warnings).toContainEqual(expect.objectContaining({
+      level: 'error',
+      path: 'roles.reviewer.security.providers[0].provider',
+      message: expect.stringContaining('nonexistent-provider'),
+    }))
   })
 
   it('returns an error for an invalid default_strategy', async () => {
@@ -199,9 +204,10 @@ describe('validateConfig', () => {
 
     const result = await validateConfig(config, TEST_DIR)
     expect(result.valid).toBe(false)
-    const errors = result.warnings.filter(w => w.level === 'error')
-    expect(errors.length).toBeGreaterThan(0)
-    expect(errors[0].message).toContain('nonexistent-strategy')
+    expect(result.warnings).toContainEqual(expect.objectContaining({
+      level: 'error',
+      path: 'settings.default_strategy',
+    }))
   })
 
   it('returns an error for a missing CLI', async () => {
@@ -210,8 +216,9 @@ describe('validateConfig', () => {
 
     const result = await validateConfig(config, TEST_DIR)
     expect(result.valid).toBe(false)
-    const errors = result.warnings.filter(w => w.level === 'error')
-    expect(errors.length).toBeGreaterThan(0)
-    expect(errors[0].message).toContain('nonexistent-cli-that-does-not-exist-xyz')
+    expect(result.warnings).toContainEqual(expect.objectContaining({
+      level: 'error',
+      path: 'providers.claude.cli',
+    }))
   })
 })

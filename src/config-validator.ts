@@ -9,7 +9,9 @@ import type { InvokeConfig } from './types.js'
 
 export interface ValidationWarning {
   level: 'error' | 'warning'
+  path: string
   message: string
+  suggestion?: string
 }
 
 export interface ValidationResult {
@@ -33,13 +35,19 @@ const MODEL_PATTERNS: Record<string, RegExp[]> = {
   ],
 }
 
-export const MODEL_SUGGESTIONS: Record<string, string> = {
-  'opus-4.6': 'claude-opus-4-6',
-  'sonnet-4.6': 'claude-sonnet-4-6',
-  'haiku-4.5': 'claude-haiku-4-5',
-  'opus-4': 'claude-opus-4',
-  'sonnet-4': 'claude-sonnet-4',
-  'haiku-3-5': 'claude-haiku-3-5',
+const MODEL_SUGGESTIONS: Record<string, Record<string, string>> = {
+  claude: {
+    'opus-4.6': 'claude-opus-4-6',
+    'opus-4-6': 'claude-opus-4-6',
+    'sonnet-4.6': 'claude-sonnet-4-6',
+    'sonnet-4-6': 'claude-sonnet-4-6',
+    'haiku-4.5': 'claude-haiku-4-5-20251001',
+    'claude opus': 'opus',
+    'claude sonnet': 'sonnet',
+  },
+  codex: {
+    'gpt-5.4': 'gpt-4.1',
+  },
 }
 
 // ---------------------------------------------------------------------------
@@ -72,8 +80,10 @@ export function checkCliExists(cli: string): boolean {
 // suggestModel (private helper)
 // ---------------------------------------------------------------------------
 
-function suggestModel(_provider: string, model: string): string | undefined {
-  return MODEL_SUGGESTIONS[model]
+function suggestModel(provider: string, model: string): string | undefined {
+  const suggestions = MODEL_SUGGESTIONS[provider]
+  if (!suggestions) return undefined
+  return suggestions[model]
 }
 
 // ---------------------------------------------------------------------------
@@ -91,7 +101,9 @@ export async function validateConfig(
     if (!checkCliExists(providerConfig.cli)) {
       warnings.push({
         level: 'error',
-        message: `Provider '${providerName}': CLI '${providerConfig.cli}' not found on PATH`,
+        path: `providers.${providerName}.cli`,
+        message: `CLI '${providerConfig.cli}' not found on PATH.`,
+        suggestion: `Install '${providerConfig.cli}' or update the provider config.`,
       })
     }
   }
@@ -102,14 +114,16 @@ export async function validateConfig(
     const available = Object.keys(config.strategies).join(', ')
     warnings.push({
       level: 'error',
-      message: `default_strategy '${defaultStrategy}' is not defined in strategies. Available: ${available || '(none)'}`,
+      path: 'settings.default_strategy',
+      message: `Default strategy '${defaultStrategy}' not found in strategies.`,
+      suggestion: `Available strategies: ${available}`,
     })
   }
 
   // 3–5. Per-role checks
   for (const [roleGroup, subroles] of Object.entries(config.roles)) {
     for (const [subroleName, roleConfig] of Object.entries(subroles)) {
-      const roleLabel = `${roleGroup}.${subroleName}`
+      const rolePath = `roles.${roleGroup}.${subroleName}`
 
       // 3. Prompt file exists on disk
       const promptPath = path.isAbsolute(roleConfig.prompt)
@@ -121,28 +135,34 @@ export async function validateConfig(
       } catch {
         warnings.push({
           level: 'error',
-          message: `Role '${roleLabel}': prompt file '${roleConfig.prompt}' does not exist`,
+          path: `${rolePath}.prompt`,
+          message: `Prompt file '${roleConfig.prompt}' not found.`,
         })
       }
 
       // 4 & 5. Per-provider-entry checks
-      for (const entry of roleConfig.providers) {
+      for (let i = 0; i < roleConfig.providers.length; i++) {
+        const entry = roleConfig.providers[i]
+        const entryPath = `${rolePath}.providers[${i}]`
+
         // 4. Provider name exists in config.providers
         if (!config.providers[entry.provider]) {
-          const available = Object.keys(config.providers).join(', ')
           warnings.push({
             level: 'error',
-            message: `Role '${roleLabel}': provider '${entry.provider}' is not defined in providers. Available: ${available || '(none)'}`,
+            path: `${entryPath}.provider`,
+            message: `Provider '${entry.provider}' is not defined in providers.`,
+            suggestion: `Available providers: ${Object.keys(config.providers).join(', ')}`,
           })
         }
 
         // 5. Model matches provider patterns
         if (!isValidModelForProvider(entry.provider, entry.model)) {
           const suggestion = suggestModel(entry.provider, entry.model)
-          const hint = suggestion ? ` Did you mean '${suggestion}'?` : ''
           warnings.push({
             level: 'warning',
-            message: `Role '${roleLabel}': model '${entry.model}' does not match known patterns for provider '${entry.provider}'.${hint}`,
+            path: `${entryPath}.model`,
+            message: `Model '${entry.model}' is not a recognized ${entry.provider} model format.`,
+            suggestion: suggestion ? `Did you mean '${suggestion}'?` : undefined,
           })
         }
       }
