@@ -27,6 +27,7 @@ export interface Settings {
   commit_style: 'one-commit' | 'per-batch' | 'per-task' | 'custom'
   work_branch_prefix: string
   post_merge_commands?: string[]
+  max_parallel_agents?: number
 }
 
 export interface InvokeConfig {
@@ -81,6 +82,7 @@ export interface FileChange {
 export interface BatchRequest {
   tasks: BatchTask[]
   createWorktrees: boolean
+  maxParallel?: number
 }
 
 export interface BatchTask {

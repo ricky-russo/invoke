@@ -31,6 +31,7 @@ const SettingsSchema = z.object({
     commit_style: z.enum(['one-commit', 'per-batch', 'per-task', 'custom']),
     work_branch_prefix: z.string(),
     post_merge_commands: z.array(z.string()).optional(),
+    max_parallel_agents: z.number().positive().optional(),
 });
 const RawInvokeConfigSchema = z.object({
     providers: z.record(z.string(), ProviderConfigSchema),

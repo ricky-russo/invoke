@@ -128,3 +128,5 @@ settings:
   # post_merge_commands:
   #   - composer install
   #   - npm install
+  # Maximum agents to run in parallel per batch (0 or omit for unlimited):
+  # max_parallel_agents: 4
