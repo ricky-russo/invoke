@@ -34,6 +34,27 @@ export class WorktreeManager {
       throw new Error(`No worktree found for task: ${taskId}`)
     }
 
+    // Auto-commit any uncommitted changes in the worktree
+    // (agents in sandboxed environments may not be able to commit)
+    try {
+      execSync('git add -A', { cwd: info.worktreePath, stdio: 'pipe' })
+      execSync(
+        `git diff --cached --quiet`,
+        { cwd: info.worktreePath, stdio: 'pipe' }
+      )
+      // If diff --quiet exits 0, there are no staged changes — nothing to commit
+    } catch {
+      // diff --quiet exits 1 when there ARE staged changes — commit them
+      try {
+        execSync(
+          `git commit -m "agent work: ${taskId}"`,
+          { cwd: info.worktreePath, stdio: 'pipe' }
+        )
+      } catch {
+        // Commit might fail if there's truly nothing to commit
+      }
+    }
+
     execSync(
       `git merge --squash "${info.branch}"`,
       { cwd: this.repoDir, stdio: 'pipe' }

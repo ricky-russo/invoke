@@ -66,6 +66,18 @@ describe('WorktreeManager', () => {
     expect(parentCount).toBe(1)
   })
 
+  it('auto-commits uncommitted worktree changes before merge (sandbox agents)', async () => {
+    execSync('git checkout -b work-branch-sandbox', { cwd: repoDir })
+
+    const wt = await manager.create('task-sandbox')
+    // Simulate agent writing a file without committing (sandbox restriction)
+    await writeFile(path.join(wt.worktreePath, 'sandbox-file.ts'), 'export const z = 3')
+
+    await manager.merge('task-sandbox')
+
+    expect(existsSync(path.join(repoDir, 'sandbox-file.ts'))).toBe(true)
+  })
+
   it('uses a custom commit message when provided', async () => {
     execSync('git checkout -b work-branch-custom', { cwd: repoDir })
 
