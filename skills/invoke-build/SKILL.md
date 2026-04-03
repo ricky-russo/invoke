@@ -35,7 +35,7 @@ Call `invoke_dispatch_batch` with:
 - `tasks`: the batch's tasks with their task_context
 - `create_worktrees: true`
 
-Each task's prompt is composed by the MCP from the builder role template + strategy template + task context.
+The response includes the **resolved provider/model/effort** for each task (read from the current pipeline.yaml). Use this info for your dispatch message — do NOT guess the provider before the tool returns. Display the dispatch summary AFTER receiving the response.
 
 #### c. Monitor Progress
 
