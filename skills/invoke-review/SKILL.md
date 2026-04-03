@@ -55,6 +55,8 @@ Options:
 
 ### 6. Auto-Fix Accepted Findings
 
+**ALWAYS dispatch builder agents for fixes — NEVER fix code directly in the session.** Fixing directly bypasses the pipeline (no worktrees, no state tracking, no validation).
+
 Bundle accepted findings as fix tasks. For each finding, create a task:
 - `task_description`: the finding details + suggestion
 - `acceptance_criteria`: the specific fix expected
@@ -62,7 +64,7 @@ Bundle accepted findings as fix tasks. For each finding, create a task:
 
 Dispatch fix tasks using `invoke_dispatch_batch` with `create_worktrees: true`.
 
-Poll, collect results, merge — same flow as build stage.
+Call `invoke_get_batch_status` to wait for completion. Merge worktrees, run post-merge commands, validate — same flow as a regular build batch.
 
 ### 7. Next Cycle
 

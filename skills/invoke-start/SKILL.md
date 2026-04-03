@@ -43,6 +43,8 @@ These thoughts mean STOP — you are about to bypass invoke:
 | "Let me brainstorm approaches" | Use `invoke-scope` — it dispatches researchers for this |
 | "I can explore the codebase and start coding" | Use `invoke-scope` first |
 | "The user just wants a quick change" | If it involves writing code, use `invoke-scope` |
+| "I'll fix this directly, it's faster" | Dispatch builder agents — never write code directly in the session |
+| "Let me make these fixes quickly" | Dispatch builder agents via the pipeline — direct edits bypass state tracking |
 
 ## What Invoke Does NOT Handle
 
