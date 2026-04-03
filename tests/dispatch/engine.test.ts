@@ -153,7 +153,6 @@ describe('DispatchEngine', () => {
     const providers = new Map([['claude', mockProvider]])
     const parsers = new Map([['claude', mockParser]])
     const engine = new DispatchEngine({
-      config: singleProviderConfig,
       providers,
       parsers,
       projectDir: '/tmp/test-project',
@@ -176,7 +175,7 @@ describe('DispatchEngine', () => {
     const providers = new Map([['claude', mockProvider], ['codex', mockCodexProvider]])
     const parsers = new Map([['claude', mockParser], ['codex', mockCodexParser]])
     const engine = new DispatchEngine({
-      config: multiProviderConfig,
+      // config loaded via mocked loadConfig
       providers,
       parsers,
       projectDir: '/tmp/test-project',
@@ -213,7 +212,7 @@ describe('DispatchEngine', () => {
     const providers = new Map([['claude', mockProvider]])
     const parsers = new Map([['claude', mockParser]])
     const engine = new DispatchEngine({
-      config: configWithEntryTimeout,
+      // config loaded via mocked loadConfig
       providers,
       parsers,
       projectDir: '/tmp/test-project',
@@ -234,7 +233,6 @@ describe('DispatchEngine', () => {
     const providers = new Map([['claude', mockProvider]])
     const parsers = new Map([['claude', mockParser]])
     const engine = new DispatchEngine({
-      config: singleProviderConfig,
       providers,
       parsers,
       projectDir: '/tmp/test-project',
@@ -265,7 +263,7 @@ describe('DispatchEngine', () => {
     vi.mocked(loadConfig).mockResolvedValue(badConfig)
 
     const engine = new DispatchEngine({
-      config: badConfig,
+      // config loaded via mocked loadConfig
       providers: new Map([['claude', mockProvider]]),
       parsers: new Map([['claude', mockParser]]),
       projectDir: '/tmp/test',
@@ -282,7 +280,6 @@ describe('DispatchEngine', () => {
     const providers = new Map([['claude', mockProvider]])
     const parsers = new Map([['claude', mockParser]])
     const engine = new DispatchEngine({
-      config: singleProviderConfig,
       providers,
       parsers,
       projectDir: '/tmp/test-project',

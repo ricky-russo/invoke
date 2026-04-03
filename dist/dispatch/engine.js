@@ -1,19 +1,20 @@
 import { spawn } from 'child_process';
 import { composePrompt } from './prompt-composer.js';
 import { mergeFindings } from './merge-findings.js';
+import { loadConfig } from '../config.js';
 export class DispatchEngine {
-    config;
     providers;
     parsers;
     projectDir;
     constructor(options) {
-        this.config = options.config;
         this.providers = options.providers;
         this.parsers = options.parsers;
         this.projectDir = options.projectDir;
     }
     async dispatch(request) {
-        const roleConfig = this.config.roles[request.role]?.[request.subrole];
+        // Re-read config on every dispatch to pick up mid-session edits
+        const config = await loadConfig(this.projectDir);
+        const roleConfig = config.roles[request.role]?.[request.subrole];
         if (!roleConfig) {
             throw new Error(`Role not found: ${request.role}.${request.subrole}`);
         }
@@ -24,7 +25,7 @@ export class DispatchEngine {
         });
         const workDir = request.workDir ?? this.projectDir;
         // Dispatch to all providers in parallel
-        const resultPromises = roleConfig.providers.map(entry => this.dispatchToProvider(entry, prompt, workDir, request));
+        const resultPromises = roleConfig.providers.map(entry => this.dispatchToProvider(entry, prompt, workDir, request, config));
         const results = await Promise.all(resultPromises);
         // Single provider — return directly
         if (results.length === 1) {
@@ -33,7 +34,7 @@ export class DispatchEngine {
         // Multiple providers — merge results
         return this.mergeResults(results, request);
     }
-    async dispatchToProvider(entry, prompt, workDir, request) {
+    async dispatchToProvider(entry, prompt, workDir, request, config) {
         const provider = this.providers.get(entry.provider);
         if (!provider) {
             throw new Error(`Provider not found: ${entry.provider}. Is the CLI installed?`);
@@ -49,7 +50,7 @@ export class DispatchEngine {
             prompt,
         });
         const startTime = Date.now();
-        const timeoutSeconds = entry.timeout ?? this.config.settings.agent_timeout;
+        const timeoutSeconds = entry.timeout ?? config.settings.agent_timeout;
         const { stdout, stderr, exitCode } = await this.runProcess(commandSpec.cmd, commandSpec.args, timeoutSeconds * 1000, commandSpec.cwd);
         const duration = Date.now() - startTime;
         // Use stderr for diagnostics when stdout is empty or command failed

@@ -86,7 +86,7 @@ async function main() {
   if (config) {
     const providers = createProviderRegistry(config.providers)
     const parsers = createParserRegistry()
-    const engine = new DispatchEngine({ config, providers, parsers, projectDir })
+    const engine = new DispatchEngine({ providers, parsers, projectDir })
     const batchManager = new BatchManager(engine, worktreeManager, stateManager)
     registerDispatchTools(server, engine, batchManager)
   }

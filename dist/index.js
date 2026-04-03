@@ -38497,19 +38497,19 @@ function wordOverlap(textA, textB) {
 }
 
 // src/dispatch/engine.ts
+init_config();
 var DispatchEngine = class {
-  config;
   providers;
   parsers;
   projectDir;
   constructor(options) {
-    this.config = options.config;
     this.providers = options.providers;
     this.parsers = options.parsers;
     this.projectDir = options.projectDir;
   }
   async dispatch(request) {
-    const roleConfig = this.config.roles[request.role]?.[request.subrole];
+    const config2 = await loadConfig(this.projectDir);
+    const roleConfig = config2.roles[request.role]?.[request.subrole];
     if (!roleConfig) {
       throw new Error(`Role not found: ${request.role}.${request.subrole}`);
     }
@@ -38520,7 +38520,7 @@ var DispatchEngine = class {
     });
     const workDir = request.workDir ?? this.projectDir;
     const resultPromises = roleConfig.providers.map(
-      (entry) => this.dispatchToProvider(entry, prompt, workDir, request)
+      (entry) => this.dispatchToProvider(entry, prompt, workDir, request, config2)
     );
     const results = await Promise.all(resultPromises);
     if (results.length === 1) {
@@ -38528,7 +38528,7 @@ var DispatchEngine = class {
     }
     return this.mergeResults(results, request);
   }
-  async dispatchToProvider(entry, prompt, workDir, request) {
+  async dispatchToProvider(entry, prompt, workDir, request, config2) {
     const provider = this.providers.get(entry.provider);
     if (!provider) {
       throw new Error(`Provider not found: ${entry.provider}. Is the CLI installed?`);
@@ -38544,7 +38544,7 @@ var DispatchEngine = class {
       prompt
     });
     const startTime = Date.now();
-    const timeoutSeconds = entry.timeout ?? this.config.settings.agent_timeout;
+    const timeoutSeconds = entry.timeout ?? config2.settings.agent_timeout;
     const { stdout, stderr, exitCode } = await this.runProcess(
       commandSpec.cmd,
       commandSpec.args,
@@ -39837,7 +39837,7 @@ async function main() {
   if (config2) {
     const providers = createProviderRegistry(config2.providers);
     const parsers = createParserRegistry();
-    const engine = new DispatchEngine({ config: config2, providers, parsers, projectDir });
+    const engine = new DispatchEngine({ providers, parsers, projectDir });
     const batchManager = new BatchManager(engine, worktreeManager, stateManager);
     registerDispatchTools(server, engine, batchManager);
   }

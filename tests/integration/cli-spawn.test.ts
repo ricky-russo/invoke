@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { mkdir, writeFile, rm } from 'fs/promises'
 import path from 'path'
+import { stringify } from 'yaml'
 import { DispatchEngine } from '../../src/dispatch/engine.js'
 import { ClaudeParser } from '../../src/parsers/claude-parser.js'
 import type { Provider, CommandSpec } from '../../src/providers/base.js'
@@ -66,6 +67,13 @@ async function setupTestDir(extraDirs: string[] = []): Promise<void> {
   )
 }
 
+async function writeConfigToDisk(config: InvokeConfig): Promise<void> {
+  await writeFile(
+    path.join(TEST_DIR, '.invoke', 'pipeline.yaml'),
+    stringify(config)
+  )
+}
+
 beforeEach(async () => {
   await setupTestDir()
 })
@@ -89,12 +97,12 @@ describe('CLI Spawn Integration Tests', () => {
     const providers = new Map([['echo', provider]])
 
     const engine = new DispatchEngine({
-      config,
       providers,
       parsers,
       projectDir: TEST_DIR,
     })
 
+    await writeConfigToDisk(config)
     const result = await engine.dispatch({
       role: 'researcher',
       subrole: 'default',
@@ -139,12 +147,12 @@ describe('CLI Spawn Integration Tests', () => {
     const providers = new Map([['printf', provider]])
 
     const engine = new DispatchEngine({
-      config,
       providers,
       parsers,
       projectDir: TEST_DIR,
     })
 
+    await writeConfigToDisk(config)
     const result = await engine.dispatch({
       role: 'reviewer',
       subrole: 'security',
@@ -179,12 +187,12 @@ describe('CLI Spawn Integration Tests', () => {
     const providers = new Map([['sh', provider]])
 
     const engine = new DispatchEngine({
-      config,
       providers,
       parsers,
       projectDir: TEST_DIR,
     })
 
+    await writeConfigToDisk(config)
     const result = await engine.dispatch({
       role: 'researcher',
       subrole: 'default',
@@ -211,12 +219,12 @@ describe('CLI Spawn Integration Tests', () => {
     const providers = new Map([['sleep', provider]])
 
     const engine = new DispatchEngine({
-      config,
       providers,
       parsers,
       projectDir: TEST_DIR,
     })
 
+    await writeConfigToDisk(config)
     const start = Date.now()
     const result = await engine.dispatch({
       role: 'researcher',

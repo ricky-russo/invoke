@@ -7,7 +7,6 @@ import { mergeFindings } from './merge-findings.js'
 import { loadConfig } from '../config.js'
 
 interface DispatchEngineOptions {
-  config: InvokeConfig
   providers: Map<string, Provider>
   parsers: Map<string, Parser>
   projectDir: string
