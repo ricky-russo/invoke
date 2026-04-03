@@ -8,7 +8,7 @@ providers:
     args: ["--print", "--model", "{{model}}", "--dangerously-skip-permissions"]
   codex:
     cli: codex
-    args: ["--model", "{{model}}", "--reasoning-effort", "{{effort}}", "--full-auto"]
+    args: ["exec", "--model", "{{model}}", "--full-auto", "-c", "reasoning_effort={{effort}}"]
 
 roles:
   researcher:
