@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { WorktreeManager } from '../../src/worktree/manager.js'
 import { execSync } from 'child_process'
 import { mkdtemp, rm, writeFile } from 'fs/promises'
-import { existsSync } from 'fs'
+import { existsSync, realpathSync } from 'fs'
 import path from 'path'
 import os from 'os'
 
@@ -71,5 +71,44 @@ describe('WorktreeManager', () => {
     expect(active).toHaveLength(2)
     expect(active.map(a => a.taskId)).toContain('task-1')
     expect(active.map(a => a.taskId)).toContain('task-2')
+  })
+})
+
+describe('discoverOrphaned', () => {
+  it('returns empty array when no invoke worktrees exist', async () => {
+    const orphaned = await manager.discoverOrphaned()
+    expect(orphaned).toEqual([])
+  })
+
+  it('returns worktrees on disk not tracked in memory', async () => {
+    const wt = await manager.create('task-orphan')
+    const worktreePath = wt.worktreePath
+
+    // Simulate orphan: remove from in-memory tracking without cleaning up disk
+    await manager.cleanup('task-orphan')
+
+    // Re-create the worktree directly via git (bypassing the manager) to simulate orphan
+    execSync(
+      `git worktree add "${worktreePath}" -b "invoke-wt-task-orphan"`,
+      { cwd: repoDir, stdio: 'pipe' }
+    )
+
+    try {
+      const orphaned = await manager.discoverOrphaned()
+      expect(orphaned).toHaveLength(1)
+      expect(orphaned[0].taskId).toBe('task-orphan')
+      expect(orphaned[0].branch).toBe('invoke-wt-task-orphan')
+      expect(realpathSync(orphaned[0].worktreePath)).toBe(realpathSync(worktreePath))
+    } finally {
+      execSync(`git worktree remove "${worktreePath}" --force`, { cwd: repoDir, stdio: 'pipe' })
+      execSync('git branch -D "invoke-wt-task-orphan"', { cwd: repoDir, stdio: 'pipe' })
+    }
+  })
+
+  it('does not return worktrees already tracked in memory', async () => {
+    await manager.create('task-tracked')
+
+    const orphaned = await manager.discoverOrphaned()
+    expect(orphaned.find(o => o.taskId === 'task-tracked')).toBeUndefined()
   })
 })

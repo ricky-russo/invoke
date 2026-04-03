@@ -72,4 +72,40 @@ export class WorktreeManager {
   listActive(): WorktreeInfo[] {
     return [...this.worktrees.values()]
   }
+
+  async discoverOrphaned(): Promise<WorktreeInfo[]> {
+    try {
+      const output = execSync('git worktree list --porcelain', {
+        cwd: this.repoDir,
+        stdio: 'pipe',
+      }).toString()
+
+      const orphaned: WorktreeInfo[] = []
+      const blocks = output.split('\n\n').filter(Boolean)
+
+      for (const block of blocks) {
+        const lines = block.split('\n')
+        const worktreeLine = lines.find(l => l.startsWith('worktree '))
+        const branchLine = lines.find(l => l.startsWith('branch '))
+
+        if (!worktreeLine || !branchLine) continue
+
+        const worktreePath = worktreeLine.replace('worktree ', '')
+        const fullBranch = branchLine.replace('branch ', '')
+        const branch = fullBranch.replace('refs/heads/', '')
+
+        if (!branch.startsWith('invoke-wt-')) continue
+
+        const taskId = branch.replace('invoke-wt-', '')
+
+        if (this.worktrees.has(taskId)) continue
+
+        orphaned.push({ taskId, worktreePath, branch })
+      }
+
+      return orphaned
+    } catch {
+      return []
+    }
+  }
 }
