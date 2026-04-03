@@ -1,0 +1,17 @@
+{
+  "name": "invoke",
+  "description": "AI-assisted development pipeline — scope, plan, orchestrate, build, review with multi-provider agent dispatch",
+  "version": "0.1.0",
+  "author": {
+    "name": "Ricky Russo"
+  },
+  "license": "MIT",
+  "keywords": [
+    "pipeline",
+    "agents",
+    "multi-provider",
+    "code-review",
+    "orchestration",
+    "mcp"
+  ]
+}

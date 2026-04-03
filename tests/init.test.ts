@@ -15,8 +15,6 @@ afterEach(async () => {
 })
 
 describe('initProject', () => {
-  // --- .invoke/ directory ---
-
   it('creates .invoke directory with pipeline.yaml', async () => {
     await initProject(TEST_DIR)
 
@@ -66,164 +64,21 @@ describe('initProject', () => {
     expect(config).toContain('custom-ai')
   })
 
-  // --- Skills installation ---
+  it('does not overwrite existing role prompts', async () => {
+    await mkdir(path.join(TEST_DIR, '.invoke', 'roles', 'reviewer'), { recursive: true })
+    await writeFile(path.join(TEST_DIR, '.invoke', 'roles', 'reviewer', 'security.md'), '# Custom security prompt')
 
-  it('installs skills to .claude/skills/<name>/SKILL.md', async () => {
     await initProject(TEST_DIR)
 
-    expect(existsSync(path.join(TEST_DIR, '.claude', 'skills', 'invoke-scope', 'SKILL.md'))).toBe(true)
-    expect(existsSync(path.join(TEST_DIR, '.claude', 'skills', 'invoke-plan', 'SKILL.md'))).toBe(true)
-    expect(existsSync(path.join(TEST_DIR, '.claude', 'skills', 'invoke-build', 'SKILL.md'))).toBe(true)
-    expect(existsSync(path.join(TEST_DIR, '.claude', 'skills', 'invoke-review', 'SKILL.md'))).toBe(true)
-    expect(existsSync(path.join(TEST_DIR, '.claude', 'skills', 'invoke-resume', 'SKILL.md'))).toBe(true)
-    expect(existsSync(path.join(TEST_DIR, '.claude', 'skills', 'invoke-manage', 'SKILL.md'))).toBe(true)
-    expect(existsSync(path.join(TEST_DIR, '.claude', 'skills', 'invoke-messaging', 'SKILL.md'))).toBe(true)
-    expect(existsSync(path.join(TEST_DIR, '.claude', 'skills', 'invoke-orchestrate', 'SKILL.md'))).toBe(true)
+    const content = await readFile(path.join(TEST_DIR, '.invoke', 'roles', 'reviewer', 'security.md'), 'utf-8')
+    expect(content).toBe('# Custom security prompt')
   })
 
-  it('skill files contain valid frontmatter', async () => {
+  it('does not create .claude directory or CLAUDE.md', async () => {
     await initProject(TEST_DIR)
 
-    const content = await readFile(path.join(TEST_DIR, '.claude', 'skills', 'invoke-scope', 'SKILL.md'), 'utf-8')
-    expect(content).toContain('name: invoke-scope')
-    expect(content).toContain('description:')
-  })
-
-  it('does not overwrite existing skills', async () => {
-    const skillDir = path.join(TEST_DIR, '.claude', 'skills', 'invoke-scope')
-    await mkdir(skillDir, { recursive: true })
-    await writeFile(path.join(skillDir, 'SKILL.md'), '# Custom skill content')
-
-    await initProject(TEST_DIR)
-
-    const content = await readFile(path.join(skillDir, 'SKILL.md'), 'utf-8')
-    expect(content).toBe('# Custom skill content')
-  })
-
-  // --- MCP server registration ---
-
-  it('creates .mcp.json with invoke server', async () => {
-    await initProject(TEST_DIR)
-
-    expect(existsSync(path.join(TEST_DIR, '.mcp.json'))).toBe(true)
-
-    const mcpConfig = JSON.parse(await readFile(path.join(TEST_DIR, '.mcp.json'), 'utf-8'))
-    expect(mcpConfig.mcpServers.invoke).toBeTruthy()
-    expect(mcpConfig.mcpServers.invoke.command).toBe('invoke-mcp')
-  })
-
-  it('does not overwrite existing .mcp.json entries', async () => {
-    await writeFile(path.join(TEST_DIR, '.mcp.json'), JSON.stringify({
-      mcpServers: {
-        'other-server': { command: 'other', args: [] },
-      },
-    }))
-
-    await initProject(TEST_DIR)
-
-    const mcpConfig = JSON.parse(await readFile(path.join(TEST_DIR, '.mcp.json'), 'utf-8'))
-    expect(mcpConfig.mcpServers['other-server']).toBeTruthy()
-    expect(mcpConfig.mcpServers.invoke).toBeTruthy()
-  })
-
-  it('does not overwrite existing invoke MCP entry', async () => {
-    await writeFile(path.join(TEST_DIR, '.mcp.json'), JSON.stringify({
-      mcpServers: {
-        invoke: { command: 'custom-invoke', args: ['--custom'] },
-      },
-    }))
-
-    await initProject(TEST_DIR)
-
-    const mcpConfig = JSON.parse(await readFile(path.join(TEST_DIR, '.mcp.json'), 'utf-8'))
-    expect(mcpConfig.mcpServers.invoke.command).toBe('custom-invoke')
-  })
-
-  // --- Hooks installation ---
-
-  it('installs hooks in .claude/settings.json', async () => {
-    await initProject(TEST_DIR)
-
-    expect(existsSync(path.join(TEST_DIR, '.claude', 'settings.json'))).toBe(true)
-
-    const settings = JSON.parse(await readFile(path.join(TEST_DIR, '.claude', 'settings.json'), 'utf-8'))
-    expect(settings.hooks).toBeTruthy()
-    expect(settings.hooks.SessionStart).toBeTruthy()
-    expect(settings.hooks.PostToolUse).toBeTruthy()
-  })
-
-  it('SessionStart hook references session-start.js', async () => {
-    await initProject(TEST_DIR)
-
-    const settings = JSON.parse(await readFile(path.join(TEST_DIR, '.claude', 'settings.json'), 'utf-8'))
-    const sessionHook = settings.hooks.SessionStart[0].hooks[0]
-    expect(sessionHook.type).toBe('command')
-    expect(sessionHook.command).toContain('session-start.js')
-  })
-
-  it('PostToolUse hook matches invoke_merge_worktree', async () => {
-    await initProject(TEST_DIR)
-
-    const settings = JSON.parse(await readFile(path.join(TEST_DIR, '.claude', 'settings.json'), 'utf-8'))
-    const postHook = settings.hooks.PostToolUse[0]
-    expect(postHook.matcher).toContain('invoke_merge_worktree')
-  })
-
-  it('does not overwrite existing hooks', async () => {
-    await mkdir(path.join(TEST_DIR, '.claude'), { recursive: true })
-    await writeFile(path.join(TEST_DIR, '.claude', 'settings.json'), JSON.stringify({
-      hooks: {
-        SessionStart: [{ matcher: '', hooks: [{ type: 'command', command: 'echo custom' }] }],
-      },
-    }))
-
-    await initProject(TEST_DIR)
-
-    const settings = JSON.parse(await readFile(path.join(TEST_DIR, '.claude', 'settings.json'), 'utf-8'))
-    expect(settings.hooks.SessionStart[0].hooks[0].command).toBe('echo custom')
-    // PostToolUse should still be added
-    expect(settings.hooks.PostToolUse).toBeTruthy()
-  })
-
-  // --- CLAUDE.md ---
-
-  it('creates CLAUDE.md with invoke directives', async () => {
-    await initProject(TEST_DIR)
-
-    expect(existsSync(path.join(TEST_DIR, 'CLAUDE.md'))).toBe(true)
-
-    const content = await readFile(path.join(TEST_DIR, 'CLAUDE.md'), 'utf-8')
-    expect(content).toContain('# Invoke Pipeline')
-    expect(content).toContain('invoke-manage')
-    expect(content).toContain('invoke-scope')
-  })
-
-  it('appends to existing CLAUDE.md without duplicating', async () => {
-    await writeFile(path.join(TEST_DIR, 'CLAUDE.md'), '# My Project\n\nExisting content here.')
-
-    await initProject(TEST_DIR)
-
-    const content = await readFile(path.join(TEST_DIR, 'CLAUDE.md'), 'utf-8')
-    expect(content).toContain('# My Project')
-    expect(content).toContain('# Invoke Pipeline')
-
-    // Run again — should not duplicate
-    await initProject(TEST_DIR)
-    const content2 = await readFile(path.join(TEST_DIR, 'CLAUDE.md'), 'utf-8')
-    const count = (content2.match(/# Invoke Pipeline/g) || []).length
-    expect(count).toBe(1)
-  })
-
-  it('preserves existing settings when adding hooks', async () => {
-    await mkdir(path.join(TEST_DIR, '.claude'), { recursive: true })
-    await writeFile(path.join(TEST_DIR, '.claude', 'settings.json'), JSON.stringify({
-      permissions: { allow: ['Bash(npm *)'] },
-    }))
-
-    await initProject(TEST_DIR)
-
-    const settings = JSON.parse(await readFile(path.join(TEST_DIR, '.claude', 'settings.json'), 'utf-8'))
-    expect(settings.permissions.allow).toContain('Bash(npm *)')
-    expect(settings.hooks).toBeTruthy()
+    expect(existsSync(path.join(TEST_DIR, '.claude'))).toBe(false)
+    expect(existsSync(path.join(TEST_DIR, 'CLAUDE.md'))).toBe(false)
+    expect(existsSync(path.join(TEST_DIR, '.mcp.json'))).toBe(false)
   })
 })

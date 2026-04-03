@@ -4,23 +4,23 @@ import { initProject } from './init.js'
 
 const projectDir = process.argv[2] || process.cwd()
 
-console.log(`Initializing invoke in ${projectDir}...`)
+console.log(`Initializing invoke project config in ${projectDir}...`)
 
 initProject(projectDir)
   .then(() => {
     console.log('')
-    console.log('invoke installed successfully!')
+    console.log('invoke project config created!')
     console.log('')
     console.log('What was set up:')
-    console.log('  .invoke/              Pipeline config, roles, strategies')
-    console.log('  .claude/skills/       Invoke pipeline skills (auto-discovered)')
-    console.log('  .mcp.json             MCP server registration')
-    console.log('  .claude/settings.json Hooks (auto-resume, post-merge validation)')
-    console.log('  CLAUDE.md             Enforces invoke skill usage')
+    console.log('  .invoke/pipeline.yaml  Pipeline config (providers, roles, strategies)')
+    console.log('  .invoke/roles/         Default role prompts')
+    console.log('  .invoke/strategies/    Default strategy prompts')
+    console.log('  .invoke/specs/         Output directory for specs')
+    console.log('  .invoke/plans/         Output directory for plans')
+    console.log('  .invoke/reviews/       Output directory for reviews')
     console.log('')
-    console.log('Next steps:')
-    console.log('  1. Review .invoke/pipeline.yaml and customize providers/models')
-    console.log('  2. Start a Claude Code session and describe what you want to build')
+    console.log('The invoke plugin handles skills, hooks, and MCP server registration.')
+    console.log('Review .invoke/pipeline.yaml to customize providers and models.')
   })
   .catch((err) => {
     console.error('Error:', err.message)
