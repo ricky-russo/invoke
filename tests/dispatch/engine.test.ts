@@ -12,8 +12,13 @@ vi.mock('../../src/dispatch/prompt-composer.js', () => ({
   composePrompt: vi.fn().mockResolvedValue('mocked prompt content'),
 }))
 
+vi.mock('../../src/config.js', () => ({
+  loadConfig: vi.fn(),
+}))
+
 import { spawn } from 'child_process'
 import { EventEmitter, Readable } from 'stream'
+import { loadConfig } from '../../src/config.js'
 
 function mockSpawn(stdout: string, exitCode: number): void {
   const proc = new EventEmitter() as any
@@ -137,6 +142,11 @@ const configWithEntryTimeout: InvokeConfig = {
 }
 
 describe('DispatchEngine', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.mocked(loadConfig).mockResolvedValue(singleProviderConfig)
+  })
+
   it('dispatches to a single provider and returns result', async () => {
     mockSpawn('Research output', 0)
 
@@ -161,6 +171,7 @@ describe('DispatchEngine', () => {
 
   it('dispatches to multiple providers and returns merged result', async () => {
     mockSpawn('Review output', 0)
+    vi.mocked(loadConfig).mockResolvedValue(multiProviderConfig)
 
     const providers = new Map([['claude', mockProvider], ['codex', mockCodexProvider]])
     const parsers = new Map([['claude', mockParser], ['codex', mockCodexParser]])
@@ -197,6 +208,7 @@ describe('DispatchEngine', () => {
 
   it('uses per-entry timeout over global timeout', async () => {
     mockSpawn('Output', 0)
+    vi.mocked(loadConfig).mockResolvedValue(configWithEntryTimeout)
 
     const providers = new Map([['claude', mockProvider]])
     const parsers = new Map([['claude', mockParser]])
@@ -250,6 +262,8 @@ describe('DispatchEngine', () => {
       },
     }
 
+    vi.mocked(loadConfig).mockResolvedValue(badConfig)
+
     const engine = new DispatchEngine({
       config: badConfig,
       providers: new Map([['claude', mockProvider]]),
@@ -260,5 +274,44 @@ describe('DispatchEngine', () => {
     await expect(
       engine.dispatch({ role: 'researcher', subrole: 'codebase', taskContext: {} })
     ).rejects.toThrow('Provider not found: unknown')
+  })
+
+  it('re-reads config on each dispatch to pick up mid-session edits', async () => {
+    mockSpawn('Output', 0)
+
+    const providers = new Map([['claude', mockProvider]])
+    const parsers = new Map([['claude', mockParser]])
+    const engine = new DispatchEngine({
+      config: singleProviderConfig,
+      providers,
+      parsers,
+      projectDir: '/tmp/test-project',
+    })
+
+    // First dispatch uses singleProviderConfig
+    vi.mocked(loadConfig).mockResolvedValue(singleProviderConfig)
+    await engine.dispatch({
+      role: 'researcher',
+      subrole: 'codebase',
+      taskContext: { task_description: 'First' },
+    })
+
+    // loadConfig was called
+    expect(loadConfig).toHaveBeenCalledWith('/tmp/test-project')
+
+    // Change mock to return different config (simulating user edit)
+    const updatedConfig = structuredClone(singleProviderConfig)
+    updatedConfig.roles.researcher.codebase.providers[0].model = 'claude-opus-4-6'
+    vi.mocked(loadConfig).mockResolvedValue(updatedConfig)
+
+    mockSpawn('Output', 0)
+    await engine.dispatch({
+      role: 'researcher',
+      subrole: 'codebase',
+      taskContext: { task_description: 'Second' },
+    })
+
+    // Should have called loadConfig again
+    expect(loadConfig).toHaveBeenCalledTimes(2)
   })
 })

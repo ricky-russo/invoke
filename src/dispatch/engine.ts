@@ -4,6 +4,7 @@ import type { Parser } from '../parsers/base.js'
 import type { InvokeConfig, DispatchRequest, AgentResult, ProviderEntry } from '../types.js'
 import { composePrompt } from './prompt-composer.js'
 import { mergeFindings } from './merge-findings.js'
+import { loadConfig } from '../config.js'
 
 interface DispatchEngineOptions {
   config: InvokeConfig
@@ -13,20 +14,21 @@ interface DispatchEngineOptions {
 }
 
 export class DispatchEngine {
-  private config: InvokeConfig
   private providers: Map<string, Provider>
   private parsers: Map<string, Parser>
   private projectDir: string
 
   constructor(options: DispatchEngineOptions) {
-    this.config = options.config
     this.providers = options.providers
     this.parsers = options.parsers
     this.projectDir = options.projectDir
   }
 
   async dispatch(request: DispatchRequest): Promise<AgentResult> {
-    const roleConfig = this.config.roles[request.role]?.[request.subrole]
+    // Re-read config on every dispatch to pick up mid-session edits
+    const config = await loadConfig(this.projectDir)
+
+    const roleConfig = config.roles[request.role]?.[request.subrole]
     if (!roleConfig) {
       throw new Error(`Role not found: ${request.role}.${request.subrole}`)
     }
@@ -41,7 +43,7 @@ export class DispatchEngine {
 
     // Dispatch to all providers in parallel
     const resultPromises = roleConfig.providers.map(entry =>
-      this.dispatchToProvider(entry, prompt, workDir, request)
+      this.dispatchToProvider(entry, prompt, workDir, request, config)
     )
 
     const results = await Promise.all(resultPromises)
@@ -59,7 +61,8 @@ export class DispatchEngine {
     entry: ProviderEntry,
     prompt: string,
     workDir: string,
-    request: DispatchRequest
+    request: DispatchRequest,
+    config: InvokeConfig
   ): Promise<AgentResult> {
     const provider = this.providers.get(entry.provider)
     if (!provider) {
@@ -79,7 +82,7 @@ export class DispatchEngine {
     })
 
     const startTime = Date.now()
-    const timeoutSeconds = entry.timeout ?? this.config.settings.agent_timeout
+    const timeoutSeconds = entry.timeout ?? config.settings.agent_timeout
     const { stdout, stderr, exitCode } = await this.runProcess(
       commandSpec.cmd,
       commandSpec.args,
