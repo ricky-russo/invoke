@@ -9,7 +9,7 @@ You are running the scope stage of the invoke pipeline. Your job is to produce a
 
 ## Messaging
 
-Load the `invoke-messaging` skill and follow its standards for all user-facing output — agent dispatches, progress updates, results, errors, and selection prompts. Use `AskUserQuestion` for all user decisions.
+**BEFORE doing anything else**, invoke the `invoke-messaging` skill using the Skill tool (`Skill({ skill: "invoke:invoke-messaging" })`). This loads the messaging format standards you MUST follow for all output — dispatch formatting, progress updates, results, and interactive prompts. Do NOT proceed with any pipeline steps until invoke-messaging is loaded. Use `AskUserQuestion` for all user decisions.
 
 ## Flow
 
