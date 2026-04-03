@@ -13,9 +13,11 @@ You are running the scope stage of the invoke pipeline. Your job is to produce a
 
 ## Flow
 
-### 1. Initialize Pipeline
+### 1. Initialize Project & Pipeline
 
-Call `invoke_set_state` to create or verify pipeline state:
+First, call `invoke_init_project` to ensure the `.invoke/` directory exists with default config, roles, and strategies. This is safe to re-run — it only adds files that don't already exist.
+
+Then call `invoke_set_state` to create or verify pipeline state:
 - If no active pipeline, initialize one with `current_stage: "scope"`
 - If an active pipeline exists at a later stage, ask the user if they want to start a new pipeline
 
