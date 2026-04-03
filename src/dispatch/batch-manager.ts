@@ -1,11 +1,13 @@
 import { randomUUID } from 'crypto'
 import type { DispatchEngine } from './engine.js'
 import type { WorktreeManager } from '../worktree/manager.js'
+import type { StateManager } from '../tools/state.js'
 import type { BatchRequest, BatchStatus, AgentStatus, AgentResult } from '../types.js'
 
 interface BatchRecord {
   status: BatchStatus
   abortController: AbortController
+  batchIndex: number
 }
 
 export class BatchManager {
@@ -13,7 +15,9 @@ export class BatchManager {
 
   constructor(
     private engine: DispatchEngine,
-    private worktreeManager: WorktreeManager
+    private worktreeManager: WorktreeManager,
+    private stateManager?: StateManager,
+    private batchIndex: number = 0
   ) {}
 
   dispatchBatch(request: BatchRequest): string {
@@ -24,15 +28,17 @@ export class BatchManager {
     }))
 
     const abortController = new AbortController()
+    const currentBatchIndex = this.batchIndex++
     const record: BatchRecord = {
       status: { batchId, status: 'running', agents },
       abortController,
+      batchIndex: currentBatchIndex,
     }
 
     this.batches.set(batchId, record)
 
     // Fire and forget — dispatch all tasks in parallel
-    this.runBatch(batchId, request, abortController.signal)
+    this.runBatch(batchId, request, abortController.signal, currentBatchIndex)
 
     return batchId
   }
@@ -81,10 +87,29 @@ export class BatchManager {
     }
   }
 
+  private async persistTaskStatus(
+    batchIndex: number,
+    taskId: string,
+    status: string,
+    result?: AgentResult
+  ): Promise<void> {
+    if (!this.stateManager) return
+    try {
+      await this.stateManager.updateTask(batchIndex, taskId, {
+        status: status as any,
+        result_summary: result?.output.summary,
+        result_status: result?.status,
+      })
+    } catch {
+      // Non-critical — don't fail dispatch if state persistence fails
+    }
+  }
+
   private async runBatch(
     batchId: string,
     request: BatchRequest,
-    signal: AbortSignal
+    signal: AbortSignal,
+    batchIndex: number
   ): Promise<void> {
     const record = this.batches.get(batchId)!
 
@@ -98,11 +123,23 @@ export class BatchManager {
 
         if (request.createWorktrees) {
           agentStatus.status = 'dispatched'
+          await this.persistTaskStatus(batchIndex, task.taskId, 'dispatched')
           const wt = await this.worktreeManager.create(task.taskId)
           workDir = wt.worktreePath
+          if (this.stateManager) {
+            try {
+              await this.stateManager.updateTask(batchIndex, task.taskId, {
+                worktree_path: wt.worktreePath,
+                worktree_branch: wt.branch,
+              })
+            } catch {
+              // Non-critical
+            }
+          }
         }
 
         agentStatus.status = 'running'
+        await this.persistTaskStatus(batchIndex, task.taskId, 'running')
 
         if (signal.aborted) return
 
@@ -115,9 +152,9 @@ export class BatchManager {
 
         agentStatus.status = 'completed'
         agentStatus.result = result
+        await this.persistTaskStatus(batchIndex, task.taskId, 'completed', result)
       } catch (err) {
-        agentStatus.status = 'error'
-        agentStatus.result = {
+        const errorResult: AgentResult = {
           role: task.role,
           subrole: task.subrole,
           provider: 'unknown',
@@ -129,6 +166,9 @@ export class BatchManager {
           },
           duration: 0,
         }
+        agentStatus.status = 'error'
+        agentStatus.result = errorResult
+        await this.persistTaskStatus(batchIndex, task.taskId, 'error', errorResult)
       }
     })
 
@@ -143,6 +183,18 @@ export class BatchManager {
       record.status.status = allDone
         ? (anyError ? 'error' : 'completed')
         : 'running'
+
+      if (this.stateManager) {
+        try {
+          await this.stateManager.updateBatch(batchIndex, {
+            status: record.status.status === 'completed' ? 'completed'
+              : record.status.status === 'error' ? 'error'
+              : 'in_progress',
+          })
+        } catch {
+          // Non-critical
+        }
+      }
     }
   }
 }

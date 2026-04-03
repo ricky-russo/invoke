@@ -1,8 +1,14 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { BatchManager } from '../../src/dispatch/batch-manager.js'
+import { StateManager } from '../../src/tools/state.js'
 import type { DispatchEngine } from '../../src/dispatch/engine.js'
 import type { WorktreeManager } from '../../src/worktree/manager.js'
 import type { AgentResult } from '../../src/types.js'
+import { mkdir, rm } from 'fs/promises'
+import path from 'path'
+import os from 'os'
+
+const STATE_TEST_DIR = path.join(os.tmpdir(), 'invoke-batch-state-test')
 
 const mockResult: AgentResult = {
   role: 'builder',
@@ -32,7 +38,7 @@ describe('BatchManager', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
-    manager = new BatchManager(mockEngine, mockWorktreeManager)
+    manager = new BatchManager(mockEngine, mockWorktreeManager, undefined)
   })
 
   it('dispatches a batch and returns a batch ID immediately', async () => {
@@ -183,5 +189,63 @@ describe('BatchManager', () => {
       expect(elapsed).toBeGreaterThanOrEqual(1900)
       expect(elapsed).toBeLessThan(4000)
     })
+  })
+})
+
+describe('BatchManager with state persistence', () => {
+  let stateManager: StateManager
+  let statefulManager: BatchManager
+
+  beforeEach(async () => {
+    vi.clearAllMocks()
+    vi.mocked(mockEngine.dispatch).mockResolvedValue(mockResult)
+    await mkdir(path.join(STATE_TEST_DIR, '.invoke'), { recursive: true })
+    stateManager = new StateManager(STATE_TEST_DIR)
+    await stateManager.initialize('test-pipeline')
+    await stateManager.addBatch({
+      id: 1,
+      status: 'pending',
+      tasks: [
+        { id: 'task-1', status: 'pending' },
+      ],
+    })
+    statefulManager = new BatchManager(mockEngine, mockWorktreeManager, stateManager, 0)
+  })
+
+  afterEach(async () => {
+    await rm(STATE_TEST_DIR, { recursive: true, force: true })
+  })
+
+  it('persists task status transitions to state.json', async () => {
+    statefulManager.dispatchBatch({
+      tasks: [
+        { taskId: 'task-1', role: 'builder', subrole: 'default', taskContext: {} },
+      ],
+      createWorktrees: false,
+    })
+
+    await vi.waitFor(async () => {
+      const state = await stateManager.get()
+      const task = state!.batches[0].tasks.find(t => t.id === 'task-1')
+      expect(task!.status).toBe('completed')
+    }, { timeout: 3000 })
+
+    const state = await stateManager.get()
+    expect(state!.batches[0].tasks[0].result_summary).toBeTruthy()
+    expect(state!.batches[0].tasks[0].result_status).toBe('success')
+  })
+
+  it('persists batch completion status', async () => {
+    statefulManager.dispatchBatch({
+      tasks: [
+        { taskId: 'task-1', role: 'builder', subrole: 'default', taskContext: {} },
+      ],
+      createWorktrees: false,
+    })
+
+    await vi.waitFor(async () => {
+      const state = await stateManager.get()
+      expect(state!.batches[0].status).toBe('completed')
+    }, { timeout: 3000 })
   })
 })
