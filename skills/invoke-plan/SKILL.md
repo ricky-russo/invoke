@@ -27,7 +27,7 @@ Wait for user selection, then dispatch selected planners using `invoke_dispatch_
 - `create_worktrees: false`
 - `task_context: { task_description: "<full spec content>", research_context: "<research reports if available>" }`
 
-Poll `invoke_get_batch_status` until complete.
+Call `invoke_get_batch_status` with the batch ID — it will wait up to 60 seconds for a status change before returning. Keep calling until complete. Do NOT use `sleep` between calls.
 
 ### 3. Present Plans
 

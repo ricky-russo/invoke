@@ -29,7 +29,7 @@ Wait for user selection, then dispatch the selected researchers using `invoke_di
 - `create_worktrees: false` (researchers don't modify code)
 - `task_context: { task_description: "<user's initial request>" }`
 
-Poll `invoke_get_batch_status` until all researchers complete. While waiting, let the user know agents are working.
+Call `invoke_get_batch_status` with the batch ID — it will wait up to 60 seconds for a status change before returning. Keep calling until all researchers complete. Do NOT use `sleep` between calls — the tool handles waiting internally. Let the user know agents are working.
 
 ### 3. Review Research
 

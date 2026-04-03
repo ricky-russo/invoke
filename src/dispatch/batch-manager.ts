@@ -42,6 +42,32 @@ export class BatchManager {
     return record ? record.status : null
   }
 
+  async waitForStatus(batchId: string, waitSeconds: number): Promise<BatchStatus | null> {
+    const record = this.batches.get(batchId)
+    if (!record) return null
+
+    // If already done, return immediately
+    if (record.status.status !== 'running') return record.status
+
+    // Snapshot current agent statuses to detect changes
+    const snapshot = record.status.agents.map(a => a.status).join(',')
+
+    const deadline = Date.now() + waitSeconds * 1000
+    while (Date.now() < deadline) {
+      await new Promise(resolve => setTimeout(resolve, 1000))
+
+      // Batch finished
+      if (record.status.status !== 'running') return record.status
+
+      // An agent's status changed (e.g. one completed while others still run)
+      const current = record.status.agents.map(a => a.status).join(',')
+      if (current !== snapshot) return record.status
+    }
+
+    // Timeout — return current status
+    return record.status
+  }
+
   cancel(batchId: string): void {
     const record = this.batches.get(batchId)
     if (!record) return

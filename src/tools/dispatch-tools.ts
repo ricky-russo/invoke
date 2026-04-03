@@ -73,13 +73,19 @@ export function registerDispatchTools(
   server.registerTool(
     'invoke_get_batch_status',
     {
-      description: 'Get the status of a dispatched batch. Poll this after invoke_dispatch_batch.',
+      description: 'Get the status of a dispatched batch. Waits up to `wait` seconds (default 60) for a status change before returning. Returns immediately if the batch is already complete or if any agent status changes.',
       inputSchema: z.object({
         batch_id: z.string().describe('The batch ID returned by invoke_dispatch_batch'),
+        wait: z.number().optional().describe('Max seconds to wait for a status change (default 60, 0 for immediate)'),
       }),
     },
-    async ({ batch_id }) => {
-      const status = batchManager.getStatus(batch_id)
+    async ({ batch_id, wait }) => {
+      const waitSeconds = wait ?? 60
+
+      const status = waitSeconds > 0
+        ? await batchManager.waitForStatus(batch_id, waitSeconds)
+        : batchManager.getStatus(batch_id)
+
       if (!status) {
         return {
           content: [{ type: 'text', text: `Batch not found: ${batch_id}` }],

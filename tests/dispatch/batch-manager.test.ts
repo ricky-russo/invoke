@@ -107,4 +107,81 @@ describe('BatchManager', () => {
   it('returns null for unknown batch ID', () => {
     expect(manager.getStatus('nonexistent')).toBeNull()
   })
+
+  describe('waitForStatus', () => {
+    it('returns immediately when batch is already completed', async () => {
+      vi.mocked(mockEngine.dispatch).mockResolvedValue(mockResult)
+
+      const batchId = manager.dispatchBatch({
+        tasks: [
+          { taskId: 'task-1', role: 'builder', subrole: 'default', taskContext: {} },
+        ],
+        createWorktrees: false,
+      })
+
+      // Wait for the batch to finish first
+      await vi.waitFor(() => {
+        expect(manager.getStatus(batchId)!.status).toBe('completed')
+      }, { timeout: 2000 })
+
+      const start = Date.now()
+      const status = await manager.waitForStatus(batchId, 30)
+      const elapsed = Date.now() - start
+
+      expect(status!.status).toBe('completed')
+      expect(elapsed).toBeLessThan(1000)
+    })
+
+    it('returns null for unknown batch ID', async () => {
+      const status = await manager.waitForStatus('nonexistent', 1)
+      expect(status).toBeNull()
+    })
+
+    it('returns when an agent status changes', async () => {
+      // First task resolves quickly, second hangs
+      const neverResolve = new Promise<AgentResult>(() => {})
+      vi.mocked(mockEngine.dispatch)
+        .mockResolvedValueOnce(mockResult)
+        .mockReturnValueOnce(neverResolve)
+
+      const batchId = manager.dispatchBatch({
+        tasks: [
+          { taskId: 'task-1', role: 'builder', subrole: 'default', taskContext: {} },
+          { taskId: 'task-2', role: 'builder', subrole: 'default', taskContext: {} },
+        ],
+        createWorktrees: false,
+      })
+
+      const status = await manager.waitForStatus(batchId, 10)
+
+      // Should return once task-1 completes (status change detected)
+      expect(status!.status).toBe('running')
+      expect(status!.agents[0].status).toBe('completed')
+    })
+
+    it('returns after timeout when nothing changes', async () => {
+      const neverResolve = new Promise<AgentResult>(() => {})
+      vi.mocked(mockEngine.dispatch).mockReturnValue(neverResolve)
+
+      const batchId = manager.dispatchBatch({
+        tasks: [
+          { taskId: 'task-1', role: 'builder', subrole: 'default', taskContext: {} },
+        ],
+        createWorktrees: false,
+      })
+
+      // Wait for agent to be running before we start the wait
+      await vi.waitFor(() => {
+        expect(manager.getStatus(batchId)!.agents[0].status).toBe('running')
+      }, { timeout: 2000 })
+
+      const start = Date.now()
+      const status = await manager.waitForStatus(batchId, 2)
+      const elapsed = Date.now() - start
+
+      expect(status!.status).toBe('running')
+      expect(elapsed).toBeGreaterThanOrEqual(1900)
+      expect(elapsed).toBeLessThan(4000)
+    })
+  })
 })

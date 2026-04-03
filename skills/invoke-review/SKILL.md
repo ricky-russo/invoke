@@ -29,7 +29,7 @@ Dispatch selected reviewers using `invoke_dispatch_batch`:
 - `create_worktrees: false` (reviewers don't modify code)
 - `task_context: { task_description: "<what was built — summary from plan>", diff: "<git diff of all changes>" }`
 
-Poll `invoke_get_batch_status` until complete.
+Call `invoke_get_batch_status` with the batch ID — it will wait up to 60 seconds for a status change before returning. Keep calling until complete. Do NOT use `sleep` between calls.
 
 ### 4. Present Findings
 
