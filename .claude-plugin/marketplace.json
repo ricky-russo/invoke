@@ -1,0 +1,12 @@
+{
+  "name": "invoke-local",
+  "owner": {
+    "name": "Ricky Russo"
+  },
+  "plugins": [
+    {
+      "name": "invoke",
+      "source": "./"
+    }
+  ]
+}
