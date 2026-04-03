@@ -13,6 +13,7 @@ const ProviderEntrySchema = z.object({
   provider: z.string(),
   model: z.string(),
   effort: z.enum(['low', 'medium', 'high']),
+  timeout: z.number().positive().optional(),
 })
 
 // Accept either single-provider shorthand or providers array

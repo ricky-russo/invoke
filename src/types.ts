@@ -9,6 +9,7 @@ export interface ProviderEntry {
   provider: string
   model: string
   effort: 'low' | 'medium' | 'high'
+  timeout?: number
 }
 
 export interface RoleConfig {
