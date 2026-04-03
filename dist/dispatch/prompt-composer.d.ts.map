@@ -1,0 +1,1 @@
+{"version":3,"file":"prompt-composer.d.ts","sourceRoot":"","sources":["../../src/dispatch/prompt-composer.ts"],"names":[],"mappings":"AAMA,UAAU,cAAc;IACtB,UAAU,EAAE,MAAM,CAAA;IAClB,UAAU,EAAE,MAAM,CAAA;IAClB,YAAY,CAAC,EAAE,MAAM,CAAA;IACrB,WAAW,EAAE,MAAM,CAAC,MAAM,EAAE,MAAM,CAAC,CAAA;CACpC;AAED,wBAAsB,aAAa,CAAC,OAAO,EAAE,cAAc,GAAG,OAAO,CAAC,MAAM,CAAC,CAkC5E"}
