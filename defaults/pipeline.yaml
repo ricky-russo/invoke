@@ -5,7 +5,7 @@
 providers:
   claude:
     cli: claude
-    args: ["--model", "{{model}}", "--dangerously-skip-permissions"]
+    args: ["--print", "--model", "{{model}}", "--dangerously-skip-permissions"]
   codex:
     cli: codex
     args: ["--model", "{{model}}", "--reasoning-effort", "{{effort}}", "--full-auto"]

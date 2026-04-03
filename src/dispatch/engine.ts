@@ -79,14 +79,17 @@ export class DispatchEngine {
     })
 
     const startTime = Date.now()
-    const { stdout, exitCode } = await this.runProcess(
+    const { stdout, stderr, exitCode } = await this.runProcess(
       commandSpec.cmd,
       commandSpec.args,
       this.config.settings.agent_timeout
     )
     const duration = Date.now() - startTime
 
-    return parser.parse(stdout, exitCode, {
+    // Use stderr for diagnostics when stdout is empty or command failed
+    const output = stdout || (exitCode !== 0 ? `[stderr] ${stderr}` : stderr)
+
+    return parser.parse(output, exitCode, {
       role: request.role,
       subrole: request.subrole,
       provider: entry.provider,
@@ -143,18 +146,21 @@ export class DispatchEngine {
     cmd: string,
     args: string[],
     timeout: number
-  ): Promise<{ stdout: string; exitCode: number }> {
+  ): Promise<{ stdout: string; stderr: string; exitCode: number }> {
     return new Promise((resolve, reject) => {
       const proc = spawn(cmd, args, { stdio: ['pipe', 'pipe', 'pipe'] })
 
       let stdout = ''
+      let stderr = ''
       let timedOut = false
 
       proc.stdout.on('data', (data: Buffer) => {
         stdout += data.toString()
       })
 
-      proc.stderr.on('data', () => {})
+      proc.stderr.on('data', (data: Buffer) => {
+        stderr += data.toString()
+      })
 
       const timer = setTimeout(() => {
         timedOut = true
@@ -164,9 +170,9 @@ export class DispatchEngine {
       proc.on('close', (code) => {
         clearTimeout(timer)
         if (timedOut) {
-          resolve({ stdout: stdout || `Agent timed out after ${timeout}ms`, exitCode: -1 })
+          resolve({ stdout: stdout || `Agent timed out after ${timeout}ms`, stderr, exitCode: -1 })
         } else {
-          resolve({ stdout, exitCode: code ?? 1 })
+          resolve({ stdout, stderr, exitCode: code ?? 1 })
         }
       })
 
