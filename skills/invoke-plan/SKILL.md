@@ -7,9 +7,12 @@ description: "MUST USE when a spec has been approved and needs an implementation
 
 You are running the plan stage of the invoke pipeline. Your job is to dispatch planners to generate competing implementation plans, then help the user choose the best one.
 
-## Messaging
+## Messaging Rules
 
-Load the `invoke-messaging` skill and follow its standards for all user-facing output — agent dispatches, progress updates, results, errors, and selection prompts. Use `AskUserQuestion` for all user decisions.
+**ALWAYS use `AskUserQuestion` for user decisions.** Never print options as text and wait for free-form input. If only 1 option exists, auto-select it.
+
+Use compact dispatch format: `• [subrole] → [provider] ([model], [effort])`
+Use stage transition format: `✅ Plan complete → Moving to Orchestrate`
 
 ## Flow
 

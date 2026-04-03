@@ -7,9 +7,12 @@ description: "MUST USE when an orchestrated task breakdown has been approved and
 
 You are running the build stage. Your job is to dispatch builder agents for each batch, manage worktrees, merge results, and track progress.
 
-## Messaging
+## Messaging Rules
 
-Load the `invoke-messaging` skill and follow its standards for all user-facing output — agent dispatches, progress updates, results, errors, and selection prompts. Use `AskUserQuestion` for all user decisions.
+**ALWAYS use `AskUserQuestion` for user decisions.** Never print options as text and wait for free-form input. If only 1 option exists, auto-select it.
+
+Use compact dispatch format: `• [task_id] → [provider] ([model], [effort])`
+Use stage transition format: `✅ Build complete → Moving to Review`
 
 ## Flow
 

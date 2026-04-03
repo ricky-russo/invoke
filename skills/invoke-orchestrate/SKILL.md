@@ -7,9 +7,11 @@ description: "MUST USE when an implementation plan has been approved and needs t
 
 You are running the orchestrate stage. Your job is to break the approved plan into small, isolated, context-safe tasks grouped into sequential batches.
 
-## Messaging
+## Messaging Rules
 
-Load the `invoke-messaging` skill and follow its standards for all user-facing output — agent dispatches, progress updates, results, errors, and selection prompts. Use `AskUserQuestion` for all user decisions.
+**ALWAYS use `AskUserQuestion` for user decisions.** Never print options as text and wait for free-form input. If only 1 option exists, auto-select it.
+
+Use stage transition format: `✅ Orchestrate complete → Moving to Build`
 
 ## Flow
 
