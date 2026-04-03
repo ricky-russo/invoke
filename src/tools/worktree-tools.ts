@@ -1,8 +1,10 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
 import type { WorktreeManager } from '../worktree/manager.js'
+import type { InvokeConfig } from '../types.js'
+import { runPostMergeCommands } from './post-merge.js'
 
-export function registerWorktreeTools(server: McpServer, worktreeManager: WorktreeManager): void {
+export function registerWorktreeTools(server: McpServer, worktreeManager: WorktreeManager, config?: InvokeConfig, projectDir?: string): void {
   server.registerTool(
     'invoke_create_worktree',
     {
@@ -62,6 +64,32 @@ export function registerWorktreeTools(server: McpServer, worktreeManager: Worktr
       await worktreeManager.cleanupAll()
       return {
         content: [{ type: 'text', text: JSON.stringify({ cleaned: active.length }) }],
+      }
+    }
+  )
+
+  server.registerTool(
+    'invoke_run_post_merge',
+    {
+      description: 'Run configured post-merge commands (e.g., composer install, npm install) to regenerate lockfiles after worktree merges.',
+      inputSchema: z.object({}),
+    },
+    async () => {
+      if (!config || !projectDir) {
+        return {
+          content: [{ type: 'text', text: 'No config available — post-merge commands not configured.' }],
+        }
+      }
+      const commands = config.settings.post_merge_commands ?? []
+      if (commands.length === 0) {
+        return {
+          content: [{ type: 'text', text: JSON.stringify({ message: 'No post_merge_commands configured', commands: [] }) }],
+        }
+      }
+
+      const result = runPostMergeCommands(config, projectDir)
+      return {
+        content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
       }
     }
   )

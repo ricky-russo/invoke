@@ -67,7 +67,7 @@ async function main() {
   // Register config-independent tools first
   registerStateTools(server, stateManager)
   registerArtifactTools(server, artifactManager)
-  registerWorktreeTools(server, worktreeManager)
+  registerWorktreeTools(server, worktreeManager, config, projectDir)
   registerConfigTools(server, projectDir)
   registerConfigUpdateTools(server, projectDir)
   registerContextTools(server, contextManager)

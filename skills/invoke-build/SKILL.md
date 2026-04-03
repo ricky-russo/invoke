@@ -58,6 +58,8 @@ If a merge conflict occurs, present it to the user and help resolve it.
 
 #### f. Post-Merge Validation
 
+After all worktrees in a batch are merged, call `invoke_run_post_merge` to regenerate lockfiles (e.g., `composer.lock`, `package-lock.json`) before running validation. If any command fails, present the error and help the user resolve it before continuing.
+
 The post-merge validation hook will run automatically (lint, tests). If it fails, present the failure and help fix it before proceeding.
 
 #### g. Update State
