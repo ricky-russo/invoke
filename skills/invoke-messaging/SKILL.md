@@ -24,11 +24,11 @@ AskUserQuestion({
     options: [
       {
         label: "[subrole] (Recommended)",
-        description: "[provider1] ([model1]) + [provider2] ([model2]) | Effort: [effort]"
+        description: "[provider1] ([model1], [effort1]) + [provider2] ([model2], [effort2])"
       },
       {
         label: "[subrole]",
-        description: "[provider] ([model]) | Effort: [effort]"
+        description: "[provider] ([model], [effort])"
       }
     ]
   }]
@@ -151,31 +151,26 @@ These formats are for informational output (not user decisions). Print them as f
 
 ### Agent Dispatch
 
-When dispatching agents, always show:
+When dispatching a single agent with one provider:
 
 ```
-🔄 Dispatching [role]/[subrole]
-   Provider: [provider] ([model]) | Effort: [effort]
-   Prompt: [prompt file path]
+🔄 Dispatching [role]/[subrole] → [provider] ([model], [effort])
 ```
 
-For multi-provider sub-roles:
+When dispatching multiple agents of the same role (e.g., researchers, reviewers), use a compact list. Effort is per-provider, shown in parentheses next to the model:
 
 ```
-🔄 Dispatching [role]/[subrole] to [N] providers
-   ├─ [provider1] ([model1]) | Effort: [effort1]
-   └─ [provider2] ([model2]) | Effort: [effort2]
-   Prompt: [prompt file path]
+🔄 Dispatching [role type]:
+  • [subrole] → [provider1] ([model1], [effort1]) + [provider2] ([model2], [effort2])
+  • [subrole] → [provider] ([model], [effort])
 ```
 
-For batch dispatches:
+For batch dispatches (build stage), include task IDs and worktree info:
 
 ```
-📦 Dispatching Batch [N] — [X] tasks
-   ├─ [task_id] → [role]/[subrole] via [provider] ([model])
-   ├─ [task_id] → [role]/[subrole] via [provider] ([model])
-   └─ [task_id] → [role]/[subrole] via [provider] ([model])
-   Worktrees: [yes/no]
+📦 Dispatching Batch [N] — [X] tasks (worktrees: [yes/no])
+  • [task_id] → [provider] ([model], [effort])
+  • [task_id] → [provider] ([model], [effort])
 ```
 
 ### Progress Updates
@@ -191,17 +186,23 @@ While agents are working:
 
 ### Agent Results — Success
 
+For single provider:
+```
+✅ [role]/[subrole] completed ([duration]s) via [provider] ([model])
+   Summary: [first 1-2 sentences of output]
+```
+
+For multi-provider (combined result):
 ```
 ✅ [role]/[subrole] completed ([duration]s)
-   Provider: [provider] ([model])
-   Summary: [first 1-2 sentences of output]
+   • claude ([model]): [1-sentence summary]
+   • codex ([model]): [1-sentence summary]
 ```
 
 ### Agent Results — Error
 
 ```
-❌ [role]/[subrole] failed ([duration]s)
-   Provider: [provider] ([model])
+❌ [role]/[subrole] failed ([duration]s) via [provider] ([model])
    Error: [error message or exit code]
    Raw output (truncated):
    > [first 5 lines of output]
@@ -210,8 +211,7 @@ While agents are working:
 ### Agent Results — Timeout
 
 ```
-⏰ [role]/[subrole] timed out after [timeout]ms
-   Provider: [provider] ([model])
+⏰ [role]/[subrole] timed out after [timeout]ms via [provider] ([model])
 ```
 
 ### Review Findings
@@ -256,10 +256,10 @@ Present findings grouped by reviewer, sorted by severity:
 ## Rules
 
 1. **ALWAYS use `AskUserQuestion` for user decisions.** Never print options as text and wait for free-form input.
-2. Always show provider and model when dispatching or reporting results
-3. Always show duration for completed agents
+2. Always show provider, model, and effort together as `provider (model, effort)` when dispatching
+3. Always show provider and model with duration for completed agents
 4. Use the severity emoji mapping: 🔴 critical/high, 🟡 medium, 🟢 low
 5. Truncate raw output to 5 lines in error reports — offer full output on request
-6. Use tree-style (├─ └─) for hierarchical information in text output
+6. Use bullet lists (•) for dispatch and result lists, tree-style (├─ └─) for hierarchical status info
 7. Keep progress updates on one screen — don't flood with per-second updates
 8. Bold the provider agreement indicator (**agreed: claude, codex**) in findings
