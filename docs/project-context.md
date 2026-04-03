@@ -75,7 +75,7 @@ Invoke updates `context.md` in three ways after a pipeline completes:
 
 - **Completed Work** — a new entry is appended with the pipeline ID, the feature delivered, and a timestamp. This happens after every successful pipeline.
 - **Architecture** — the Architecture section is replaced if the pipeline introduced structural changes (new modules, changed directory layout, new entry points). The replacement content is generated from the build output.
-- **Known Issues** — each dismissed finding from the review cycle is appended here with its severity, file, and a brief description.
+- **Known Issues** — findings that were accepted but not fixed (deferred) are appended here with their severity, file, and a brief description. Dismissed findings (false positives) are not recorded.
 
 All other sections — Project Overview, Conventions, Active Decisions — are never modified by invoke. Your edits to these sections are always preserved.
 
