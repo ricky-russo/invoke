@@ -18,6 +18,7 @@ import { registerArtifactTools } from './tools/artifact-tools.js';
 import { registerConfigUpdateTools } from './tools/config-update-tools.js';
 import { ContextManager } from './tools/context.js';
 import { registerContextTools } from './tools/context-tools.js';
+import { checkForNewDefaults } from './defaults-checker.js';
 import { writeFile } from 'fs/promises';
 import path from 'path';
 async function main() {
@@ -49,6 +50,14 @@ async function main() {
         }
         catch {
             // Non-critical
+        }
+    }
+    // Check for new defaults after upgrade
+    const newDefaults = await checkForNewDefaults(projectDir);
+    if (newDefaults.length > 0) {
+        console.error('New defaults available — run invoke-init to add them:');
+        for (const d of newDefaults) {
+            console.error(`  + ${d.relativePath} (${d.description})`);
         }
     }
     // Initialize managers
