@@ -77,6 +77,24 @@ Use the same slug from the spec/plan filenames. Save the review history using `i
 - `stage: "reviews"`
 - `filename: "YYYY-MM-DD-<slug>-review-N.json"` (e.g., `2026-04-03-auth-middleware-review-1.json`)
 
+#### Update Project Context
+
+After saving the review history, update context.md to record what was built:
+
+1. Call `invoke_get_context` to check if context.md exists. If not, skip this step.
+2. Call `invoke_update_context` with:
+   - `section: "Completed Work"`
+   - `mode: "append"`
+   - `content: "\n- [date]: [one-line summary of what was built] (spec: [spec filename])"`
+3. If the build changed the project's architecture (new directories, components, or significant structural changes), call `invoke_update_context` with:
+   - `section: "Architecture"`
+   - `mode: "replace"`
+   - `content: [updated architecture description]`
+4. If there are accepted findings that were NOT fixed (deferred), call `invoke_update_context` with:
+   - `section: "Known Issues"`
+   - `mode: "append"`
+   - `content: "\n- [finding summary] (deferred from pipeline [id])"`
+
 ### 9. Commit Strategy
 
 Ask the user how to commit the final result:
