@@ -9,7 +9,7 @@ import type { InvokeConfig } from '../../src/types.js'
 const TEST_DIR = path.join(import.meta.dirname, 'fixtures', 'cli-spawn-test')
 
 // Helper to build InvokeConfig with a custom provider name
-function makeConfig(providerName: string, timeoutMs = 5000): InvokeConfig {
+function makeConfig(providerName: string, timeoutSeconds = 5): InvokeConfig {
   return {
     providers: {
       [providerName]: { cli: 'echo', args: [] },
@@ -31,7 +31,7 @@ function makeConfig(providerName: string, timeoutMs = 5000): InvokeConfig {
     strategies: {},
     settings: {
       default_strategy: 'tdd',
-      agent_timeout: timeoutMs,
+      agent_timeout: timeoutSeconds,
       commit_style: 'per-batch',
       work_branch_prefix: 'invoke/work',
     },
@@ -204,8 +204,8 @@ describe('CLI Spawn Integration Tests', () => {
       args: ['10'],
     })
 
-    // 500ms timeout
-    const config = makeConfig('sleep', 500)
+    // 1 second timeout (engine converts to 1000ms)
+    const config = makeConfig('sleep', 1)
     const parser = new ClaudeParser()
     const parsers = new Map([['sleep', parser]])
     const providers = new Map([['sleep', provider]])
@@ -234,7 +234,7 @@ describe('CLI Spawn Integration Tests', () => {
     // (engine sets stdout to timeout message when stdout was empty)
     const raw = result.output.raw ?? ''
     const summary = result.output.summary ?? ''
-    const hasTimeoutSignal = raw.includes('timed out') || raw.includes('500') || summary.includes('exit') || summary.includes('-1')
+    const hasTimeoutSignal = raw.includes('timed out') || raw.includes('1000') || summary.includes('exit') || summary.includes('-1')
     expect(hasTimeoutSignal).toBe(true)
   })
 })
