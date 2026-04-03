@@ -16,28 +16,28 @@ roles:
       prompt: .invoke/roles/researcher/codebase.md
       providers:
         - provider: claude
-          model: opus-4.6
+          model: claude-opus-4-6
           effort: high
         - provider: codex
-          model: gpt-5.4
+          model: o3
           effort: high
     best-practices:
       prompt: .invoke/roles/researcher/best-practices.md
       providers:
         - provider: claude
-          model: opus-4.6
+          model: claude-opus-4-6
           effort: medium
         - provider: codex
-          model: gpt-5.4
+          model: o3
           effort: medium
     dependencies:
       prompt: .invoke/roles/researcher/dependencies.md
       providers:
         - provider: claude
-          model: opus-4.6
+          model: claude-opus-4-6
           effort: medium
         - provider: codex
-          model: gpt-5.4
+          model: o3
           effort: medium
 
   planner:
@@ -45,19 +45,19 @@ roles:
       prompt: .invoke/roles/planner/architect.md
       providers:
         - provider: claude
-          model: opus-4.6
+          model: claude-opus-4-6
           effort: high
         - provider: codex
-          model: gpt-5.4
+          model: o3
           effort: high
     alternative:
       prompt: .invoke/roles/planner/alternative.md
       providers:
         - provider: claude
-          model: opus-4.6
+          model: claude-opus-4-6
           effort: high
         - provider: codex
-          model: gpt-5.4
+          model: o3
           effort: high
 
   builder:
@@ -65,10 +65,10 @@ roles:
       prompt: .invoke/roles/builder/default.md
       providers:
         - provider: claude
-          model: opus-4.6
+          model: claude-sonnet-4-6
           effort: high
         - provider: codex
-          model: gpt-5.4
+          model: o3
           effort: high
 
   reviewer:
@@ -76,46 +76,46 @@ roles:
       prompt: .invoke/roles/reviewer/security.md
       providers:
         - provider: claude
-          model: opus-4.6
+          model: claude-opus-4-6
           effort: high
         - provider: codex
-          model: gpt-5.4
+          model: o3
           effort: high
     code-quality:
       prompt: .invoke/roles/reviewer/code-quality.md
       providers:
         - provider: claude
-          model: opus-4.6
+          model: claude-opus-4-6
           effort: medium
         - provider: codex
-          model: gpt-5.4
+          model: o3
           effort: medium
     performance:
       prompt: .invoke/roles/reviewer/performance.md
       providers:
         - provider: claude
-          model: opus-4.6
+          model: claude-opus-4-6
           effort: high
         - provider: codex
-          model: gpt-5.4
+          model: o3
           effort: high
     ux:
       prompt: .invoke/roles/reviewer/ux.md
       providers:
         - provider: claude
-          model: opus-4.6
+          model: claude-opus-4-6
           effort: medium
         - provider: codex
-          model: gpt-5.4
+          model: o3
           effort: medium
     accessibility:
       prompt: .invoke/roles/reviewer/accessibility.md
       providers:
         - provider: claude
-          model: opus-4.6
+          model: claude-opus-4-6
           effort: medium
         - provider: codex
-          model: gpt-5.4
+          model: o3
           effort: medium
 
 strategies:
