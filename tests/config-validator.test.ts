@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { isValidModelForProvider } from '../src/config-validator.js'
+import { isValidModelForProvider, checkCliExists } from '../src/config-validator.js'
 
 // ---------------------------------------------------------------------------
 // Task 1: isValidModelForProvider
@@ -78,5 +78,19 @@ describe('isValidModelForProvider', () => {
     it('accepts any model string for unknown provider', () => {
       expect(isValidModelForProvider('some-future-provider', 'any-model-name')).toBe(true)
     })
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Task 2: checkCliExists
+// ---------------------------------------------------------------------------
+
+describe('checkCliExists', () => {
+  it('returns true for node (always on PATH)', () => {
+    expect(checkCliExists('node')).toBe(true)
+  })
+
+  it('returns false for a nonexistent CLI', () => {
+    expect(checkCliExists('nonexistent-cli-that-does-not-exist-xyz')).toBe(false)
   })
 })

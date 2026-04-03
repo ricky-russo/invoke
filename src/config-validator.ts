@@ -1,3 +1,4 @@
+import { execSync } from 'child_process'
 import type { InvokeConfig } from './types.js'
 
 // ---------------------------------------------------------------------------
@@ -50,6 +51,19 @@ export function isValidModelForProvider(provider: string, model: string): boolea
     return true
   }
   return patterns.some(pattern => pattern.test(model))
+}
+
+// ---------------------------------------------------------------------------
+// checkCliExists
+// ---------------------------------------------------------------------------
+
+export function checkCliExists(cli: string): boolean {
+  try {
+    execSync(`which ${cli}`, { stdio: 'pipe' })
+    return true
+  } catch {
+    return false
+  }
 }
 
 // Suppress unused import warning — validateConfig will use InvokeConfig in a later commit
