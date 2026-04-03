@@ -38802,6 +38802,21 @@ var WorktreeManager = class {
     if (!info) {
       throw new Error(`No worktree found for task: ${taskId}`);
     }
+    try {
+      execSync2("git add -A", { cwd: info.worktreePath, stdio: "pipe" });
+      execSync2(
+        `git diff --cached --quiet`,
+        { cwd: info.worktreePath, stdio: "pipe" }
+      );
+    } catch {
+      try {
+        execSync2(
+          `git commit -m "agent work: ${taskId}"`,
+          { cwd: info.worktreePath, stdio: "pipe" }
+        );
+      } catch {
+      }
+    }
     execSync2(
       `git merge --squash "${info.branch}"`,
       { cwd: this.repoDir, stdio: "pipe" }

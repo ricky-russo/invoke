@@ -104,4 +104,14 @@ The build stage skill will auto-trigger from here.
 - If a task touches more than 3 files, it's probably too big. Split it.
 - If a task requires understanding more than 500 lines of existing code, it's probably too big. Split it.
 - If you can't write clear acceptance criteria in 3-5 bullet points, the task is too vague. Refine it.
-- If two tasks modify the same file, they must be in different batches (sequential, not parallel).
+
+## CRITICAL: File Conflict Prevention
+
+**Before finalizing the task breakdown, validate that no two tasks in the same batch create or modify the same file.** This is the #1 cause of merge conflicts when parallel worktrees are merged.
+
+For each batch:
+1. List every file that each task will create or modify (from `relevant_files` and the task description)
+2. Check for overlaps — if two tasks touch the same file, they MUST be in different batches
+3. Also check for **implicit overlaps** — tasks that both generate config files, lockfiles, or shared resources like `composer.json`, `package.json`, `phpunit.xml`
+
+If conflicts are found, move one of the conflicting tasks to a later batch. Never put conflicting tasks in the same parallel batch.
