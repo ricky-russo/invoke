@@ -192,6 +192,80 @@ describe('BatchManager', () => {
   })
 })
 
+describe('max_parallel_agents', () => {
+  let manager: BatchManager
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.mocked(mockEngine.dispatch).mockImplementation(() =>
+      new Promise(resolve => setTimeout(() => resolve(mockResult), 50))
+    )
+    manager = new BatchManager(mockEngine, mockWorktreeManager, undefined)
+  })
+
+  it('limits concurrent dispatches when maxParallel is set', async () => {
+    let maxConcurrent = 0
+    let currentConcurrent = 0
+
+    vi.mocked(mockEngine.dispatch).mockImplementation(async () => {
+      currentConcurrent++
+      if (currentConcurrent > maxConcurrent) maxConcurrent = currentConcurrent
+      await new Promise(r => setTimeout(r, 50))
+      currentConcurrent--
+      return mockResult
+    })
+
+    const batchId = manager.dispatchBatch({
+      tasks: [
+        { taskId: 'task-1', role: 'builder', subrole: 'default', taskContext: {} },
+        { taskId: 'task-2', role: 'builder', subrole: 'default', taskContext: {} },
+        { taskId: 'task-3', role: 'builder', subrole: 'default', taskContext: {} },
+        { taskId: 'task-4', role: 'builder', subrole: 'default', taskContext: {} },
+      ],
+      createWorktrees: false,
+      maxParallel: 2,
+    })
+
+    await vi.waitFor(() => {
+      const status = manager.getStatus(batchId)
+      expect(status!.status).toBe('completed')
+    }, { timeout: 5000 })
+
+    expect(maxConcurrent).toBeLessThanOrEqual(2)
+    expect(maxConcurrent).toBeGreaterThan(0)
+  })
+
+  it('runs all tasks in parallel when maxParallel is 0', async () => {
+    let maxConcurrent = 0
+    let currentConcurrent = 0
+
+    vi.mocked(mockEngine.dispatch).mockImplementation(async () => {
+      currentConcurrent++
+      if (currentConcurrent > maxConcurrent) maxConcurrent = currentConcurrent
+      await new Promise(r => setTimeout(r, 50))
+      currentConcurrent--
+      return mockResult
+    })
+
+    const batchId = manager.dispatchBatch({
+      tasks: [
+        { taskId: 'task-1', role: 'builder', subrole: 'default', taskContext: {} },
+        { taskId: 'task-2', role: 'builder', subrole: 'default', taskContext: {} },
+        { taskId: 'task-3', role: 'builder', subrole: 'default', taskContext: {} },
+      ],
+      createWorktrees: false,
+      maxParallel: 0,
+    })
+
+    await vi.waitFor(() => {
+      const status = manager.getStatus(batchId)
+      expect(status!.status).toBe('completed')
+    }, { timeout: 5000 })
+
+    expect(maxConcurrent).toBe(3) // all ran simultaneously
+  })
+})
+
 describe('BatchManager with state persistence', () => {
   let stateManager: StateManager
   let statefulManager: BatchManager

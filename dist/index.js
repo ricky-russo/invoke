@@ -28505,7 +28505,8 @@ var init_config = __esm({
       agent_timeout: external_exports3.number().positive(),
       commit_style: external_exports3.enum(["one-commit", "per-batch", "per-task", "custom"]),
       work_branch_prefix: external_exports3.string(),
-      post_merge_commands: external_exports3.array(external_exports3.string()).optional()
+      post_merge_commands: external_exports3.array(external_exports3.string()).optional(),
+      max_parallel_agents: external_exports3.number().positive().optional()
     });
     RawInvokeConfigSchema = external_exports3.object({
       providers: external_exports3.record(external_exports3.string(), ProviderConfigSchema),
@@ -38706,7 +38707,8 @@ var BatchManager = class {
   }
   async runBatch(batchId, request, signal, batchIndex) {
     const record2 = this.batches.get(batchId);
-    const promises = request.tasks.map(async (task, index) => {
+    const maxParallel = request.maxParallel ?? 0;
+    const runTask = async (task, index) => {
       if (signal.aborted) return;
       const agentStatus = record2.status.agents[index];
       try {
@@ -38755,8 +38757,34 @@ var BatchManager = class {
         agentStatus.result = errorResult;
         await this.persistTaskStatus(batchIndex, task.taskId, "error", errorResult);
       }
-    });
-    await Promise.allSettled(promises);
+    };
+    if (maxParallel > 0 && request.tasks.length > maxParallel) {
+      let active = 0;
+      let nextIndex = 0;
+      await new Promise((resolveAll) => {
+        const tryNext = () => {
+          while (active < maxParallel && nextIndex < request.tasks.length && !signal.aborted) {
+            const idx = nextIndex++;
+            active++;
+            runTask(request.tasks[idx], idx).finally(() => {
+              active--;
+              if (nextIndex >= request.tasks.length && active === 0) {
+                resolveAll();
+              } else {
+                tryNext();
+              }
+            });
+          }
+          if (request.tasks.length === 0 || nextIndex >= request.tasks.length && active === 0) {
+            resolveAll();
+          }
+        };
+        tryNext();
+      });
+    } else {
+      const promises = request.tasks.map((task, index) => runTask(task, index));
+      await Promise.allSettled(promises);
+    }
     if (!signal.aborted) {
       const allDone = record2.status.agents.every(
         (a) => a.status === "completed" || a.status === "error" || a.status === "timeout"
@@ -39164,8 +39192,9 @@ function registerDispatchTools(server, engine, batchManager, projectDir) {
     },
     async ({ tasks, create_worktrees }) => {
       let taskProviders = [];
+      let config2;
       try {
-        const config2 = await loadConfig(projectDir);
+        config2 = await loadConfig(projectDir);
         taskProviders = tasks.map((t) => {
           const roleConfig = config2.roles[t.role]?.[t.subrole];
           return {
@@ -39179,6 +39208,7 @@ function registerDispatchTools(server, engine, batchManager, projectDir) {
         });
       } catch {
       }
+      const maxParallel = config2?.settings?.max_parallel_agents;
       const batchId = batchManager.dispatchBatch({
         tasks: tasks.map((t) => ({
           taskId: t.task_id,
@@ -39186,7 +39216,8 @@ function registerDispatchTools(server, engine, batchManager, projectDir) {
           subrole: t.subrole,
           taskContext: t.task_context
         })),
-        createWorktrees: create_worktrees
+        createWorktrees: create_worktrees,
+        maxParallel
       });
       return {
         content: [{ type: "text", text: JSON.stringify({

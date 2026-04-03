@@ -2,6 +2,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
 import type { DispatchEngine } from '../dispatch/engine.js'
 import type { BatchManager } from '../dispatch/batch-manager.js'
+import type { InvokeConfig } from '../types.js'
 import { loadConfig } from '../config.js'
 
 export function registerDispatchTools(
@@ -58,10 +59,11 @@ export function registerDispatchTools(
     async ({ tasks, create_worktrees }) => {
       // Read current config to report accurate provider info
       let taskProviders: { task_id: string; providers: { provider: string; model: string; effort: string }[] }[] = []
+      let config: InvokeConfig | undefined
       try {
-        const config = await loadConfig(projectDir)
+        config = await loadConfig(projectDir)
         taskProviders = tasks.map(t => {
-          const roleConfig = config.roles[t.role]?.[t.subrole]
+          const roleConfig = config!.roles[t.role]?.[t.subrole]
           return {
             task_id: t.task_id,
             providers: roleConfig?.providers.map(p => ({
@@ -75,6 +77,8 @@ export function registerDispatchTools(
         // Config read failed — return without provider info
       }
 
+      const maxParallel = config?.settings?.max_parallel_agents
+
       const batchId = batchManager.dispatchBatch({
         tasks: tasks.map(t => ({
           taskId: t.task_id,
@@ -83,6 +87,7 @@ export function registerDispatchTools(
           taskContext: t.task_context,
         })),
         createWorktrees: create_worktrees,
+        maxParallel,
       })
 
       return {

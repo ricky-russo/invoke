@@ -2,7 +2,7 @@ import { randomUUID } from 'crypto'
 import type { DispatchEngine } from './engine.js'
 import type { WorktreeManager } from '../worktree/manager.js'
 import type { StateManager } from '../tools/state.js'
-import type { BatchRequest, BatchStatus, AgentStatus, AgentResult } from '../types.js'
+import type { BatchRequest, BatchTask, BatchStatus, AgentStatus, AgentResult } from '../types.js'
 
 interface BatchRecord {
   status: BatchStatus
@@ -112,8 +112,9 @@ export class BatchManager {
     batchIndex: number
   ): Promise<void> {
     const record = this.batches.get(batchId)!
+    const maxParallel = request.maxParallel ?? 0 // 0 = unlimited
 
-    const promises = request.tasks.map(async (task, index) => {
+    const runTask = async (task: BatchTask, index: number) => {
       if (signal.aborted) return
 
       const agentStatus = record.status.agents[index]
@@ -170,9 +171,38 @@ export class BatchManager {
         agentStatus.result = errorResult
         await this.persistTaskStatus(batchIndex, task.taskId, 'error', errorResult)
       }
-    })
+    }
 
-    await Promise.allSettled(promises)
+    if (maxParallel > 0 && request.tasks.length > maxParallel) {
+      // Concurrency pool
+      let active = 0
+      let nextIndex = 0
+
+      await new Promise<void>((resolveAll) => {
+        const tryNext = () => {
+          while (active < maxParallel && nextIndex < request.tasks.length && !signal.aborted) {
+            const idx = nextIndex++
+            active++
+            runTask(request.tasks[idx], idx).finally(() => {
+              active--
+              if (nextIndex >= request.tasks.length && active === 0) {
+                resolveAll()
+              } else {
+                tryNext()
+              }
+            })
+          }
+          if (request.tasks.length === 0 || (nextIndex >= request.tasks.length && active === 0)) {
+            resolveAll()
+          }
+        }
+        tryNext()
+      })
+    } else {
+      // Unlimited — current behavior
+      const promises = request.tasks.map((task, index) => runTask(task, index))
+      await Promise.allSettled(promises)
+    }
 
     if (!signal.aborted) {
       const allDone = record.status.agents.every(

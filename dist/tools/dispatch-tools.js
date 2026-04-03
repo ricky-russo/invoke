@@ -42,8 +42,9 @@ export function registerDispatchTools(server, engine, batchManager, projectDir) 
     }, async ({ tasks, create_worktrees }) => {
         // Read current config to report accurate provider info
         let taskProviders = [];
+        let config;
         try {
-            const config = await loadConfig(projectDir);
+            config = await loadConfig(projectDir);
             taskProviders = tasks.map(t => {
                 const roleConfig = config.roles[t.role]?.[t.subrole];
                 return {
@@ -59,6 +60,7 @@ export function registerDispatchTools(server, engine, batchManager, projectDir) 
         catch {
             // Config read failed — return without provider info
         }
+        const maxParallel = config?.settings?.max_parallel_agents;
         const batchId = batchManager.dispatchBatch({
             tasks: tasks.map(t => ({
                 taskId: t.task_id,
@@ -67,6 +69,7 @@ export function registerDispatchTools(server, engine, batchManager, projectDir) 
                 taskContext: t.task_context,
             })),
             createWorktrees: create_worktrees,
+            maxParallel,
         });
         return {
             content: [{ type: 'text', text: JSON.stringify({

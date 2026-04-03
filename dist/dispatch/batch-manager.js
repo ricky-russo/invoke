@@ -84,7 +84,8 @@ export class BatchManager {
     }
     async runBatch(batchId, request, signal, batchIndex) {
         const record = this.batches.get(batchId);
-        const promises = request.tasks.map(async (task, index) => {
+        const maxParallel = request.maxParallel ?? 0; // 0 = unlimited
+        const runTask = async (task, index) => {
             if (signal.aborted)
                 return;
             const agentStatus = record.status.agents[index];
@@ -138,8 +139,38 @@ export class BatchManager {
                 agentStatus.result = errorResult;
                 await this.persistTaskStatus(batchIndex, task.taskId, 'error', errorResult);
             }
-        });
-        await Promise.allSettled(promises);
+        };
+        if (maxParallel > 0 && request.tasks.length > maxParallel) {
+            // Concurrency pool
+            let active = 0;
+            let nextIndex = 0;
+            await new Promise((resolveAll) => {
+                const tryNext = () => {
+                    while (active < maxParallel && nextIndex < request.tasks.length && !signal.aborted) {
+                        const idx = nextIndex++;
+                        active++;
+                        runTask(request.tasks[idx], idx).finally(() => {
+                            active--;
+                            if (nextIndex >= request.tasks.length && active === 0) {
+                                resolveAll();
+                            }
+                            else {
+                                tryNext();
+                            }
+                        });
+                    }
+                    if (request.tasks.length === 0 || (nextIndex >= request.tasks.length && active === 0)) {
+                        resolveAll();
+                    }
+                };
+                tryNext();
+            });
+        }
+        else {
+            // Unlimited — current behavior
+            const promises = request.tasks.map((task, index) => runTask(task, index));
+            await Promise.allSettled(promises);
+        }
         if (!signal.aborted) {
             const allDone = record.status.agents.every(a => a.status === 'completed' || a.status === 'error' || a.status === 'timeout');
             const anyError = record.status.agents.some(a => a.status === 'error' || a.status === 'timeout');
