@@ -18,27 +18,33 @@ roles:
         - provider: claude
           model: claude-opus-4-6
           effort: high
+          timeout: 600
         - provider: codex
           model: o3
           effort: high
+          timeout: 600
     best-practices:
       prompt: .invoke/roles/researcher/best-practices.md
       providers:
         - provider: claude
           model: claude-opus-4-6
           effort: medium
+          timeout: 600
         - provider: codex
           model: o3
           effort: medium
+          timeout: 600
     dependencies:
       prompt: .invoke/roles/researcher/dependencies.md
       providers:
         - provider: claude
           model: claude-opus-4-6
           effort: medium
+          timeout: 600
         - provider: codex
           model: o3
           effort: medium
+          timeout: 600
 
   planner:
     architect:
@@ -47,18 +53,22 @@ roles:
         - provider: claude
           model: claude-opus-4-6
           effort: high
+          timeout: 600
         - provider: codex
           model: o3
           effort: high
+          timeout: 600
     alternative:
       prompt: .invoke/roles/planner/alternative.md
       providers:
         - provider: claude
           model: claude-opus-4-6
           effort: high
+          timeout: 600
         - provider: codex
           model: o3
           effort: high
+          timeout: 600
 
   builder:
     default:
@@ -67,9 +77,11 @@ roles:
         - provider: claude
           model: claude-sonnet-4-6
           effort: high
+          timeout: 300
         - provider: codex
           model: o3
           effort: high
+          timeout: 300
 
   reviewer:
     security:
@@ -78,45 +90,55 @@ roles:
         - provider: claude
           model: claude-opus-4-6
           effort: high
+          timeout: 300
         - provider: codex
           model: o3
           effort: high
+          timeout: 300
     code-quality:
       prompt: .invoke/roles/reviewer/code-quality.md
       providers:
         - provider: claude
           model: claude-opus-4-6
           effort: medium
+          timeout: 300
         - provider: codex
           model: o3
           effort: medium
+          timeout: 300
     performance:
       prompt: .invoke/roles/reviewer/performance.md
       providers:
         - provider: claude
           model: claude-opus-4-6
           effort: high
+          timeout: 300
         - provider: codex
           model: o3
           effort: high
+          timeout: 300
     ux:
       prompt: .invoke/roles/reviewer/ux.md
       providers:
         - provider: claude
           model: claude-opus-4-6
           effort: medium
+          timeout: 300
         - provider: codex
           model: o3
           effort: medium
+          timeout: 300
     accessibility:
       prompt: .invoke/roles/reviewer/accessibility.md
       providers:
         - provider: claude
           model: claude-opus-4-6
           effort: medium
+          timeout: 300
         - provider: codex
           model: o3
           effort: medium
+          timeout: 300
 
 strategies:
   tdd:
@@ -130,6 +152,6 @@ strategies:
 
 settings:
   default_strategy: tdd
-  agent_timeout: 300000
+  agent_timeout: 300
   commit_style: per-batch
   work_branch_prefix: invoke/work
