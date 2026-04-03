@@ -17,6 +17,8 @@ import { registerWorktreeTools } from './tools/worktree-tools.js'
 import { registerStateTools } from './tools/state-tools.js'
 import { registerArtifactTools } from './tools/artifact-tools.js'
 import { registerConfigUpdateTools } from './tools/config-update-tools.js'
+import { ContextManager } from './tools/context.js'
+import { registerContextTools } from './tools/context-tools.js'
 import { writeFile } from 'fs/promises'
 import path from 'path'
 
@@ -60,6 +62,7 @@ async function main() {
   const worktreeManager = new WorktreeManager(projectDir)
   const stateManager = new StateManager(projectDir)
   const artifactManager = new ArtifactManager(projectDir)
+  const contextManager = new ContextManager(projectDir)
 
   // Register config-independent tools first
   registerStateTools(server, stateManager)
@@ -67,6 +70,7 @@ async function main() {
   registerWorktreeTools(server, worktreeManager)
   registerConfigTools(server, projectDir)
   registerConfigUpdateTools(server, projectDir)
+  registerContextTools(server, contextManager)
 
   // Register dispatch tools (need config)
   if (config) {
