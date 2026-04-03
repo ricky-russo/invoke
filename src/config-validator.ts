@@ -1,4 +1,6 @@
 import { execSync } from 'child_process'
+import { access } from 'fs/promises'
+import path from 'path'
 import type { InvokeConfig } from './types.js'
 
 // ---------------------------------------------------------------------------
@@ -66,5 +68,88 @@ export function checkCliExists(cli: string): boolean {
   }
 }
 
-// Suppress unused import warning — validateConfig will use InvokeConfig in a later commit
-void (undefined as unknown as InvokeConfig)
+// ---------------------------------------------------------------------------
+// suggestModel (private helper)
+// ---------------------------------------------------------------------------
+
+function suggestModel(_provider: string, model: string): string | undefined {
+  return MODEL_SUGGESTIONS[model]
+}
+
+// ---------------------------------------------------------------------------
+// validateConfig
+// ---------------------------------------------------------------------------
+
+export async function validateConfig(
+  config: InvokeConfig,
+  projectDir: string,
+): Promise<ValidationResult> {
+  const warnings: ValidationWarning[] = []
+
+  // 1. CLI existence for each provider
+  for (const [providerName, providerConfig] of Object.entries(config.providers)) {
+    if (!checkCliExists(providerConfig.cli)) {
+      warnings.push({
+        level: 'error',
+        message: `Provider '${providerName}': CLI '${providerConfig.cli}' not found on PATH`,
+      })
+    }
+  }
+
+  // 2. Default strategy exists in strategies
+  const defaultStrategy = config.settings.default_strategy
+  if (!config.strategies[defaultStrategy]) {
+    const available = Object.keys(config.strategies).join(', ')
+    warnings.push({
+      level: 'error',
+      message: `default_strategy '${defaultStrategy}' is not defined in strategies. Available: ${available || '(none)'}`,
+    })
+  }
+
+  // 3–5. Per-role checks
+  for (const [roleGroup, subroles] of Object.entries(config.roles)) {
+    for (const [subroleName, roleConfig] of Object.entries(subroles)) {
+      const roleLabel = `${roleGroup}.${subroleName}`
+
+      // 3. Prompt file exists on disk
+      const promptPath = path.isAbsolute(roleConfig.prompt)
+        ? roleConfig.prompt
+        : path.join(projectDir, roleConfig.prompt)
+
+      try {
+        await access(promptPath)
+      } catch {
+        warnings.push({
+          level: 'error',
+          message: `Role '${roleLabel}': prompt file '${roleConfig.prompt}' does not exist`,
+        })
+      }
+
+      // 4 & 5. Per-provider-entry checks
+      for (const entry of roleConfig.providers) {
+        // 4. Provider name exists in config.providers
+        if (!config.providers[entry.provider]) {
+          const available = Object.keys(config.providers).join(', ')
+          warnings.push({
+            level: 'error',
+            message: `Role '${roleLabel}': provider '${entry.provider}' is not defined in providers. Available: ${available || '(none)'}`,
+          })
+        }
+
+        // 5. Model matches provider patterns
+        if (!isValidModelForProvider(entry.provider, entry.model)) {
+          const suggestion = suggestModel(entry.provider, entry.model)
+          const hint = suggestion ? ` Did you mean '${suggestion}'?` : ''
+          warnings.push({
+            level: 'warning',
+            message: `Role '${roleLabel}': model '${entry.model}' does not match known patterns for provider '${entry.provider}'.${hint}`,
+          })
+        }
+      }
+    }
+  }
+
+  const valid = !warnings.some(w => w.level === 'error')
+
+  return { valid, warnings }
+}

@@ -1,5 +1,9 @@
-import { describe, it, expect } from 'vitest'
-import { isValidModelForProvider, checkCliExists } from '../src/config-validator.js'
+import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { isValidModelForProvider, checkCliExists, validateConfig } from '../src/config-validator.js'
+import type { InvokeConfig } from '../src/types.js'
+import { mkdir, writeFile, rm } from 'fs/promises'
+import path from 'path'
+import os from 'os'
 
 // ---------------------------------------------------------------------------
 // Task 1: isValidModelForProvider
@@ -92,5 +96,122 @@ describe('checkCliExists', () => {
 
   it('returns false for a nonexistent CLI', () => {
     expect(checkCliExists('nonexistent-cli-that-does-not-exist-xyz')).toBe(false)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Task 3: validateConfig
+// ---------------------------------------------------------------------------
+
+const TEST_DIR = path.join(os.tmpdir(), 'invoke-config-validator-test')
+
+// Base config used across tests — uses 'node' as the CLI so it is always on PATH
+const baseConfig: InvokeConfig = {
+  providers: {
+    claude: {
+      cli: 'node',
+      args: ['--print', '--model', '{{model}}'],
+    },
+  },
+  roles: {
+    reviewer: {
+      security: {
+        prompt: '.invoke/roles/reviewer/security.md',
+        providers: [
+          { provider: 'claude', model: 'claude-opus-4-6', effort: 'high' },
+        ],
+      },
+    },
+  },
+  strategies: {
+    tdd: { prompt: '.invoke/strategies/tdd.md' },
+  },
+  settings: {
+    default_strategy: 'tdd',
+    agent_timeout: 300000,
+    commit_style: 'per-batch',
+    work_branch_prefix: 'invoke/work',
+  },
+}
+
+describe('validateConfig', () => {
+  beforeEach(async () => {
+    // Create fixture directory structure and required prompt files
+    await mkdir(path.join(TEST_DIR, '.invoke', 'roles', 'reviewer'), { recursive: true })
+    await mkdir(path.join(TEST_DIR, '.invoke', 'strategies'), { recursive: true })
+    await writeFile(
+      path.join(TEST_DIR, '.invoke', 'roles', 'reviewer', 'security.md'),
+      '# Security Reviewer\nYou are a security reviewer.',
+    )
+    await writeFile(
+      path.join(TEST_DIR, '.invoke', 'strategies', 'tdd.md'),
+      '# TDD Strategy',
+    )
+  })
+
+  afterEach(async () => {
+    await rm(TEST_DIR, { recursive: true, force: true })
+  })
+
+  it('returns valid: true for a fully valid config', async () => {
+    const result = await validateConfig(baseConfig, TEST_DIR)
+    expect(result.valid).toBe(true)
+    expect(result.warnings).toHaveLength(0)
+  })
+
+  it('returns a warning with suggestion for opus-4.6 model', async () => {
+    const config = structuredClone(baseConfig)
+    config.roles.reviewer.security.providers[0].model = 'opus-4.6'
+
+    const result = await validateConfig(config, TEST_DIR)
+    expect(result.valid).toBe(true) // warnings don't invalidate
+    expect(result.warnings).toHaveLength(1)
+    expect(result.warnings[0].level).toBe('warning')
+    expect(result.warnings[0].message).toContain('opus-4.6')
+    expect(result.warnings[0].message).toContain('claude-opus-4-6')
+  })
+
+  it('returns an error for a missing prompt file', async () => {
+    const config = structuredClone(baseConfig)
+    config.roles.reviewer.security.prompt = '.invoke/roles/reviewer/missing-prompt.md'
+
+    const result = await validateConfig(config, TEST_DIR)
+    expect(result.valid).toBe(false)
+    const errors = result.warnings.filter(w => w.level === 'error')
+    expect(errors.length).toBeGreaterThan(0)
+    expect(errors[0].message).toContain('missing-prompt.md')
+  })
+
+  it('returns an error for an undefined provider reference in a role', async () => {
+    const config = structuredClone(baseConfig)
+    config.roles.reviewer.security.providers[0].provider = 'nonexistent-provider'
+
+    const result = await validateConfig(config, TEST_DIR)
+    expect(result.valid).toBe(false)
+    const errors = result.warnings.filter(w => w.level === 'error')
+    expect(errors.length).toBeGreaterThan(0)
+    expect(errors[0].message).toContain('nonexistent-provider')
+  })
+
+  it('returns an error for an invalid default_strategy', async () => {
+    const config = structuredClone(baseConfig)
+    config.settings.default_strategy = 'nonexistent-strategy'
+
+    const result = await validateConfig(config, TEST_DIR)
+    expect(result.valid).toBe(false)
+    const errors = result.warnings.filter(w => w.level === 'error')
+    expect(errors.length).toBeGreaterThan(0)
+    expect(errors[0].message).toContain('nonexistent-strategy')
+  })
+
+  it('returns an error for a missing CLI', async () => {
+    const config = structuredClone(baseConfig)
+    config.providers.claude.cli = 'nonexistent-cli-that-does-not-exist-xyz'
+
+    const result = await validateConfig(config, TEST_DIR)
+    expect(result.valid).toBe(false)
+    const errors = result.warnings.filter(w => w.level === 'error')
+    expect(errors.length).toBeGreaterThan(0)
+    expect(errors[0].message).toContain('nonexistent-cli-that-does-not-exist-xyz')
   })
 })
