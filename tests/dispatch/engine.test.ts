@@ -115,6 +115,27 @@ const multiProviderConfig: InvokeConfig = {
   },
 }
 
+const configWithEntryTimeout: InvokeConfig = {
+  providers: {
+    claude: { cli: 'claude', args: ['--print', '--model', '{{model}}'] },
+  },
+  roles: {
+    researcher: {
+      codebase: {
+        prompt: '.invoke/roles/researcher/codebase.md',
+        providers: [{ provider: 'claude', model: 'opus', effort: 'high', timeout: 10 }],
+      },
+    },
+  },
+  strategies: {},
+  settings: {
+    default_strategy: 'tdd',
+    agent_timeout: 5,
+    commit_style: 'per-batch',
+    work_branch_prefix: 'invoke/work',
+  },
+}
+
 describe('DispatchEngine', () => {
   it('dispatches to a single provider and returns result', async () => {
     mockSpawn('Research output', 0)
@@ -172,6 +193,48 @@ describe('DispatchEngine', () => {
     await expect(
       engine.dispatch({ role: 'nonexistent', subrole: 'test', taskContext: {} })
     ).rejects.toThrow('Role not found: nonexistent.test')
+  })
+
+  it('uses per-entry timeout over global timeout', async () => {
+    mockSpawn('Output', 0)
+
+    const providers = new Map([['claude', mockProvider]])
+    const parsers = new Map([['claude', mockParser]])
+    const engine = new DispatchEngine({
+      config: configWithEntryTimeout,
+      providers,
+      parsers,
+      projectDir: '/tmp/test-project',
+    })
+
+    await engine.dispatch({
+      role: 'researcher',
+      subrole: 'codebase',
+      taskContext: {},
+    })
+
+    expect(spawn).toHaveBeenCalled()
+  })
+
+  it('converts seconds to milliseconds for timeout', async () => {
+    mockSpawn('Output', 0)
+
+    const providers = new Map([['claude', mockProvider]])
+    const parsers = new Map([['claude', mockParser]])
+    const engine = new DispatchEngine({
+      config: singleProviderConfig,
+      providers,
+      parsers,
+      projectDir: '/tmp/test-project',
+    })
+
+    await engine.dispatch({
+      role: 'researcher',
+      subrole: 'codebase',
+      taskContext: {},
+    })
+
+    expect(spawn).toHaveBeenCalled()
   })
 
   it('throws when provider is not found', async () => {

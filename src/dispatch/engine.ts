@@ -79,10 +79,11 @@ export class DispatchEngine {
     })
 
     const startTime = Date.now()
+    const timeoutSeconds = entry.timeout ?? this.config.settings.agent_timeout
     const { stdout, stderr, exitCode } = await this.runProcess(
       commandSpec.cmd,
       commandSpec.args,
-      this.config.settings.agent_timeout,
+      timeoutSeconds * 1000,
       commandSpec.cwd
     )
     const duration = Date.now() - startTime
