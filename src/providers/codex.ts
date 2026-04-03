@@ -18,9 +18,9 @@ export class CodexProvider implements Provider {
         .replace('{{effort}}', params.effort)
     )
 
-    args.push('-C', params.workDir)
+    args.push('--skip-git-repo-check')
     args.push(params.prompt)
 
-    return { cmd: this.config.cli, args }
+    return { cmd: this.config.cli, args, cwd: params.workDir }
   }
 }

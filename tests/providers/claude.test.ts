@@ -20,11 +20,12 @@ describe('ClaudeProvider', () => {
     })
 
     expect(cmd.cmd).toBe('claude')
+    expect(cmd.cmd).toBe('claude')
     expect(cmd.args).toContain('--print')
     expect(cmd.args).toContain('--model')
     expect(cmd.args).toContain('opus-4.6')
-    expect(cmd.args).toContain('--directory')
-    expect(cmd.args).toContain('/tmp/worktree-1')
+    expect(cmd.args).not.toContain('--directory')
+    expect(cmd.cwd).toBe('/tmp/worktree-1')
     expect(cmd.args[cmd.args.length - 1]).toBe('Build the auth module')
   })
 

@@ -4,7 +4,7 @@ import { CodexProvider } from '../../src/providers/codex.js'
 describe('CodexProvider', () => {
   const provider = new CodexProvider({
     cli: 'codex',
-    args: ['--model', '{{model}}', '--reasoning-effort', '{{effort}}'],
+    args: ['exec', '--model', '{{model}}', '--full-auto', '-c', 'reasoning_effort={{effort}}'],
   })
 
   it('has the correct name', () => {
@@ -20,12 +20,12 @@ describe('CodexProvider', () => {
     })
 
     expect(cmd.cmd).toBe('codex')
+    expect(cmd.args).toContain('exec')
     expect(cmd.args).toContain('--model')
     expect(cmd.args).toContain('gpt-5.4')
-    expect(cmd.args).toContain('--reasoning-effort')
-    expect(cmd.args).toContain('high')
-    expect(cmd.args).toContain('-C')
-    expect(cmd.args).toContain('/tmp/worktree-2')
+    expect(cmd.args).toContain('reasoning_effort=high')
+    expect(cmd.args).toContain('--skip-git-repo-check')
+    expect(cmd.cwd).toBe('/tmp/worktree-2')
     expect(cmd.args[cmd.args.length - 1]).toBe('Review for security issues')
   })
 })

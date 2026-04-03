@@ -18,9 +18,8 @@ export class ClaudeProvider implements Provider {
         .replace('{{effort}}', params.effort)
     )
 
-    args.push('--directory', params.workDir)
     args.push(params.prompt)
 
-    return { cmd: this.config.cli, args }
+    return { cmd: this.config.cli, args, cwd: params.workDir }
   }
 }

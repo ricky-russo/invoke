@@ -68,7 +68,7 @@ describe.skipIf(!cliAvailable)('Claude CLI Smoke Tests', () => {
     expect(result.output.summary).toBeTruthy()
   }, 60000)
 
-  it('accepts --directory flag', () => {
+  it('sets cwd instead of --directory flag', () => {
     const cmd = provider.buildCommand({
       model: 'haiku-4.5',
       effort: 'low',
@@ -76,7 +76,8 @@ describe.skipIf(!cliAvailable)('Claude CLI Smoke Tests', () => {
       prompt: 'test',
     })
 
-    expect(cmd.args).toContain('--directory')
+    expect(cmd.cwd).toBe('/tmp')
+    expect(cmd.args).not.toContain('--directory')
     expect(cmd.args).toContain('/tmp')
   })
 })

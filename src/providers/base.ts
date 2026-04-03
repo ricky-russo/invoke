@@ -1,6 +1,7 @@
 export interface CommandSpec {
   cmd: string
   args: string[]
+  cwd?: string
   env?: Record<string, string>
 }
 

@@ -82,7 +82,8 @@ export class DispatchEngine {
     const { stdout, stderr, exitCode } = await this.runProcess(
       commandSpec.cmd,
       commandSpec.args,
-      this.config.settings.agent_timeout
+      this.config.settings.agent_timeout,
+      commandSpec.cwd
     )
     const duration = Date.now() - startTime
 
@@ -145,10 +146,11 @@ export class DispatchEngine {
   private runProcess(
     cmd: string,
     args: string[],
-    timeout: number
+    timeout: number,
+    cwd?: string
   ): Promise<{ stdout: string; stderr: string; exitCode: number }> {
     return new Promise((resolve, reject) => {
-      const proc = spawn(cmd, args, { stdio: ['pipe', 'pipe', 'pipe'] })
+      const proc = spawn(cmd, args, { stdio: ['pipe', 'pipe', 'pipe'], cwd })
 
       let stdout = ''
       let stderr = ''

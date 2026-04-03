@@ -14,7 +14,7 @@ try {
 describe.skipIf(!cliAvailable)('Codex CLI Smoke Tests', () => {
   const provider = new CodexProvider({
     cli: 'codex',
-    args: ['--model', '{{model}}', '--reasoning-effort', '{{effort}}'],
+    args: ['exec', '--model', '{{model}}', '--full-auto', '-c', 'reasoning_effort={{effort}}'],
   })
   const parser = new CodexParser()
 
@@ -27,13 +27,13 @@ describe.skipIf(!cliAvailable)('Codex CLI Smoke Tests', () => {
     })
 
     expect(cmd.cmd).toBe('codex')
+    expect(cmd.args).toContain('exec')
     expect(cmd.args).toContain('--model')
     expect(cmd.args).toContain('gpt-5.4')
-    expect(cmd.args).toContain('--reasoning-effort')
-    expect(cmd.args).toContain('low')
+    expect(cmd.args).toContain('reasoning_effort=low')
   })
 
-  it('accepts -C flag for working directory', () => {
+  it('sets cwd for working directory', () => {
     const cmd = provider.buildCommand({
       model: 'gpt-5.4',
       effort: 'low',
@@ -41,8 +41,8 @@ describe.skipIf(!cliAvailable)('Codex CLI Smoke Tests', () => {
       prompt: 'test',
     })
 
-    expect(cmd.args).toContain('-C')
-    expect(cmd.args).toContain('/tmp')
+    expect(cmd.cwd).toBe('/tmp')
+    expect(cmd.args).toContain('--skip-git-repo-check')
   })
 
   it('responds to a simple prompt', async () => {

@@ -20,7 +20,7 @@ providers:
     args: ["--print", "--model", "{{model}}"]
   codex:
     cli: codex
-    args: ["--model", "{{model}}", "--reasoning-effort", "{{effort}}"]
+    args: ["exec", "--model", "{{model}}", "--full-auto", "-c", "reasoning_effort={{effort}}"]
 
 roles:
   researcher:
@@ -111,8 +111,7 @@ describe('Dispatch Chain Integration', () => {
     expect(cmd.args).toContain('--print')
     expect(cmd.args).toContain('--model')
     expect(cmd.args).toContain('opus-4.6')
-    expect(cmd.args).toContain('--directory')
-    expect(cmd.args).toContain('/tmp/worktree')
+    expect(cmd.cwd).toBe('/tmp/worktree')
     expect(cmd.args[cmd.args.length - 1]).toBe('Test prompt')
   })
 
@@ -132,10 +131,8 @@ describe('Dispatch Chain Integration', () => {
     expect(cmd.cmd).toBe('codex')
     expect(cmd.args).toContain('--model')
     expect(cmd.args).toContain('gpt-5.4')
-    expect(cmd.args).toContain('--reasoning-effort')
-    expect(cmd.args).toContain('high')
-    expect(cmd.args).toContain('-C')
-    expect(cmd.args).toContain('/tmp/worktree')
+    expect(cmd.args).toContain('--skip-git-repo-check')
+    expect(cmd.cwd).toBe('/tmp/worktree')
     expect(cmd.args[cmd.args.length - 1]).toBe('Review prompt')
   })
 
