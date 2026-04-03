@@ -165,6 +165,16 @@ export async function validateConfig(
             suggestion: suggestion ? `Did you mean '${suggestion}'?` : undefined,
           })
         }
+
+        // Check for suspiciously large timeout (likely milliseconds instead of seconds)
+        if (entry.timeout !== undefined && entry.timeout > 3600) {
+          warnings.push({
+            level: 'warning',
+            path: `${entryPath}.timeout`,
+            message: `Timeout ${entry.timeout} seems too large — values are in seconds, not milliseconds.`,
+            suggestion: `Did you mean ${Math.round(entry.timeout / 1000)} seconds?`,
+          })
+        }
       }
     }
   }

@@ -221,4 +221,22 @@ describe('validateConfig', () => {
       path: 'providers.claude.cli',
     }))
   })
+
+  it('warns on suspiciously large timeout (likely milliseconds)', async () => {
+    const config = structuredClone(baseConfig)
+    config.roles.reviewer.security.providers[0].timeout = 300000
+    const result = await validateConfig(config, TEST_DIR)
+    expect(result.warnings).toContainEqual(expect.objectContaining({
+      level: 'warning',
+      path: 'roles.reviewer.security.providers[0].timeout',
+    }))
+  })
+
+  it('does not warn on reasonable timeout', async () => {
+    const config = structuredClone(baseConfig)
+    config.roles.reviewer.security.providers[0].timeout = 600
+    const result = await validateConfig(config, TEST_DIR)
+    const timeoutWarnings = result.warnings.filter(w => w.path.includes('timeout'))
+    expect(timeoutWarnings).toHaveLength(0)
+  })
 })
