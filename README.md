@@ -19,25 +19,44 @@ flowchart LR
 
 ## Quick Start
 
-### 1. Install the plugin
+### 1. Add the invoke marketplace
 
-From a local clone:
+Add invoke as a plugin marketplace in your Claude Code global settings (`~/.claude/settings.json`):
 
-```sh
-claude mcp add invoke -- node /path/to/invoke/dist/index.js
+```json
+{
+  "extraKnownMarketplaces": {
+    "invoke": {
+      "source": {
+        "source": "github",
+        "repo": "ricky-russo/invoke"
+      }
+    }
+  }
+}
 ```
 
-### 2. Initialize in your project
+### 2. Enable the plugin
 
-```sh
-npx invoke-init
+In your project's `.claude/settings.local.json`:
+
+```json
+{
+  "enabledPlugins": {
+    "invoke@invoke": true
+  }
+}
 ```
 
-This creates a `.invoke/` directory with the default pipeline config, role prompts, and strategy templates.
+Claude Code will prompt you to approve the plugin on first use.
 
-### 3. Configure providers
+### 3. Initialize in your project
 
-Edit `.invoke/pipeline.yaml` to match the CLIs you have installed. The default config ships with `claude` and `codex` providers:
+Run `invoke-init` or start a Claude Code session — invoke will create a `.invoke/` directory with the default pipeline config, role prompts, and strategy templates.
+
+### 4. Configure providers
+
+Edit `.invoke/pipeline.yaml` to match the CLIs you have installed:
 
 ```yaml
 providers:
@@ -46,7 +65,7 @@ providers:
     args: ["--print", "--model", "{{model}}", "--dangerously-skip-permissions"]
 ```
 
-### 4. Start building
+### 5. Start building
 
 Open Claude Code in your project and ask it to build something. Invoke's scope skill activates automatically when you describe a feature to implement, and walks you through the full pipeline.
 
@@ -89,7 +108,7 @@ settings:
   work_branch_prefix: invoke/work
 ```
 
-The default config includes roles for researchers, planners, builders, and reviewers, each with both `claude` and `codex` provider entries. See [Configuration Reference](docs/configuration.md) for the full specification.
+The default config includes roles for researchers, planners, builders, and reviewers. See [Configuration Reference](docs/configuration.md) for the full specification.
 
 ## Key Features
 
