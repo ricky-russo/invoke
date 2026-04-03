@@ -14,7 +14,8 @@ flowchart LR
     B --> C["Orchestrate\nTask Breakdown"]
     C --> D["Build\nParallel Agents"]
     D --> E["Review\nMulti-Reviewer"]
-    E --> F["Complete"]
+    E -->|"Fixes needed"| D
+    E -->|"Approved"| F["Complete"]
 ```
 
 ## Quick Start
