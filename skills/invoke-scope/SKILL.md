@@ -35,8 +35,9 @@ Call `invoke_get_context` to check if context.md exists.
    - Use research to make questions specific: "The codebase uses [framework] + [language] — are there any conventions around [pattern the research found] I should know about?"
    - "What are your near-term goals or priorities?"
 3. Combine research findings + user answers into a context.md document following the template structure.
-4. Present the draft to the user for review.
-5. Save via `invoke_init_context`.
+4. **Print the full draft context.md as text output first** — the user must be able to read it before being asked to approve.
+5. THEN ask for approval using `AskUserQuestion`. Do NOT combine the draft and the approval prompt in the same message.
+6. If approved, save via `invoke_init_context`. If the user wants changes, revise and repeat from step 4.
 
 #### For greenfield projects (empty or minimal project):
 
@@ -47,8 +48,9 @@ Call `invoke_get_context` to check if context.md exists.
    - "Any architectural patterns or conventions you want to follow?"
    - "What are your immediate goals?"
 3. Generate context.md from answers.
-4. Present the draft to the user for review.
-5. Save via `invoke_init_context`.
+4. **Print the full draft context.md as text output first** — the user must be able to read it before being asked to approve.
+5. THEN ask for approval using `AskUserQuestion`. Do NOT combine the draft and the approval prompt in the same message.
+6. If approved, save via `invoke_init_context`. If the user wants changes, revise and repeat from step 4.
 
 ### 3. Dispatch Researchers
 
