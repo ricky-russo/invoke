@@ -3,6 +3,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { loadConfig } from './config.js'
+import { validateConfig } from './config-validator.js'
 import { createProviderRegistry } from './providers/registry.js'
 import { createParserRegistry } from './parsers/registry.js'
 import { DispatchEngine } from './dispatch/engine.js'
@@ -16,6 +17,8 @@ import { registerWorktreeTools } from './tools/worktree-tools.js'
 import { registerStateTools } from './tools/state-tools.js'
 import { registerArtifactTools } from './tools/artifact-tools.js'
 import { registerConfigUpdateTools } from './tools/config-update-tools.js'
+import { writeFile } from 'fs/promises'
+import path from 'path'
 
 async function main() {
   const projectDir = process.cwd()
@@ -32,6 +35,25 @@ async function main() {
   } catch (err) {
     console.error(`Warning: Could not load .invoke/pipeline.yaml: ${err instanceof Error ? err.message : String(err)}`)
     console.error('Config-dependent tools will return errors until pipeline.yaml is configured.')
+  }
+
+  if (config) {
+    const validation = await validateConfig(config, projectDir)
+    if (validation.warnings.length > 0) {
+      console.error('Pipeline config warnings:')
+      for (const w of validation.warnings) {
+        const prefix = w.level === 'error' ? 'ERROR' : 'WARNING'
+        console.error(`  [${prefix}] ${w.path}: ${w.message}${w.suggestion ? ` ${w.suggestion}` : ''}`)
+      }
+    }
+    try {
+      await writeFile(
+        path.join(projectDir, '.invoke', 'validation.json'),
+        JSON.stringify(validation, null, 2)
+      )
+    } catch {
+      // Non-critical
+    }
   }
 
   // Initialize managers
