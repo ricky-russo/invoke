@@ -43,7 +43,7 @@ describe('WorktreeManager', () => {
     expect(existsSync(wt2.worktreePath)).toBe(true)
   })
 
-  it('merges a worktree back into the work branch', async () => {
+  it('squash merges a worktree back into the work branch', async () => {
     execSync('git checkout -b work-branch', { cwd: repoDir })
 
     const wt = await manager.create('task-1')
@@ -53,6 +53,30 @@ describe('WorktreeManager', () => {
     await manager.merge('task-1')
 
     expect(existsSync(path.join(repoDir, 'new-file.ts'))).toBe(true)
+
+    // Verify squash merge produces a single commit with the default message
+    const log = execSync('git log --oneline -1', { cwd: repoDir }).toString().trim()
+    expect(log).toContain('feat: task-1')
+
+    // Verify it is NOT a merge commit (squash merge has only one parent)
+    const parentCount = execSync('git cat-file -p HEAD', { cwd: repoDir })
+      .toString()
+      .split('\n')
+      .filter(line => line.startsWith('parent')).length
+    expect(parentCount).toBe(1)
+  })
+
+  it('uses a custom commit message when provided', async () => {
+    execSync('git checkout -b work-branch-custom', { cwd: repoDir })
+
+    const wt = await manager.create('task-custom')
+    await writeFile(path.join(wt.worktreePath, 'custom-file.ts'), 'export const y = 2')
+    execSync('git add . && git commit -m "add custom file"', { cwd: wt.worktreePath })
+
+    await manager.merge('task-custom', 'chore: my custom message')
+
+    const log = execSync('git log --oneline -1', { cwd: repoDir }).toString().trim()
+    expect(log).toContain('chore: my custom message')
   })
 
   it('removes a worktree on cleanup', async () => {

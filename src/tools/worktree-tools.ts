@@ -32,11 +32,12 @@ export function registerWorktreeTools(server: McpServer, worktreeManager: Worktr
       description: 'Merge a completed worktree back into the work branch.',
       inputSchema: z.object({
         task_id: z.string().describe('Task ID of the worktree to merge'),
+        commit_message: z.string().optional().describe('Commit message for the squash merge (defaults to "feat: <task_id>")'),
       }),
     },
-    async ({ task_id }) => {
+    async ({ task_id, commit_message }) => {
       try {
-        await worktreeManager.merge(task_id)
+        await worktreeManager.merge(task_id, commit_message)
         await worktreeManager.cleanup(task_id)
         return {
           content: [{ type: 'text', text: JSON.stringify({ task_id, status: 'merged' }) }],

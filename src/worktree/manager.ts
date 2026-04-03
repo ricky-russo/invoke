@@ -28,14 +28,20 @@ export class WorktreeManager {
     return info
   }
 
-  async merge(taskId: string): Promise<void> {
+  async merge(taskId: string, commitMessage?: string): Promise<void> {
     const info = this.worktrees.get(taskId)
     if (!info) {
       throw new Error(`No worktree found for task: ${taskId}`)
     }
 
     execSync(
-      `git merge "${info.branch}" --no-edit`,
+      `git merge --squash "${info.branch}"`,
+      { cwd: this.repoDir, stdio: 'pipe' }
+    )
+
+    const message = commitMessage ?? `feat: ${taskId}`
+    execSync(
+      `git commit -m "${message.replace(/"/g, '\\"')}"`,
       { cwd: this.repoDir, stdio: 'pipe' }
     )
   }
