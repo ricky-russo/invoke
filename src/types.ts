@@ -26,6 +26,7 @@ export interface Settings {
   agent_timeout: number
   commit_style: 'one-commit' | 'per-batch' | 'per-task' | 'custom'
   work_branch_prefix: string
+  post_merge_commands?: string[]
 }
 
 export interface InvokeConfig {

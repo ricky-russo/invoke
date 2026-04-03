@@ -166,3 +166,4 @@ settings:
   agent_timeout: 300
   commit_style: per-batch
   work_branch_prefix: invoke/work
+  post_merge_commands: []
