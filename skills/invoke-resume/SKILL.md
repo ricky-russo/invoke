@@ -21,35 +21,53 @@ If state is null, inform the user there's no active pipeline and offer to start 
 
 ### 2. Present Status
 
-Present the pipeline status clearly:
+Present the pipeline status clearly, including the last activity timestamp:
 
 > "Found an active invoke pipeline:"
 > - **Pipeline ID:** [id]
 > - **Started:** [date]
+> - **Last Active:** [last_updated — highlight if more than 24 hours ago]
 > - **Current Stage:** [stage]
 > - **Spec:** [spec filename if set]
 > - **Plan:** [plan filename if set]
 > - **Strategy:** [strategy if set]
-> - **Batches:** [N completed / M total]
 > - **Work Branch:** [branch name if set]
 
-If there are any active worktrees, list them.
+For each batch, show task-level progress:
 
-### 3. Offer Options
+> **Batch [N]:** [status] — [completed]/[total] tasks
+>   • [task-id]: ✅ completed
+>   • [task-id]: ❌ error — [result_summary]
+>   • [task-id]: ⏳ pending
+
+### 3. Check for Orphaned Worktrees
+
+Call `invoke_cleanup_worktrees` with `discover_only: true` (or read the worktree list) to check for worktrees that exist on disk but may be from a crashed session.
+
+If orphaned worktrees are found:
+
+> "Found [N] worktrees from the previous session. Some may have incomplete work."
+> 1. **Keep and merge** — merge whatever was completed
+> 2. **Discard** — clean up all worktrees and restart the affected tasks
+> 3. **Inspect** — let me check each worktree's status first
+
+If "Inspect": check each worktree for uncommitted changes and committed changes via `git -C <worktree_path> status` and `git -C <worktree_path> log --oneline -5`, then present options per worktree.
+
+### 4. Offer Options
 
 > "What would you like to do?"
 > 1. **Continue** — pick up where we left off at the [stage] stage
 > 2. **Redo current stage** — restart the [stage] stage from scratch
 > 3. **Abort** — clean up and start fresh
 
-### 4. Handle Choice
+### 5. Handle Choice
 
 **Continue:**
 - Load the appropriate stage skill based on `current_stage`:
   - `scope` — invoke-scope picks up at clarifying questions (research may already be done)
   - `plan` — invoke-plan picks up at planner dispatch or plan selection
   - `orchestrate` — invoke-orchestrate picks up at task breakdown
-  - `build` — invoke-build resumes at the next incomplete batch
+  - `build` — invoke-build resumes at the **next incomplete batch**. Within a batch, only re-dispatch tasks that are NOT `completed`. Present: "Batch [N]: [M] of [T] tasks already completed. Resuming [T-M] remaining tasks."
   - `review` — invoke-review resumes at reviewer selection
 
 **Redo:**
@@ -60,14 +78,3 @@ If there are any active worktrees, list them.
 - Clean up worktrees via `invoke_cleanup_worktrees`
 - Reset pipeline state
 - Inform user: "Pipeline cleaned up. Ready to start fresh."
-
-## Worktree Recovery
-
-If the state shows worktrees that may be orphaned (session crashed during build):
-
-> "Found [N] worktrees from the previous session. Some may have incomplete work."
-> 1. **Keep and merge** — merge whatever was completed
-> 2. **Discard** — clean up all worktrees and restart the batch
-> 3. **Inspect** — let me check each worktree's status first
-
-If "Inspect": check each worktree for uncommitted changes and committed changes, then present options per worktree.
