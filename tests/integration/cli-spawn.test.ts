@@ -236,13 +236,10 @@ describe('CLI Spawn Integration Tests', () => {
     // The process should have been killed well before 10 seconds
     expect(elapsed).toBeLessThan(3000)
 
-    // Engine resolves with exitCode -1 on timeout, which claude parser treats as error
-    expect(result.status).toBe('error')
-    // The raw output should contain the timeout message or be empty
-    // (engine sets stdout to timeout message when stdout was empty)
+    expect(result.status).toBe('timeout')
     const raw = result.output.raw ?? ''
     const summary = result.output.summary ?? ''
-    const hasTimeoutSignal = raw.includes('timed out') || raw.includes('1000') || summary.includes('exit') || summary.includes('-1')
+    const hasTimeoutSignal = raw.includes('timed out') || summary.includes('timed out') || summary.includes('1000')
     expect(hasTimeoutSignal).toBe(true)
   })
 })

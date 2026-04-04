@@ -1,8 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { EventEmitter } from 'events'
 import { DispatchEngine } from '../../src/dispatch/engine.js'
-import type { InvokeConfig } from '../../src/types.js'
+import type { InvokeConfig, AgentResult, ProviderEntry } from '../../src/types.js'
 import type { Provider } from '../../src/providers/base.js'
-import type { Parser } from '../../src/parsers/base.js'
+import type { Parser, ParseContext } from '../../src/parsers/base.js'
 
 vi.mock('child_process', () => ({
   spawn: vi.fn(),
@@ -17,146 +18,224 @@ vi.mock('../../src/config.js', () => ({
 }))
 
 import { spawn } from 'child_process'
-import { EventEmitter, Readable } from 'stream'
 import { loadConfig } from '../../src/config.js'
 
-function mockSpawn(stdout: string, exitCode: number): void {
-  const proc = new EventEmitter() as any
-  proc.stdout = Readable.from([stdout])
-  proc.stderr = Readable.from([''])
-  proc.pid = 12345
+const TEST_PROJECT_DIR = '/tmp/test-project'
+const MOCK_PROMPT = 'mocked prompt content'
 
+const CLAUDE_ENTRY: ProviderEntry = {
+  provider: 'claude',
+  model: 'opus-4.6',
+  effort: 'high',
+}
+
+const CODEX_ENTRY: ProviderEntry = {
+  provider: 'codex',
+  model: 'gpt-5.4',
+  effort: 'high',
+}
+
+interface SpawnBehavior {
+  stdout?: string
+  stderr?: string
+  exitCode?: number | null
+  closeOnKill?: boolean
+  closeDelayMs?: number
+}
+
+function queueSpawnBehaviors(...behaviors: SpawnBehavior[]): void {
   const mockSpawnFn = vi.mocked(spawn)
-  mockSpawnFn.mockReturnValue(proc)
+  mockSpawnFn.mockImplementation(() => {
+    const behavior = behaviors.shift()
+    if (!behavior) {
+      throw new Error('Unexpected spawn call')
+    }
 
-  setTimeout(() => proc.emit('close', exitCode), 10)
+    const proc = new EventEmitter() as any
+    proc.stdout = new EventEmitter()
+    proc.stderr = new EventEmitter()
+    proc.pid = 12345
+    proc.kill = vi.fn(() => {
+      if (behavior.closeOnKill) {
+        setTimeout(() => {
+          proc.emit('close', behavior.exitCode ?? null)
+        }, 0)
+      }
+      return true
+    })
+
+    if (!behavior.closeOnKill) {
+      setTimeout(() => {
+        if (behavior.stdout) {
+          proc.stdout.emit('data', Buffer.from(behavior.stdout))
+        }
+
+        if (behavior.stderr) {
+          proc.stderr.emit('data', Buffer.from(behavior.stderr))
+        }
+
+        proc.emit('close', behavior.exitCode ?? 0)
+      }, behavior.closeDelayMs ?? 0)
+    }
+
+    return proc
+  })
 }
 
-const mockProvider: Provider = {
-  name: 'claude',
-  buildCommand: vi.fn().mockReturnValue({
-    cmd: 'claude',
-    args: ['--print', 'test prompt'],
-  }),
+function makeConfig(options: {
+  role?: string
+  subrole?: string
+  prompt?: string
+  providers?: ProviderEntry[]
+  roleProviderMode?: 'parallel' | 'fallback' | 'single'
+  defaultProviderMode?: 'parallel' | 'fallback' | 'single'
+  agentTimeout?: number
+} = {}): InvokeConfig {
+  const role = options.role ?? 'researcher'
+  const subrole = options.subrole ?? 'codebase'
+  const prompt = options.prompt ?? '.invoke/roles/researcher/codebase.md'
+  const providers = structuredClone(options.providers ?? [CLAUDE_ENTRY])
+
+  return {
+    providers: {
+      claude: { cli: 'claude', args: ['--print', '--model', '{{model}}'] },
+      codex: { cli: 'codex', args: ['--model', '{{model}}'] },
+    },
+    roles: {
+      [role]: {
+        [subrole]: {
+          prompt,
+          providers,
+          provider_mode: options.roleProviderMode,
+        },
+      },
+    },
+    strategies: {},
+    settings: {
+      default_strategy: 'tdd',
+      agent_timeout: options.agentTimeout ?? 5,
+      commit_style: 'per-batch',
+      work_branch_prefix: 'invoke/work',
+      default_provider_mode: options.defaultProviderMode,
+    },
+  }
 }
 
-const mockCodexProvider: Provider = {
-  name: 'codex',
-  buildCommand: vi.fn().mockReturnValue({
-    cmd: 'codex',
-    args: ['--model', 'gpt-5.4', 'test prompt'],
-  }),
-}
+function makeParsedResult(
+  context: ParseContext,
+  rawOutput: string,
+  exitCode: number
+): AgentResult {
+  if (exitCode !== 0) {
+    return {
+      role: context.role,
+      subrole: context.subrole,
+      provider: context.provider,
+      model: context.model,
+      status: 'error',
+      output: {
+        summary: `Agent exited with code ${exitCode}`,
+        raw: rawOutput,
+      },
+      duration: context.duration,
+    }
+  }
 
-const mockParser: Parser = {
-  name: 'claude',
-  parse: vi.fn().mockReturnValue({
-    role: 'researcher',
-    subrole: 'codebase',
-    provider: 'claude',
-    model: 'opus-4.6',
+  return {
+    role: context.role,
+    subrole: context.subrole,
+    provider: context.provider,
+    model: context.model,
     status: 'success',
-    output: { summary: 'Done', raw: 'Full output' },
-    duration: 100,
-  }),
-}
-
-const mockCodexParser: Parser = {
-  name: 'codex',
-  parse: vi.fn().mockReturnValue({
-    role: 'researcher',
-    subrole: 'codebase',
-    provider: 'codex',
-    model: 'gpt-5.4',
-    status: 'success',
-    output: { summary: 'Codex done', raw: 'Codex output' },
-    duration: 200,
-  }),
-}
-
-const singleProviderConfig: InvokeConfig = {
-  providers: {
-    claude: { cli: 'claude', args: ['--print', '--model', '{{model}}'] },
-  },
-  roles: {
-    researcher: {
-      codebase: {
-        prompt: '.invoke/roles/researcher/codebase.md',
-        providers: [{ provider: 'claude', model: 'opus-4.6', effort: 'high' }],
-      },
+    output: {
+      summary: `${context.provider} done`,
+      report: context.role === 'researcher' ? rawOutput : undefined,
+      findings: context.role === 'reviewer' ? [] : undefined,
+      raw: rawOutput,
     },
-  },
-  strategies: {},
-  settings: {
-    default_strategy: 'tdd',
-    agent_timeout: 5,
-    commit_style: 'per-batch',
-    work_branch_prefix: 'invoke/work',
-  },
+    duration: context.duration,
+  }
 }
 
-const multiProviderConfig: InvokeConfig = {
-  providers: {
-    claude: { cli: 'claude', args: ['--print', '--model', '{{model}}'] },
-    codex: { cli: 'codex', args: ['--model', '{{model}}'] },
-  },
-  roles: {
-    reviewer: {
-      security: {
-        prompt: '.invoke/roles/reviewer/security.md',
-        providers: [
-          { provider: 'claude', model: 'opus-4.6', effort: 'high' },
-          { provider: 'codex', model: 'gpt-5.4', effort: 'high' },
-        ],
-      },
+function makeProvider(name: string): { provider: Provider; buildCommand: ReturnType<typeof vi.fn> } {
+  const buildCommand = vi.fn().mockImplementation(({ prompt }: { prompt: string }) => ({
+    cmd: name,
+    args: ['--prompt', prompt],
+  }))
+
+  return {
+    provider: {
+      name,
+      buildCommand,
     },
-  },
-  strategies: {},
-  settings: {
-    default_strategy: 'tdd',
-    agent_timeout: 5,
-    commit_style: 'per-batch',
-    work_branch_prefix: 'invoke/work',
-  },
+    buildCommand,
+  }
 }
 
-const configWithEntryTimeout: InvokeConfig = {
-  providers: {
-    claude: { cli: 'claude', args: ['--print', '--model', '{{model}}'] },
-  },
-  roles: {
-    researcher: {
-      codebase: {
-        prompt: '.invoke/roles/researcher/codebase.md',
-        providers: [{ provider: 'claude', model: 'opus', effort: 'high', timeout: 10 }],
-      },
+function makeParser(name: string): { parser: Parser; parse: ReturnType<typeof vi.fn> } {
+  const parse = vi.fn((rawOutput: string, exitCode: number, context: ParseContext) =>
+    makeParsedResult(context, rawOutput, exitCode)
+  )
+
+  return {
+    parser: {
+      name,
+      parse,
     },
-  },
-  strategies: {},
-  settings: {
-    default_strategy: 'tdd',
-    agent_timeout: 5,
-    commit_style: 'per-batch',
-    work_branch_prefix: 'invoke/work',
-  },
+    parse,
+  }
+}
+
+function createEngine(
+  config: InvokeConfig,
+  options: {
+    onDispatchComplete?: (metric: any) => void
+    providers?: Map<string, Provider>
+    parsers?: Map<string, Parser>
+  } = {}
+) {
+  vi.mocked(loadConfig).mockResolvedValue(config)
+
+  const claudeProvider = makeProvider('claude')
+  const codexProvider = makeProvider('codex')
+  const claudeParser = makeParser('claude')
+  const codexParser = makeParser('codex')
+
+  const providers = options.providers ?? new Map([
+    ['claude', claudeProvider.provider],
+    ['codex', codexProvider.provider],
+  ])
+
+  const parsers = options.parsers ?? new Map([
+    ['claude', claudeParser.parser],
+    ['codex', codexParser.parser],
+  ])
+
+  const engine = new DispatchEngine({
+    providers,
+    parsers,
+    projectDir: TEST_PROJECT_DIR,
+    onDispatchComplete: options.onDispatchComplete,
+  })
+
+  return {
+    engine,
+    claudeBuildCommand: claudeProvider.buildCommand,
+    codexBuildCommand: codexProvider.buildCommand,
+    claudeParse: claudeParser.parse,
+    codexParse: codexParser.parse,
+  }
 }
 
 describe('DispatchEngine', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    vi.mocked(loadConfig).mockResolvedValue(singleProviderConfig)
   })
 
-  it('dispatches to a single provider and returns result', async () => {
-    mockSpawn('Research output', 0)
-
-    const providers = new Map([['claude', mockProvider]])
-    const parsers = new Map([['claude', mockParser]])
-    const engine = new DispatchEngine({
-      providers,
-      parsers,
-      projectDir: '/tmp/test-project',
-    })
+  it('dispatches to a single provider and returns the parsed result', async () => {
+    queueSpawnBehaviors({ stdout: 'Research output', exitCode: 0 })
+    const config = makeConfig()
+    const { engine, claudeBuildCommand } = createEngine(config)
 
     const result = await engine.dispatch({
       role: 'researcher',
@@ -164,22 +243,24 @@ describe('DispatchEngine', () => {
       taskContext: { task_description: 'Analyze' },
     })
 
-    expect(mockProvider.buildCommand).toHaveBeenCalled()
+    expect(claudeBuildCommand).toHaveBeenCalledTimes(1)
     expect(result.status).toBe('success')
+    expect(result.provider).toBe('claude')
   })
 
-  it('dispatches to multiple providers and returns merged result', async () => {
-    mockSpawn('Review output', 0)
-    vi.mocked(loadConfig).mockResolvedValue(multiProviderConfig)
+  it('dispatches to multiple providers in parallel and merges the results', async () => {
+    queueSpawnBehaviors(
+      { stdout: 'Claude review', exitCode: 0, closeDelayMs: 5 },
+      { stdout: 'Codex review', exitCode: 0 }
+    )
 
-    const providers = new Map([['claude', mockProvider], ['codex', mockCodexProvider]])
-    const parsers = new Map([['claude', mockParser], ['codex', mockCodexParser]])
-    const engine = new DispatchEngine({
-      // config loaded via mocked loadConfig
-      providers,
-      parsers,
-      projectDir: '/tmp/test-project',
+    const config = makeConfig({
+      role: 'reviewer',
+      subrole: 'security',
+      prompt: '.invoke/roles/reviewer/security.md',
+      providers: [CLAUDE_ENTRY, CODEX_ENTRY],
     })
+    const { engine, claudeBuildCommand, codexBuildCommand } = createEngine(config)
 
     const result = await engine.dispatch({
       role: 'reviewer',
@@ -188,86 +269,244 @@ describe('DispatchEngine', () => {
     })
 
     expect(result.status).toBe('success')
-    expect(mockProvider.buildCommand).toHaveBeenCalled()
-    expect(mockCodexProvider.buildCommand).toHaveBeenCalled()
+    expect(result.provider).toBe('claude+codex')
+    expect(claudeBuildCommand).toHaveBeenCalledTimes(1)
+    expect(codexBuildCommand).toHaveBeenCalledTimes(1)
+  })
+
+  it('uses settings default single mode by dispatching only to providers[0]', async () => {
+    queueSpawnBehaviors({ stdout: 'Claude only', exitCode: 0 })
+
+    const config = makeConfig({
+      providers: [CLAUDE_ENTRY, CODEX_ENTRY],
+      defaultProviderMode: 'single',
+    })
+    const { engine, claudeBuildCommand, codexBuildCommand } = createEngine(config)
+
+    const result = await engine.dispatch({
+      role: 'researcher',
+      subrole: 'codebase',
+      taskContext: { task_description: 'Analyze' },
+    })
+
+    expect(result.provider).toBe('claude')
+    expect(claudeBuildCommand).toHaveBeenCalledTimes(1)
+    expect(codexBuildCommand).not.toHaveBeenCalled()
+  })
+
+  it('stops fallback dispatch after the first successful provider', async () => {
+    queueSpawnBehaviors({ stdout: 'Claude success', exitCode: 0 })
+
+    const config = makeConfig({
+      providers: [CLAUDE_ENTRY, CODEX_ENTRY],
+      roleProviderMode: 'fallback',
+    })
+    const { engine, claudeBuildCommand, codexBuildCommand } = createEngine(config)
+
+    const result = await engine.dispatch({
+      role: 'researcher',
+      subrole: 'codebase',
+      taskContext: { task_description: 'Analyze' },
+    })
+
+    expect(result.provider).toBe('claude')
+    expect(claudeBuildCommand).toHaveBeenCalledTimes(1)
+    expect(codexBuildCommand).not.toHaveBeenCalled()
+  })
+
+  it('advances fallback dispatch to the next provider on error', async () => {
+    queueSpawnBehaviors(
+      { stdout: 'Claude failed', exitCode: 1 },
+      { stdout: 'Codex success', exitCode: 0 }
+    )
+
+    const config = makeConfig({
+      providers: [CLAUDE_ENTRY, CODEX_ENTRY],
+      roleProviderMode: 'fallback',
+    })
+    const { engine, claudeBuildCommand, codexBuildCommand } = createEngine(config)
+
+    const result = await engine.dispatch({
+      role: 'researcher',
+      subrole: 'codebase',
+      taskContext: { task_description: 'Analyze' },
+    })
+
+    expect(result.status).toBe('success')
+    expect(result.provider).toBe('codex')
+    expect(claudeBuildCommand).toHaveBeenCalledTimes(1)
+    expect(codexBuildCommand).toHaveBeenCalledTimes(1)
+  })
+
+  it('advances fallback dispatch to the next provider on timeout', async () => {
+    queueSpawnBehaviors(
+      { closeOnKill: true },
+      { stdout: 'Codex success', exitCode: 0 }
+    )
+
+    const config = makeConfig({
+      providers: [
+        { ...CLAUDE_ENTRY, timeout: 0.01 },
+        CODEX_ENTRY,
+      ],
+      roleProviderMode: 'fallback',
+    })
+    const { engine, claudeParse, codexBuildCommand } = createEngine(config)
+
+    const result = await engine.dispatch({
+      role: 'researcher',
+      subrole: 'codebase',
+      taskContext: { task_description: 'Analyze' },
+    })
+
+    expect(result.status).toBe('success')
+    expect(result.provider).toBe('codex')
+    expect(claudeParse).not.toHaveBeenCalled()
+    expect(codexBuildCommand).toHaveBeenCalledTimes(1)
+  })
+
+  it('returns the last failure result when all fallback providers fail', async () => {
+    queueSpawnBehaviors(
+      { stdout: 'Claude failed', exitCode: 1 },
+      { stdout: 'Codex failed', exitCode: 1 }
+    )
+
+    const config = makeConfig({
+      providers: [CLAUDE_ENTRY, CODEX_ENTRY],
+      roleProviderMode: 'fallback',
+    })
+    const { engine } = createEngine(config)
+
+    const result = await engine.dispatch({
+      role: 'researcher',
+      subrole: 'codebase',
+      taskContext: { task_description: 'Analyze' },
+    })
+
+    expect(result.status).toBe('error')
+    expect(result.provider).toBe('codex')
+    expect(result.output.summary).toContain('1')
+  })
+
+  it('classifies timed out dispatches explicitly as timeout', async () => {
+    queueSpawnBehaviors({ closeOnKill: true })
+
+    const config = makeConfig({
+      providers: [{ ...CLAUDE_ENTRY, timeout: 0.01 }],
+    })
+    const { engine, claudeParse } = createEngine(config)
+
+    const result = await engine.dispatch({
+      role: 'researcher',
+      subrole: 'codebase',
+      taskContext: { task_description: 'Analyze' },
+    })
+
+    expect(result.status).toBe('timeout')
+    expect(result.output.summary).toContain('10ms')
+    expect(claudeParse).not.toHaveBeenCalled()
+  })
+
+  it('calls onDispatchComplete after each provider dispatch completes', async () => {
+    queueSpawnBehaviors(
+      { stdout: 'Claude review', exitCode: 0, closeDelayMs: 5 },
+      { stdout: 'Codex review', exitCode: 0 }
+    )
+
+    const onDispatchComplete = vi.fn()
+    const config = makeConfig({
+      role: 'reviewer',
+      subrole: 'security',
+      prompt: '.invoke/roles/reviewer/security.md',
+      providers: [CLAUDE_ENTRY, CODEX_ENTRY],
+    })
+    const { engine } = createEngine(config, { onDispatchComplete })
+
+    await engine.dispatch({
+      role: 'reviewer',
+      subrole: 'security',
+      taskContext: {
+        task_description: 'Review auth',
+        pipeline_id: 'pipeline-123',
+        stage: 'review',
+      },
+    })
+
+    expect(onDispatchComplete).toHaveBeenCalledTimes(2)
+
+    const metrics = onDispatchComplete.mock.calls.map(([metric]) => metric)
+    expect(metrics.map(metric => metric.provider).sort()).toEqual(['claude', 'codex'])
+
+    const claudeMetric = metrics.find(metric => metric.provider === 'claude')
+    expect(claudeMetric).toMatchObject({
+      pipeline_id: 'pipeline-123',
+      stage: 'review',
+      role: 'reviewer',
+      subrole: 'security',
+      provider: 'claude',
+      model: 'opus-4.6',
+      effort: 'high',
+      prompt_size_chars: MOCK_PROMPT.length,
+      status: 'success',
+    })
+    expect(claudeMetric.duration_ms).toEqual(expect.any(Number))
+    expect(claudeMetric.started_at).toEqual(expect.any(String))
+  })
+
+  it('resolveProviderMode uses role config before settings default before parallel', () => {
+    const { engine } = createEngine(makeConfig())
+
+    const explicitFallback = makeConfig({
+      providers: [CLAUDE_ENTRY, CODEX_ENTRY],
+      roleProviderMode: 'fallback',
+      defaultProviderMode: 'single',
+    })
+    expect(
+      (engine as any).resolveProviderMode(explicitFallback.roles.researcher.codebase, explicitFallback)
+    ).toBe('fallback')
+
+    const defaultSingle = makeConfig({
+      providers: [CLAUDE_ENTRY, CODEX_ENTRY],
+      defaultProviderMode: 'single',
+    })
+    expect(
+      (engine as any).resolveProviderMode(defaultSingle.roles.researcher.codebase, defaultSingle)
+    ).toBe('single')
+
+    const implicitParallel = makeConfig({
+      providers: [CLAUDE_ENTRY, CODEX_ENTRY],
+    })
+    expect(
+      (engine as any).resolveProviderMode(implicitParallel.roles.researcher.codebase, implicitParallel)
+    ).toBe('parallel')
+  })
+
+  it('resolveProviderMode returns single when there is only one provider', () => {
+    const { engine } = createEngine(makeConfig())
+    const singleProviderConfig = makeConfig({
+      providers: [CLAUDE_ENTRY],
+      roleProviderMode: 'parallel',
+      defaultProviderMode: 'fallback',
+    })
+
+    expect(
+      (engine as any).resolveProviderMode(singleProviderConfig.roles.researcher.codebase, singleProviderConfig)
+    ).toBe('single')
   })
 
   it('throws when role is not found', async () => {
-    const engine = new DispatchEngine({
-      config: singleProviderConfig,
-      providers: new Map([['claude', mockProvider]]),
-      parsers: new Map([['claude', mockParser]]),
-      projectDir: '/tmp/test',
-    })
+    const { engine } = createEngine(makeConfig())
 
     await expect(
       engine.dispatch({ role: 'nonexistent', subrole: 'test', taskContext: {} })
     ).rejects.toThrow('Role not found: nonexistent.test')
   })
 
-  it('uses per-entry timeout over global timeout', async () => {
-    mockSpawn('Output', 0)
-    vi.mocked(loadConfig).mockResolvedValue(configWithEntryTimeout)
-
-    const providers = new Map([['claude', mockProvider]])
-    const parsers = new Map([['claude', mockParser]])
-    const engine = new DispatchEngine({
-      // config loaded via mocked loadConfig
-      providers,
-      parsers,
-      projectDir: '/tmp/test-project',
-    })
-
-    await engine.dispatch({
-      role: 'researcher',
-      subrole: 'codebase',
-      taskContext: {},
-    })
-
-    expect(spawn).toHaveBeenCalled()
-  })
-
-  it('converts seconds to milliseconds for timeout', async () => {
-    mockSpawn('Output', 0)
-
-    const providers = new Map([['claude', mockProvider]])
-    const parsers = new Map([['claude', mockParser]])
-    const engine = new DispatchEngine({
-      providers,
-      parsers,
-      projectDir: '/tmp/test-project',
-    })
-
-    await engine.dispatch({
-      role: 'researcher',
-      subrole: 'codebase',
-      taskContext: {},
-    })
-
-    expect(spawn).toHaveBeenCalled()
-  })
-
   it('throws when provider is not found', async () => {
-    const badConfig: InvokeConfig = {
-      ...singleProviderConfig,
-      roles: {
-        researcher: {
-          codebase: {
-            prompt: '.invoke/roles/researcher/codebase.md',
-            providers: [{ provider: 'unknown', model: 'x', effort: 'high' }],
-          },
-        },
-      },
-    }
-
-    vi.mocked(loadConfig).mockResolvedValue(badConfig)
-
-    const engine = new DispatchEngine({
-      // config loaded via mocked loadConfig
-      providers: new Map([['claude', mockProvider]]),
-      parsers: new Map([['claude', mockParser]]),
-      projectDir: '/tmp/test',
+    const config = makeConfig({
+      providers: [{ provider: 'unknown', model: 'x', effort: 'high' }],
     })
+    const { engine } = createEngine(config)
 
     await expect(
       engine.dispatch({ role: 'researcher', subrole: 'codebase', taskContext: {} })
@@ -275,40 +514,36 @@ describe('DispatchEngine', () => {
   })
 
   it('re-reads config on each dispatch to pick up mid-session edits', async () => {
-    mockSpawn('Output', 0)
+    queueSpawnBehaviors(
+      { stdout: 'First output', exitCode: 0 },
+      { stdout: 'Second output', exitCode: 0 }
+    )
 
-    const providers = new Map([['claude', mockProvider]])
-    const parsers = new Map([['claude', mockParser]])
-    const engine = new DispatchEngine({
-      providers,
-      parsers,
-      projectDir: '/tmp/test-project',
+    const firstConfig = makeConfig()
+    const updatedConfig = makeConfig({
+      providers: [{ ...CLAUDE_ENTRY, model: 'claude-opus-4-6' }],
     })
 
-    // First dispatch uses singleProviderConfig
-    vi.mocked(loadConfig).mockResolvedValue(singleProviderConfig)
+    vi.mocked(loadConfig)
+      .mockResolvedValueOnce(firstConfig)
+      .mockResolvedValueOnce(updatedConfig)
+
+    const { engine, claudeBuildCommand } = createEngine(firstConfig)
+
     await engine.dispatch({
       role: 'researcher',
       subrole: 'codebase',
       taskContext: { task_description: 'First' },
     })
 
-    // loadConfig was called
-    expect(loadConfig).toHaveBeenCalledWith('/tmp/test-project')
-
-    // Change mock to return different config (simulating user edit)
-    const updatedConfig = structuredClone(singleProviderConfig)
-    updatedConfig.roles.researcher.codebase.providers[0].model = 'claude-opus-4-6'
-    vi.mocked(loadConfig).mockResolvedValue(updatedConfig)
-
-    mockSpawn('Output', 0)
     await engine.dispatch({
       role: 'researcher',
       subrole: 'codebase',
       taskContext: { task_description: 'Second' },
     })
 
-    // Should have called loadConfig again
+    expect(loadConfig).toHaveBeenCalledWith(TEST_PROJECT_DIR)
     expect(loadConfig).toHaveBeenCalledTimes(2)
+    expect(claudeBuildCommand).toHaveBeenCalledTimes(2)
   })
 })
