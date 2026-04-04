@@ -38532,10 +38532,12 @@ var DispatchEngine = class {
   providers;
   parsers;
   projectDir;
+  onDispatchComplete;
   constructor(options) {
     this.providers = options.providers;
     this.parsers = options.parsers;
     this.projectDir = options.projectDir;
+    this.onDispatchComplete = options.onDispatchComplete;
   }
   async dispatch(request) {
     const config2 = await loadConfig(this.projectDir);
@@ -38549,14 +38551,44 @@ var DispatchEngine = class {
       taskContext: request.taskContext
     });
     const workDir = request.workDir ?? this.projectDir;
-    const resultPromises = roleConfig.providers.map(
-      (entry) => this.dispatchToProvider(entry, prompt, workDir, request, config2)
+    const mode = this.resolveProviderMode(roleConfig, config2);
+    switch (mode) {
+      case "parallel":
+        return this.dispatchParallel(roleConfig.providers, prompt, workDir, request, config2);
+      case "fallback":
+        return this.dispatchFallback(roleConfig.providers, prompt, workDir, request, config2);
+      case "single":
+        return this.dispatchToProvider(roleConfig.providers[0], prompt, workDir, request, config2);
+    }
+  }
+  resolveProviderMode(roleConfig, config2) {
+    if (roleConfig.providers.length === 1) {
+      return "single";
+    }
+    return roleConfig.provider_mode ?? config2.settings.default_provider_mode ?? "parallel";
+  }
+  async dispatchParallel(providers, prompt, workDir, request, config2) {
+    const results = await Promise.all(
+      providers.map((entry) => this.dispatchToProvider(entry, prompt, workDir, request, config2))
     );
-    const results = await Promise.all(resultPromises);
     if (results.length === 1) {
       return results[0];
     }
     return this.mergeResults(results, request);
+  }
+  async dispatchFallback(providers, prompt, workDir, request, config2) {
+    let lastResult;
+    for (const entry of providers) {
+      const result = await this.dispatchToProvider(entry, prompt, workDir, request, config2);
+      if (result.status === "success") {
+        return result;
+      }
+      lastResult = result;
+    }
+    if (!lastResult) {
+      throw new Error("No providers configured for dispatch");
+    }
+    return lastResult;
   }
   async dispatchToProvider(entry, prompt, workDir, request, config2) {
     const provider = this.providers.get(entry.provider);
@@ -38574,22 +38606,54 @@ var DispatchEngine = class {
       prompt
     });
     const startTime = Date.now();
+    const startedAt = new Date(startTime).toISOString();
     const timeoutSeconds = entry.timeout ?? config2.settings.agent_timeout;
-    const { stdout, stderr, exitCode } = await this.runProcess(
+    const timeoutMs = timeoutSeconds * 1e3;
+    const { stdout, stderr, exitCode, timedOut } = await this.runProcess(
       commandSpec.cmd,
       commandSpec.args,
-      timeoutSeconds * 1e3,
+      timeoutMs,
       commandSpec.cwd
     );
     const duration3 = Date.now() - startTime;
-    const output = stdout || (exitCode !== 0 ? `[stderr] ${stderr}` : stderr);
-    return parser.parse(output, exitCode, {
+    let result;
+    if (timedOut) {
+      result = {
+        role: request.role,
+        subrole: request.subrole,
+        provider: entry.provider,
+        model: entry.model,
+        status: "timeout",
+        output: {
+          summary: `Agent timed out after ${timeoutMs}ms`,
+          raw: stdout || stderr || `Agent timed out after ${timeoutMs}ms`
+        },
+        duration: duration3
+      };
+    } else {
+      const output = stdout || (exitCode !== 0 ? `[stderr] ${stderr}` : stderr);
+      result = parser.parse(output, exitCode, {
+        role: request.role,
+        subrole: request.subrole,
+        provider: entry.provider,
+        model: entry.model,
+        duration: duration3
+      });
+    }
+    this.onDispatchComplete?.({
+      pipeline_id: request.taskContext.pipeline_id ?? null,
+      stage: request.taskContext.stage ?? "unknown",
       role: request.role,
       subrole: request.subrole,
       provider: entry.provider,
       model: entry.model,
-      duration: duration3
+      effort: entry.effort,
+      prompt_size_chars: prompt.length,
+      duration_ms: duration3,
+      status: result.status,
+      started_at: startedAt
     });
+    return result;
   }
   mergeResults(results, request) {
     const hasFindings = results.some((r) => r.output.findings && r.output.findings.length > 0);
@@ -38650,9 +38714,14 @@ ${r.output.raw}`).join("\n\n")
       proc.on("close", (code) => {
         clearTimeout(timer);
         if (timedOut) {
-          resolve({ stdout: stdout || `Agent timed out after ${timeout}ms`, stderr, exitCode: -1 });
+          resolve({
+            stdout: stdout || `Agent timed out after ${timeout}ms`,
+            stderr,
+            exitCode: -1,
+            timedOut: true
+          });
         } else {
-          resolve({ stdout, stderr, exitCode: code ?? 1 });
+          resolve({ stdout, stderr, exitCode: code ?? 1, timedOut: false });
         }
       });
       proc.on("error", (err) => {
@@ -39019,6 +39088,14 @@ var StateManager = class {
     current.last_updated = (/* @__PURE__ */ new Date()).toISOString();
     await this.writeAtomic(current);
     return current;
+  }
+  async getReviewCycleCount(batchId) {
+    const state = await this.get();
+    if (!state) return 0;
+    if (batchId !== void 0) {
+      return state.review_cycles.filter((rc) => rc.batch_id === batchId).length;
+    }
+    return state.review_cycles.length;
   }
   async reset() {
     if (existsSync3(this.statePath)) {
@@ -39415,7 +39492,8 @@ function registerWorktreeTools(server, worktreeManager, config2, projectDir) {
 
 // src/tools/state-tools.ts
 init_zod();
-function registerStateTools(server, stateManager) {
+init_config();
+function registerStateTools(server, stateManager, projectDir) {
   server.registerTool(
     "invoke_get_state",
     {
@@ -39456,6 +39534,8 @@ function registerStateTools(server, stateManager) {
           id: external_exports3.number(),
           reviewers: external_exports3.array(external_exports3.string()),
           findings: external_exports3.array(external_exports3.any()),
+          batch_id: external_exports3.number().optional(),
+          scope: external_exports3.enum(["batch", "final"]).optional(),
           triaged: external_exports3.object({
             accepted: external_exports3.array(external_exports3.any()),
             dismissed: external_exports3.array(external_exports3.any())
@@ -39472,6 +39552,35 @@ function registerStateTools(server, stateManager) {
         const updated = await stateManager.update(updates);
         return {
           content: [{ type: "text", text: JSON.stringify(updated, null, 2) }]
+        };
+      } catch (err) {
+        return {
+          content: [{ type: "text", text: `State error: ${err instanceof Error ? err.message : String(err)}` }],
+          isError: true
+        };
+      }
+    }
+  );
+  server.registerTool(
+    "invoke_get_review_cycle_count",
+    {
+      description: "Get the number of recorded review cycles, optionally filtered to a batch, plus the configured max review cycle limit when available.",
+      inputSchema: external_exports3.object({
+        batch_id: external_exports3.number().optional()
+      })
+    },
+    async ({ batch_id }) => {
+      try {
+        const count = await stateManager.getReviewCycleCount(batch_id);
+        let maxReviewCycles;
+        try {
+          const config2 = await loadConfig(projectDir);
+          maxReviewCycles = config2.settings.max_review_cycles;
+        } catch {
+        }
+        const result = maxReviewCycles === void 0 ? { count } : { count, max_review_cycles: maxReviewCycles };
+        return {
+          content: [{ type: "text", text: JSON.stringify(result, null, 2) }]
         };
       } catch (err) {
         return {
@@ -39924,7 +40033,7 @@ async function main() {
   const stateManager = new StateManager(projectDir);
   const artifactManager = new ArtifactManager(projectDir);
   const contextManager = new ContextManager(projectDir);
-  registerStateTools(server, stateManager);
+  registerStateTools(server, stateManager, projectDir);
   registerArtifactTools(server, artifactManager);
   registerWorktreeTools(server, worktreeManager, config2, projectDir);
   registerConfigTools(server, projectDir);

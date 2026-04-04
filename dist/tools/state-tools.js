@@ -1,5 +1,6 @@
 import { z } from 'zod';
-export function registerStateTools(server, stateManager) {
+import { loadConfig } from '../config.js';
+export function registerStateTools(server, stateManager, projectDir) {
     server.registerTool('invoke_get_state', {
         description: 'Get the current pipeline state.',
         inputSchema: z.object({}),
@@ -34,6 +35,8 @@ export function registerStateTools(server, stateManager) {
                 id: z.number(),
                 reviewers: z.array(z.string()),
                 findings: z.array(z.any()),
+                batch_id: z.number().optional(),
+                scope: z.enum(['batch', 'final']).optional(),
                 triaged: z.object({
                     accepted: z.array(z.any()),
                     dismissed: z.array(z.any()),
@@ -49,6 +52,36 @@ export function registerStateTools(server, stateManager) {
             const updated = await stateManager.update(updates);
             return {
                 content: [{ type: 'text', text: JSON.stringify(updated, null, 2) }],
+            };
+        }
+        catch (err) {
+            return {
+                content: [{ type: 'text', text: `State error: ${err instanceof Error ? err.message : String(err)}` }],
+                isError: true,
+            };
+        }
+    });
+    server.registerTool('invoke_get_review_cycle_count', {
+        description: 'Get the number of recorded review cycles, optionally filtered to a batch, plus the configured max review cycle limit when available.',
+        inputSchema: z.object({
+            batch_id: z.number().optional(),
+        }),
+    }, async ({ batch_id }) => {
+        try {
+            const count = await stateManager.getReviewCycleCount(batch_id);
+            let maxReviewCycles;
+            try {
+                const config = await loadConfig(projectDir);
+                maxReviewCycles = config.settings.max_review_cycles;
+            }
+            catch {
+                // Counting review cycles should still work when config is absent or invalid.
+            }
+            const result = maxReviewCycles === undefined
+                ? { count }
+                : { count, max_review_cycles: maxReviewCycles };
+            return {
+                content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
             };
         }
         catch (err) {

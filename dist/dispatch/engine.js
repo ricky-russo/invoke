@@ -6,10 +6,12 @@ export class DispatchEngine {
     providers;
     parsers;
     projectDir;
+    onDispatchComplete;
     constructor(options) {
         this.providers = options.providers;
         this.parsers = options.parsers;
         this.projectDir = options.projectDir;
+        this.onDispatchComplete = options.onDispatchComplete;
     }
     async dispatch(request) {
         // Re-read config on every dispatch to pick up mid-session edits
@@ -24,15 +26,42 @@ export class DispatchEngine {
             taskContext: request.taskContext,
         });
         const workDir = request.workDir ?? this.projectDir;
-        // Dispatch to all providers in parallel
-        const resultPromises = roleConfig.providers.map(entry => this.dispatchToProvider(entry, prompt, workDir, request, config));
-        const results = await Promise.all(resultPromises);
-        // Single provider — return directly
+        const mode = this.resolveProviderMode(roleConfig, config);
+        switch (mode) {
+            case 'parallel':
+                return this.dispatchParallel(roleConfig.providers, prompt, workDir, request, config);
+            case 'fallback':
+                return this.dispatchFallback(roleConfig.providers, prompt, workDir, request, config);
+            case 'single':
+                return this.dispatchToProvider(roleConfig.providers[0], prompt, workDir, request, config);
+        }
+    }
+    resolveProviderMode(roleConfig, config) {
+        if (roleConfig.providers.length === 1) {
+            return 'single';
+        }
+        return roleConfig.provider_mode ?? config.settings.default_provider_mode ?? 'parallel';
+    }
+    async dispatchParallel(providers, prompt, workDir, request, config) {
+        const results = await Promise.all(providers.map(entry => this.dispatchToProvider(entry, prompt, workDir, request, config)));
         if (results.length === 1) {
             return results[0];
         }
-        // Multiple providers — merge results
         return this.mergeResults(results, request);
+    }
+    async dispatchFallback(providers, prompt, workDir, request, config) {
+        let lastResult;
+        for (const entry of providers) {
+            const result = await this.dispatchToProvider(entry, prompt, workDir, request, config);
+            if (result.status === 'success') {
+                return result;
+            }
+            lastResult = result;
+        }
+        if (!lastResult) {
+            throw new Error('No providers configured for dispatch');
+        }
+        return lastResult;
     }
     async dispatchToProvider(entry, prompt, workDir, request, config) {
         const provider = this.providers.get(entry.provider);
@@ -50,18 +79,51 @@ export class DispatchEngine {
             prompt,
         });
         const startTime = Date.now();
+        const startedAt = new Date(startTime).toISOString();
         const timeoutSeconds = entry.timeout ?? config.settings.agent_timeout;
-        const { stdout, stderr, exitCode } = await this.runProcess(commandSpec.cmd, commandSpec.args, timeoutSeconds * 1000, commandSpec.cwd);
+        const timeoutMs = timeoutSeconds * 1000;
+        const { stdout, stderr, exitCode, timedOut } = await this.runProcess(commandSpec.cmd, commandSpec.args, timeoutMs, commandSpec.cwd);
         const duration = Date.now() - startTime;
-        // Use stderr for diagnostics when stdout is empty or command failed
-        const output = stdout || (exitCode !== 0 ? `[stderr] ${stderr}` : stderr);
-        return parser.parse(output, exitCode, {
+        let result;
+        if (timedOut) {
+            result = {
+                role: request.role,
+                subrole: request.subrole,
+                provider: entry.provider,
+                model: entry.model,
+                status: 'timeout',
+                output: {
+                    summary: `Agent timed out after ${timeoutMs}ms`,
+                    raw: stdout || stderr || `Agent timed out after ${timeoutMs}ms`,
+                },
+                duration,
+            };
+        }
+        else {
+            // Use stderr for diagnostics when stdout is empty or command failed
+            const output = stdout || (exitCode !== 0 ? `[stderr] ${stderr}` : stderr);
+            result = parser.parse(output, exitCode, {
+                role: request.role,
+                subrole: request.subrole,
+                provider: entry.provider,
+                model: entry.model,
+                duration,
+            });
+        }
+        this.onDispatchComplete?.({
+            pipeline_id: request.taskContext.pipeline_id ?? null,
+            stage: request.taskContext.stage ?? 'unknown',
             role: request.role,
             subrole: request.subrole,
             provider: entry.provider,
             model: entry.model,
-            duration,
+            effort: entry.effort,
+            prompt_size_chars: prompt.length,
+            duration_ms: duration,
+            status: result.status,
+            started_at: startedAt,
         });
+        return result;
     }
     mergeResults(results, request) {
         const hasFindings = results.some(r => r.output.findings && r.output.findings.length > 0);
@@ -121,10 +183,15 @@ export class DispatchEngine {
             proc.on('close', (code) => {
                 clearTimeout(timer);
                 if (timedOut) {
-                    resolve({ stdout: stdout || `Agent timed out after ${timeout}ms`, stderr, exitCode: -1 });
+                    resolve({
+                        stdout: stdout || `Agent timed out after ${timeout}ms`,
+                        stderr,
+                        exitCode: -1,
+                        timedOut: true,
+                    });
                 }
                 else {
-                    resolve({ stdout, stderr, exitCode: code ?? 1 });
+                    resolve({ stdout, stderr, exitCode: code ?? 1, timedOut: false });
                 }
             });
             proc.on('error', (err) => {

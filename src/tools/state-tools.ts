@@ -1,8 +1,9 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
+import { loadConfig } from '../config.js'
 import type { StateManager } from './state.js'
 
-export function registerStateTools(server: McpServer, stateManager: StateManager): void {
+export function registerStateTools(server: McpServer, stateManager: StateManager, projectDir: string): void {
   server.registerTool(
     'invoke_get_state',
     {
@@ -44,6 +45,8 @@ export function registerStateTools(server: McpServer, stateManager: StateManager
           id: z.number(),
           reviewers: z.array(z.string()),
           findings: z.array(z.any()),
+          batch_id: z.number().optional(),
+          scope: z.enum(['batch', 'final']).optional(),
           triaged: z.object({
             accepted: z.array(z.any()),
             dismissed: z.array(z.any()),
@@ -60,6 +63,42 @@ export function registerStateTools(server: McpServer, stateManager: StateManager
         const updated = await stateManager.update(updates)
         return {
           content: [{ type: 'text', text: JSON.stringify(updated, null, 2) }],
+        }
+      } catch (err) {
+        return {
+          content: [{ type: 'text', text: `State error: ${err instanceof Error ? err.message : String(err)}` }],
+          isError: true,
+        }
+      }
+    }
+  )
+
+  server.registerTool(
+    'invoke_get_review_cycle_count',
+    {
+      description: 'Get the number of recorded review cycles, optionally filtered to a batch, plus the configured max review cycle limit when available.',
+      inputSchema: z.object({
+        batch_id: z.number().optional(),
+      }),
+    },
+    async ({ batch_id }) => {
+      try {
+        const count = await stateManager.getReviewCycleCount(batch_id)
+        let maxReviewCycles: number | undefined
+
+        try {
+          const config = await loadConfig(projectDir)
+          maxReviewCycles = config.settings.max_review_cycles
+        } catch {
+          // Counting review cycles should still work when config is absent or invalid.
+        }
+
+        const result = maxReviewCycles === undefined
+          ? { count }
+          : { count, max_review_cycles: maxReviewCycles }
+
+        return {
+          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
         }
       } catch (err) {
         return {

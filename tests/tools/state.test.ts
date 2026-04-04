@@ -84,6 +84,11 @@ describe('StateManager', () => {
     expect(after).not.toBe(before)
   })
 
+  it('returns zero review cycles when state does not exist', async () => {
+    await expect(stateManager.getReviewCycleCount()).resolves.toBe(0)
+    await expect(stateManager.getReviewCycleCount(1)).resolves.toBe(0)
+  })
+
   it('adds a batch via addBatch', async () => {
     await stateManager.initialize('pipeline-123')
     await stateManager.addBatch({
@@ -157,5 +162,21 @@ describe('StateManager', () => {
     const files = readdirSync(path.join(TEST_DIR, '.invoke'))
     const tmpFiles = files.filter((f: string) => f.endsWith('.tmp'))
     expect(tmpFiles).toHaveLength(0)
+  })
+
+  it('counts review cycles across the whole pipeline and per batch', async () => {
+    await stateManager.initialize('pipeline-123')
+    await stateManager.update({
+      review_cycles: [
+        { id: 1, reviewers: ['reviewer-a'], findings: [], batch_id: 1, scope: 'batch' },
+        { id: 2, reviewers: ['reviewer-b'], findings: [], batch_id: 2, scope: 'batch' },
+        { id: 3, reviewers: ['reviewer-c'], findings: [], batch_id: 2, scope: 'final' },
+      ],
+    })
+
+    await expect(stateManager.getReviewCycleCount()).resolves.toBe(3)
+    await expect(stateManager.getReviewCycleCount(1)).resolves.toBe(1)
+    await expect(stateManager.getReviewCycleCount(2)).resolves.toBe(2)
+    await expect(stateManager.getReviewCycleCount(99)).resolves.toBe(0)
   })
 })

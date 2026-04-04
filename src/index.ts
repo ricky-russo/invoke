@@ -75,7 +75,7 @@ async function main() {
   const contextManager = new ContextManager(projectDir)
 
   // Register config-independent tools first
-  registerStateTools(server, stateManager)
+  registerStateTools(server, stateManager, projectDir)
   registerArtifactTools(server, artifactManager)
   registerWorktreeTools(server, worktreeManager, config, projectDir)
   registerConfigTools(server, projectDir)

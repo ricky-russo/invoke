@@ -91,6 +91,15 @@ export class StateManager {
     return current
   }
 
+  async getReviewCycleCount(batchId?: number): Promise<number> {
+    const state = await this.get()
+    if (!state) return 0
+    if (batchId !== undefined) {
+      return state.review_cycles.filter(rc => rc.batch_id === batchId).length
+    }
+    return state.review_cycles.length
+  }
+
   async reset(): Promise<void> {
     if (existsSync(this.statePath)) {
       const { unlink } = await import('fs/promises')

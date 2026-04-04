@@ -79,6 +79,15 @@ export class StateManager {
         await this.writeAtomic(current);
         return current;
     }
+    async getReviewCycleCount(batchId) {
+        const state = await this.get();
+        if (!state)
+            return 0;
+        if (batchId !== undefined) {
+            return state.review_cycles.filter(rc => rc.batch_id === batchId).length;
+        }
+        return state.review_cycles.length;
+    }
     async reset() {
         if (existsSync(this.statePath)) {
             const { unlink } = await import('fs/promises');
