@@ -2,6 +2,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
 import type { DispatchEngine } from '../dispatch/engine.js'
 import type { BatchManager } from '../dispatch/batch-manager.js'
+import type { MetricsManager } from '../metrics/manager.js'
 import type { InvokeConfig } from '../types.js'
 import { loadConfig } from '../config.js'
 
@@ -9,7 +10,8 @@ export function registerDispatchTools(
   server: McpServer,
   engine: DispatchEngine,
   batchManager: BatchManager,
-  projectDir: string
+  projectDir: string,
+  _metricsManager: MetricsManager
 ): void {
   server.registerTool(
     'invoke_dispatch',

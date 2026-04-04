@@ -9,6 +9,7 @@ import { createParserRegistry } from './parsers/registry.js'
 import { DispatchEngine } from './dispatch/engine.js'
 import { BatchManager } from './dispatch/batch-manager.js'
 import { WorktreeManager } from './worktree/manager.js'
+import { MetricsManager } from './metrics/manager.js'
 import { StateManager } from './tools/state.js'
 import { ArtifactManager } from './tools/artifacts.js'
 import { registerConfigTools } from './tools/config-tool.js'
@@ -19,6 +20,7 @@ import { registerArtifactTools } from './tools/artifact-tools.js'
 import { registerConfigUpdateTools } from './tools/config-update-tools.js'
 import { ContextManager } from './tools/context.js'
 import { registerContextTools } from './tools/context-tools.js'
+import { registerMetricsTools } from './tools/metrics-tools.js'
 import { checkForNewDefaults } from './defaults-checker.js'
 import { writeFile } from 'fs/promises'
 import path from 'path'
@@ -73,6 +75,7 @@ async function main() {
   const stateManager = new StateManager(projectDir)
   const artifactManager = new ArtifactManager(projectDir)
   const contextManager = new ContextManager(projectDir)
+  const metricsManager = new MetricsManager(projectDir)
 
   // Register config-independent tools first
   registerStateTools(server, stateManager, projectDir)
@@ -81,14 +84,20 @@ async function main() {
   registerConfigTools(server, projectDir)
   registerConfigUpdateTools(server, projectDir)
   registerContextTools(server, contextManager)
+  registerMetricsTools(server, metricsManager, projectDir)
 
   // Register dispatch tools (need config)
   if (config) {
     const providers = createProviderRegistry(config.providers)
     const parsers = createParserRegistry()
-    const engine = new DispatchEngine({ providers, parsers, projectDir })
+    const engine = new DispatchEngine({
+      providers,
+      parsers,
+      projectDir,
+      onDispatchComplete: (metric) => metricsManager.record(metric),
+    })
     const batchManager = new BatchManager(engine, worktreeManager, stateManager)
-    registerDispatchTools(server, engine, batchManager, projectDir)
+    registerDispatchTools(server, engine, batchManager, projectDir, metricsManager)
   }
 
   // Connect via stdio
