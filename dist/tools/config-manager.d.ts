@@ -1,12 +1,9 @@
-import type { InvokeConfig, ProviderEntry, StrategyConfig } from '../types.js';
+import type { InvokeConfig, RoleConfig, StrategyConfig } from '../types.js';
 interface AddRoleOperation {
     operation: 'add_role';
     role: string;
     subrole: string;
-    config: {
-        prompt: string;
-        providers: ProviderEntry[];
-    };
+    config: RoleConfig;
 }
 interface RemoveRoleOperation {
     operation: 'remove_role';

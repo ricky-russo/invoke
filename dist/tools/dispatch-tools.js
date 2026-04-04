@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { loadConfig } from '../config.js';
-export function registerDispatchTools(server, engine, batchManager, projectDir) {
+export function registerDispatchTools(server, engine, batchManager, projectDir, metricsManager) {
     server.registerTool('invoke_dispatch', {
         description: 'Dispatch a single agent by role and subrole. Blocks until the agent completes.',
         inputSchema: z.object({
@@ -43,6 +43,7 @@ export function registerDispatchTools(server, engine, batchManager, projectDir) 
         // Read current config to report accurate provider info
         let taskProviders = [];
         let config;
+        let warning;
         try {
             config = await loadConfig(projectDir);
             taskProviders = tasks.map(t => {
@@ -54,11 +55,31 @@ export function registerDispatchTools(server, engine, batchManager, projectDir) 
                         model: p.model,
                         effort: p.effort,
                     })) ?? [],
+                    provider_mode: roleConfig?.provider_mode ?? config.settings.default_provider_mode ?? 'parallel',
                 };
             });
         }
         catch {
             // Config read failed — return without provider info
+        }
+        const estimatedDispatches = taskProviders.reduce((sum, task) => {
+            const mode = task.provider_mode;
+            return sum + (mode === 'parallel' ? task.providers.length : 1);
+        }, 0);
+        if (metricsManager && config?.settings.max_dispatches !== undefined) {
+            try {
+                const limitStatus = await metricsManager.getLimitStatus(config);
+                const projectedDispatches = limitStatus.dispatches_used + estimatedDispatches;
+                if (projectedDispatches > limitStatus.max_dispatches) {
+                    warning = `Exceeding max_dispatches limit (${projectedDispatches}/${limitStatus.max_dispatches})`;
+                }
+                else if (projectedDispatches / limitStatus.max_dispatches > 0.8) {
+                    warning = `Approaching max_dispatches limit (${projectedDispatches}/${limitStatus.max_dispatches})`;
+                }
+            }
+            catch {
+                // Metrics lookup failed — omit warning without blocking dispatch
+            }
         }
         const maxParallel = config?.settings?.max_parallel_agents;
         const batchId = batchManager.dispatchBatch({
@@ -76,6 +97,8 @@ export function registerDispatchTools(server, engine, batchManager, projectDir) 
                         batch_id: batchId,
                         status: 'dispatched',
                         tasks: taskProviders,
+                        dispatch_estimate: estimatedDispatches,
+                        warning,
                     }) }],
         };
     });

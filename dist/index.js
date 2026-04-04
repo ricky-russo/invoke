@@ -291,10 +291,10 @@ function mergeDefs(...defs) {
 function cloneDef(schema) {
   return mergeDefs(schema._zod.def);
 }
-function getElementAtPath(obj, path12) {
-  if (!path12)
+function getElementAtPath(obj, path13) {
+  if (!path13)
     return obj;
-  return path12.reduce((acc, key) => acc?.[key], obj);
+  return path13.reduce((acc, key) => acc?.[key], obj);
 }
 function promiseAllObject(promisesObj) {
   const keys = Object.keys(promisesObj);
@@ -606,11 +606,11 @@ function aborted(x, startIndex = 0) {
   }
   return false;
 }
-function prefixIssues(path12, issues) {
+function prefixIssues(path13, issues) {
   return issues.map((iss) => {
     var _a2;
     (_a2 = iss).path ?? (_a2.path = []);
-    iss.path.unshift(path12);
+    iss.path.unshift(path13);
     return iss;
   });
 }
@@ -852,7 +852,7 @@ function formatError(error48, mapper = (issue2) => issue2.message) {
 }
 function treeifyError(error48, mapper = (issue2) => issue2.message) {
   const result = { errors: [] };
-  const processError = (error49, path12 = []) => {
+  const processError = (error49, path13 = []) => {
     var _a2, _b;
     for (const issue2 of error49.issues) {
       if (issue2.code === "invalid_union" && issue2.errors.length) {
@@ -862,7 +862,7 @@ function treeifyError(error48, mapper = (issue2) => issue2.message) {
       } else if (issue2.code === "invalid_element") {
         processError({ issues: issue2.issues }, issue2.path);
       } else {
-        const fullpath = [...path12, ...issue2.path];
+        const fullpath = [...path13, ...issue2.path];
         if (fullpath.length === 0) {
           result.errors.push(mapper(issue2));
           continue;
@@ -894,8 +894,8 @@ function treeifyError(error48, mapper = (issue2) => issue2.message) {
 }
 function toDotPath(_path) {
   const segs = [];
-  const path12 = _path.map((seg) => typeof seg === "object" ? seg.key : seg);
-  for (const seg of path12) {
+  const path13 = _path.map((seg) => typeof seg === "object" ? seg.key : seg);
+  for (const seg of path13) {
     if (typeof seg === "number")
       segs.push(`[${seg}]`);
     else if (typeof seg === "symbol")
@@ -13589,13 +13589,13 @@ function resolveRef(ref, ctx) {
   if (!ref.startsWith("#")) {
     throw new Error("External $ref is not supported, only local refs (#/...) are allowed");
   }
-  const path12 = ref.slice(1).split("/").filter(Boolean);
-  if (path12.length === 0) {
+  const path13 = ref.slice(1).split("/").filter(Boolean);
+  if (path13.length === 0) {
     return ctx.rootSchema;
   }
   const defsKey = ctx.version === "draft-2020-12" ? "$defs" : "definitions";
-  if (path12[0] === defsKey) {
-    const key = path12[1];
+  if (path13[0] === defsKey) {
+    const key = path13[1];
     if (!key || !ctx.defs[key]) {
       throw new Error(`Reference not found: ${ref}`);
     }
@@ -17539,8 +17539,8 @@ var require_utils = __commonJS({
       }
       return ind;
     }
-    function removeDotSegments(path12) {
-      let input = path12;
+    function removeDotSegments(path13) {
+      let input = path13;
       const output = [];
       let nextSlash = -1;
       let len = 0;
@@ -17739,8 +17739,8 @@ var require_schemes = __commonJS({
         wsComponent.secure = void 0;
       }
       if (wsComponent.resourceName) {
-        const [path12, query] = wsComponent.resourceName.split("?");
-        wsComponent.path = path12 && path12 !== "/" ? path12 : void 0;
+        const [path13, query] = wsComponent.resourceName.split("?");
+        wsComponent.path = path13 && path13 !== "/" ? path13 : void 0;
         wsComponent.query = query;
         wsComponent.resourceName = void 0;
       }
@@ -21200,17 +21200,17 @@ var require_visit = __commonJS({
     visit.BREAK = BREAK;
     visit.SKIP = SKIP;
     visit.REMOVE = REMOVE;
-    function visit_(key, node, visitor, path12) {
-      const ctrl = callVisitor(key, node, visitor, path12);
+    function visit_(key, node, visitor, path13) {
+      const ctrl = callVisitor(key, node, visitor, path13);
       if (identity.isNode(ctrl) || identity.isPair(ctrl)) {
-        replaceNode(key, path12, ctrl);
-        return visit_(key, ctrl, visitor, path12);
+        replaceNode(key, path13, ctrl);
+        return visit_(key, ctrl, visitor, path13);
       }
       if (typeof ctrl !== "symbol") {
         if (identity.isCollection(node)) {
-          path12 = Object.freeze(path12.concat(node));
+          path13 = Object.freeze(path13.concat(node));
           for (let i = 0; i < node.items.length; ++i) {
-            const ci = visit_(i, node.items[i], visitor, path12);
+            const ci = visit_(i, node.items[i], visitor, path13);
             if (typeof ci === "number")
               i = ci - 1;
             else if (ci === BREAK)
@@ -21221,13 +21221,13 @@ var require_visit = __commonJS({
             }
           }
         } else if (identity.isPair(node)) {
-          path12 = Object.freeze(path12.concat(node));
-          const ck = visit_("key", node.key, visitor, path12);
+          path13 = Object.freeze(path13.concat(node));
+          const ck = visit_("key", node.key, visitor, path13);
           if (ck === BREAK)
             return BREAK;
           else if (ck === REMOVE)
             node.key = null;
-          const cv = visit_("value", node.value, visitor, path12);
+          const cv = visit_("value", node.value, visitor, path13);
           if (cv === BREAK)
             return BREAK;
           else if (cv === REMOVE)
@@ -21248,17 +21248,17 @@ var require_visit = __commonJS({
     visitAsync.BREAK = BREAK;
     visitAsync.SKIP = SKIP;
     visitAsync.REMOVE = REMOVE;
-    async function visitAsync_(key, node, visitor, path12) {
-      const ctrl = await callVisitor(key, node, visitor, path12);
+    async function visitAsync_(key, node, visitor, path13) {
+      const ctrl = await callVisitor(key, node, visitor, path13);
       if (identity.isNode(ctrl) || identity.isPair(ctrl)) {
-        replaceNode(key, path12, ctrl);
-        return visitAsync_(key, ctrl, visitor, path12);
+        replaceNode(key, path13, ctrl);
+        return visitAsync_(key, ctrl, visitor, path13);
       }
       if (typeof ctrl !== "symbol") {
         if (identity.isCollection(node)) {
-          path12 = Object.freeze(path12.concat(node));
+          path13 = Object.freeze(path13.concat(node));
           for (let i = 0; i < node.items.length; ++i) {
-            const ci = await visitAsync_(i, node.items[i], visitor, path12);
+            const ci = await visitAsync_(i, node.items[i], visitor, path13);
             if (typeof ci === "number")
               i = ci - 1;
             else if (ci === BREAK)
@@ -21269,13 +21269,13 @@ var require_visit = __commonJS({
             }
           }
         } else if (identity.isPair(node)) {
-          path12 = Object.freeze(path12.concat(node));
-          const ck = await visitAsync_("key", node.key, visitor, path12);
+          path13 = Object.freeze(path13.concat(node));
+          const ck = await visitAsync_("key", node.key, visitor, path13);
           if (ck === BREAK)
             return BREAK;
           else if (ck === REMOVE)
             node.key = null;
-          const cv = await visitAsync_("value", node.value, visitor, path12);
+          const cv = await visitAsync_("value", node.value, visitor, path13);
           if (cv === BREAK)
             return BREAK;
           else if (cv === REMOVE)
@@ -21302,23 +21302,23 @@ var require_visit = __commonJS({
       }
       return visitor;
     }
-    function callVisitor(key, node, visitor, path12) {
+    function callVisitor(key, node, visitor, path13) {
       if (typeof visitor === "function")
-        return visitor(key, node, path12);
+        return visitor(key, node, path13);
       if (identity.isMap(node))
-        return visitor.Map?.(key, node, path12);
+        return visitor.Map?.(key, node, path13);
       if (identity.isSeq(node))
-        return visitor.Seq?.(key, node, path12);
+        return visitor.Seq?.(key, node, path13);
       if (identity.isPair(node))
-        return visitor.Pair?.(key, node, path12);
+        return visitor.Pair?.(key, node, path13);
       if (identity.isScalar(node))
-        return visitor.Scalar?.(key, node, path12);
+        return visitor.Scalar?.(key, node, path13);
       if (identity.isAlias(node))
-        return visitor.Alias?.(key, node, path12);
+        return visitor.Alias?.(key, node, path13);
       return void 0;
     }
-    function replaceNode(key, path12, node) {
-      const parent = path12[path12.length - 1];
+    function replaceNode(key, path13, node) {
+      const parent = path13[path13.length - 1];
       if (identity.isCollection(parent)) {
         parent.items[key] = node;
       } else if (identity.isPair(parent)) {
@@ -21926,10 +21926,10 @@ var require_Collection = __commonJS({
     var createNode = require_createNode();
     var identity = require_identity();
     var Node = require_Node();
-    function collectionFromPath(schema, path12, value) {
+    function collectionFromPath(schema, path13, value) {
       let v = value;
-      for (let i = path12.length - 1; i >= 0; --i) {
-        const k = path12[i];
+      for (let i = path13.length - 1; i >= 0; --i) {
+        const k = path13[i];
         if (typeof k === "number" && Number.isInteger(k) && k >= 0) {
           const a = [];
           a[k] = v;
@@ -21948,7 +21948,7 @@ var require_Collection = __commonJS({
         sourceObjects: /* @__PURE__ */ new Map()
       });
     }
-    var isEmptyPath = (path12) => path12 == null || typeof path12 === "object" && !!path12[Symbol.iterator]().next().done;
+    var isEmptyPath = (path13) => path13 == null || typeof path13 === "object" && !!path13[Symbol.iterator]().next().done;
     var Collection = class extends Node.NodeBase {
       constructor(type, schema) {
         super(type);
@@ -21978,11 +21978,11 @@ var require_Collection = __commonJS({
        * be a Pair instance or a `{ key, value }` object, which may not have a key
        * that already exists in the map.
        */
-      addIn(path12, value) {
-        if (isEmptyPath(path12))
+      addIn(path13, value) {
+        if (isEmptyPath(path13))
           this.add(value);
         else {
-          const [key, ...rest] = path12;
+          const [key, ...rest] = path13;
           const node = this.get(key, true);
           if (identity.isCollection(node))
             node.addIn(rest, value);
@@ -21996,8 +21996,8 @@ var require_Collection = __commonJS({
        * Removes a value from the collection.
        * @returns `true` if the item was found and removed.
        */
-      deleteIn(path12) {
-        const [key, ...rest] = path12;
+      deleteIn(path13) {
+        const [key, ...rest] = path13;
         if (rest.length === 0)
           return this.delete(key);
         const node = this.get(key, true);
@@ -22011,8 +22011,8 @@ var require_Collection = __commonJS({
        * scalar values from their surrounding node; to disable set `keepScalar` to
        * `true` (collections are always returned intact).
        */
-      getIn(path12, keepScalar) {
-        const [key, ...rest] = path12;
+      getIn(path13, keepScalar) {
+        const [key, ...rest] = path13;
         const node = this.get(key, true);
         if (rest.length === 0)
           return !keepScalar && identity.isScalar(node) ? node.value : node;
@@ -22030,8 +22030,8 @@ var require_Collection = __commonJS({
       /**
        * Checks if the collection includes a value with the key `key`.
        */
-      hasIn(path12) {
-        const [key, ...rest] = path12;
+      hasIn(path13) {
+        const [key, ...rest] = path13;
         if (rest.length === 0)
           return this.has(key);
         const node = this.get(key, true);
@@ -22041,8 +22041,8 @@ var require_Collection = __commonJS({
        * Sets a value in this collection. For `!!set`, `value` needs to be a
        * boolean to add/remove the item from the set.
        */
-      setIn(path12, value) {
-        const [key, ...rest] = path12;
+      setIn(path13, value) {
+        const [key, ...rest] = path13;
         if (rest.length === 0) {
           this.set(key, value);
         } else {
@@ -24554,9 +24554,9 @@ var require_Document = __commonJS({
           this.contents.add(value);
       }
       /** Adds a value to the document. */
-      addIn(path12, value) {
+      addIn(path13, value) {
         if (assertCollection(this.contents))
-          this.contents.addIn(path12, value);
+          this.contents.addIn(path13, value);
       }
       /**
        * Create a new `Alias` node, ensuring that the target `node` has the required anchor.
@@ -24631,14 +24631,14 @@ var require_Document = __commonJS({
        * Removes a value from the document.
        * @returns `true` if the item was found and removed.
        */
-      deleteIn(path12) {
-        if (Collection.isEmptyPath(path12)) {
+      deleteIn(path13) {
+        if (Collection.isEmptyPath(path13)) {
           if (this.contents == null)
             return false;
           this.contents = null;
           return true;
         }
-        return assertCollection(this.contents) ? this.contents.deleteIn(path12) : false;
+        return assertCollection(this.contents) ? this.contents.deleteIn(path13) : false;
       }
       /**
        * Returns item at `key`, or `undefined` if not found. By default unwraps
@@ -24653,10 +24653,10 @@ var require_Document = __commonJS({
        * scalar values from their surrounding node; to disable set `keepScalar` to
        * `true` (collections are always returned intact).
        */
-      getIn(path12, keepScalar) {
-        if (Collection.isEmptyPath(path12))
+      getIn(path13, keepScalar) {
+        if (Collection.isEmptyPath(path13))
           return !keepScalar && identity.isScalar(this.contents) ? this.contents.value : this.contents;
-        return identity.isCollection(this.contents) ? this.contents.getIn(path12, keepScalar) : void 0;
+        return identity.isCollection(this.contents) ? this.contents.getIn(path13, keepScalar) : void 0;
       }
       /**
        * Checks if the document includes a value with the key `key`.
@@ -24667,10 +24667,10 @@ var require_Document = __commonJS({
       /**
        * Checks if the document includes a value at `path`.
        */
-      hasIn(path12) {
-        if (Collection.isEmptyPath(path12))
+      hasIn(path13) {
+        if (Collection.isEmptyPath(path13))
           return this.contents !== void 0;
-        return identity.isCollection(this.contents) ? this.contents.hasIn(path12) : false;
+        return identity.isCollection(this.contents) ? this.contents.hasIn(path13) : false;
       }
       /**
        * Sets a value in this document. For `!!set`, `value` needs to be a
@@ -24687,13 +24687,13 @@ var require_Document = __commonJS({
        * Sets a value in this document. For `!!set`, `value` needs to be a
        * boolean to add/remove the item from the set.
        */
-      setIn(path12, value) {
-        if (Collection.isEmptyPath(path12)) {
+      setIn(path13, value) {
+        if (Collection.isEmptyPath(path13)) {
           this.contents = value;
         } else if (this.contents == null) {
-          this.contents = Collection.collectionFromPath(this.schema, Array.from(path12), value);
+          this.contents = Collection.collectionFromPath(this.schema, Array.from(path13), value);
         } else if (assertCollection(this.contents)) {
-          this.contents.setIn(path12, value);
+          this.contents.setIn(path13, value);
         }
       }
       /**
@@ -26650,9 +26650,9 @@ var require_cst_visit = __commonJS({
     visit.BREAK = BREAK;
     visit.SKIP = SKIP;
     visit.REMOVE = REMOVE;
-    visit.itemAtPath = (cst, path12) => {
+    visit.itemAtPath = (cst, path13) => {
       let item = cst;
-      for (const [field, index] of path12) {
+      for (const [field, index] of path13) {
         const tok = item?.[field];
         if (tok && "items" in tok) {
           item = tok.items[index];
@@ -26661,23 +26661,23 @@ var require_cst_visit = __commonJS({
       }
       return item;
     };
-    visit.parentCollection = (cst, path12) => {
-      const parent = visit.itemAtPath(cst, path12.slice(0, -1));
-      const field = path12[path12.length - 1][0];
+    visit.parentCollection = (cst, path13) => {
+      const parent = visit.itemAtPath(cst, path13.slice(0, -1));
+      const field = path13[path13.length - 1][0];
       const coll = parent?.[field];
       if (coll && "items" in coll)
         return coll;
       throw new Error("Parent collection not found");
     };
-    function _visit(path12, item, visitor) {
-      let ctrl = visitor(item, path12);
+    function _visit(path13, item, visitor) {
+      let ctrl = visitor(item, path13);
       if (typeof ctrl === "symbol")
         return ctrl;
       for (const field of ["key", "value"]) {
         const token = item[field];
         if (token && "items" in token) {
           for (let i = 0; i < token.items.length; ++i) {
-            const ci = _visit(Object.freeze(path12.concat([[field, i]])), token.items[i], visitor);
+            const ci = _visit(Object.freeze(path13.concat([[field, i]])), token.items[i], visitor);
             if (typeof ci === "number")
               i = ci - 1;
             else if (ci === BREAK)
@@ -26688,10 +26688,10 @@ var require_cst_visit = __commonJS({
             }
           }
           if (typeof ctrl === "function" && field === "key")
-            ctrl = ctrl(item, path12);
+            ctrl = ctrl(item, path13);
         }
       }
-      return typeof ctrl === "function" ? ctrl(item, path12) : ctrl;
+      return typeof ctrl === "function" ? ctrl(item, path13) : ctrl;
     }
     exports.visit = visit;
   }
@@ -28883,8 +28883,8 @@ function getErrorMap() {
 
 // node_modules/zod/v3/helpers/parseUtil.js
 var makeIssue = (params) => {
-  const { data, path: path12, errorMaps, issueData } = params;
-  const fullPath = [...path12, ...issueData.path || []];
+  const { data, path: path13, errorMaps, issueData } = params;
+  const fullPath = [...path13, ...issueData.path || []];
   const fullIssue = {
     ...issueData,
     path: fullPath
@@ -28999,11 +28999,11 @@ var errorUtil;
 
 // node_modules/zod/v3/types.js
 var ParseInputLazyPath = class {
-  constructor(parent, value, path12, key) {
+  constructor(parent, value, path13, key) {
     this._cachedPath = [];
     this.parent = parent;
     this.data = value;
-    this._path = path12;
+    this._path = path13;
     this._key = key;
   }
   get path() {
@@ -39007,6 +39007,11 @@ var WorktreeManager = class {
   }
 };
 
+// src/metrics/manager.ts
+import { existsSync as existsSync4 } from "fs";
+import { mkdir, readFile as readFile4, rename as rename2, writeFile as writeFile2 } from "fs/promises";
+import path6 from "path";
+
 // src/tools/state.ts
 import { readFile as readFile3, writeFile, rename } from "fs/promises";
 import { existsSync as existsSync3 } from "fs";
@@ -39110,27 +39115,163 @@ var StateManager = class {
   }
 };
 
+// src/metrics/manager.ts
+var MetricsManager = class {
+  constructor(projectDir) {
+    this.projectDir = projectDir;
+    this.metricsPath = path6.join(projectDir, ".invoke", "metrics.json");
+    this.tmpPath = path6.join(projectDir, ".invoke", "metrics.json.tmp");
+    this.stateManager = new StateManager(projectDir);
+    this.beforeExitHandler = () => {
+      void this.flushPendingWrites();
+    };
+    process.on("beforeExit", this.beforeExitHandler);
+  }
+  projectDir;
+  metricsPath;
+  tmpPath;
+  stateManager;
+  beforeExitHandler;
+  metrics = [];
+  loaded = false;
+  loadPromise = null;
+  writeChain = Promise.resolve();
+  record(metric) {
+    try {
+      this.metrics.push(metric);
+      this.queueFlush();
+    } catch (error48) {
+      this.logWriteError(error48);
+    }
+  }
+  async getCurrentPipelineMetrics(opts) {
+    await this.ensureLoaded();
+    const state = await this.stateManager.get();
+    const pipelineId = state?.pipeline_id ?? null;
+    return this.metrics.filter((metric) => {
+      if (metric.pipeline_id !== pipelineId) {
+        return false;
+      }
+      if (opts?.stage && metric.stage !== opts.stage) {
+        return false;
+      }
+      return true;
+    });
+  }
+  async getSummary(opts) {
+    const metrics = await this.getCurrentPipelineMetrics(opts);
+    const summary = {
+      total_dispatches: metrics.length,
+      total_prompt_chars: 0,
+      total_duration_ms: 0,
+      by_stage: {},
+      by_provider_model: {}
+    };
+    for (const metric of metrics) {
+      summary.total_prompt_chars += metric.prompt_size_chars;
+      summary.total_duration_ms += metric.duration_ms;
+      const stageEntry = summary.by_stage[metric.stage] ?? {
+        dispatches: 0,
+        duration_ms: 0,
+        prompt_chars: 0
+      };
+      stageEntry.dispatches += 1;
+      stageEntry.duration_ms += metric.duration_ms;
+      stageEntry.prompt_chars += metric.prompt_size_chars;
+      summary.by_stage[metric.stage] = stageEntry;
+      const providerModelKey = `${metric.provider}:${metric.model}`;
+      const providerEntry = summary.by_provider_model[providerModelKey] ?? {
+        dispatches: 0,
+        duration_ms: 0,
+        prompt_chars: 0
+      };
+      providerEntry.dispatches += 1;
+      providerEntry.duration_ms += metric.duration_ms;
+      providerEntry.prompt_chars += metric.prompt_size_chars;
+      summary.by_provider_model[providerModelKey] = providerEntry;
+    }
+    return summary;
+  }
+  async getLimitStatus(config2) {
+    const metrics = await this.getCurrentPipelineMetrics();
+    const dispatchesUsed = metrics.length;
+    const maxDispatches = config2.settings.max_dispatches;
+    return {
+      dispatches_used: dispatchesUsed,
+      max_dispatches: maxDispatches,
+      at_limit: maxDispatches !== void 0 ? dispatchesUsed >= maxDispatches : false
+    };
+  }
+  queueFlush() {
+    this.writeChain = this.writeChain.then(async () => {
+      await this.ensureLoaded();
+      await this.writeAtomic(this.metrics);
+    }).catch((error48) => {
+      this.logWriteError(error48);
+    });
+  }
+  async flushPendingWrites() {
+    try {
+      await this.writeChain;
+    } catch (error48) {
+      this.logWriteError(error48);
+    }
+  }
+  async ensureLoaded() {
+    if (this.loaded) {
+      return;
+    }
+    if (!this.loadPromise) {
+      this.loadPromise = this.loadFromDisk().finally(() => {
+        this.loadPromise = null;
+      });
+    }
+    await this.loadPromise;
+  }
+  async loadFromDisk() {
+    if (!existsSync4(this.metricsPath)) {
+      this.loaded = true;
+      return;
+    }
+    const content = await readFile4(this.metricsPath, "utf-8");
+    const parsed = JSON.parse(content);
+    this.metrics = [...parsed, ...this.metrics];
+    this.loaded = true;
+  }
+  async writeAtomic(metrics) {
+    await mkdir(path6.join(this.projectDir, ".invoke"), { recursive: true });
+    const content = JSON.stringify(metrics, null, 2) + "\n";
+    await writeFile2(this.tmpPath, content);
+    await rename2(this.tmpPath, this.metricsPath);
+  }
+  logWriteError(error48) {
+    console.error(
+      `Failed to write metrics: ${error48 instanceof Error ? error48.message : String(error48)}`
+    );
+  }
+};
+
 // src/tools/artifacts.ts
-import { readFile as readFile4, writeFile as writeFile2, mkdir, readdir, unlink } from "fs/promises";
-import path6 from "path";
+import { readFile as readFile5, writeFile as writeFile3, mkdir as mkdir2, readdir, unlink } from "fs/promises";
+import path7 from "path";
 var ArtifactManager = class {
   baseDir;
   constructor(projectDir) {
-    this.baseDir = path6.join(projectDir, ".invoke");
+    this.baseDir = path7.join(projectDir, ".invoke");
   }
   async save(stage, filename, content) {
-    const dir = path6.join(this.baseDir, stage);
-    await mkdir(dir, { recursive: true });
-    const filePath = path6.join(dir, filename);
-    await writeFile2(filePath, content);
+    const dir = path7.join(this.baseDir, stage);
+    await mkdir2(dir, { recursive: true });
+    const filePath = path7.join(dir, filename);
+    await writeFile3(filePath, content);
     return filePath;
   }
   async read(stage, filename) {
-    const filePath = path6.join(this.baseDir, stage, filename);
-    return readFile4(filePath, "utf-8");
+    const filePath = path7.join(this.baseDir, stage, filename);
+    return readFile5(filePath, "utf-8");
   }
   async list(stage) {
-    const dir = path6.join(this.baseDir, stage);
+    const dir = path7.join(this.baseDir, stage);
     try {
       return await readdir(dir);
     } catch {
@@ -39138,7 +39279,7 @@ var ArtifactManager = class {
     }
   }
   async delete(stage, filename) {
-    const filePath = path6.join(this.baseDir, stage, filename);
+    const filePath = path7.join(this.baseDir, stage, filename);
     await unlink(filePath);
   }
 };
@@ -39148,36 +39289,36 @@ init_zod();
 init_config();
 
 // src/init.ts
-import { cp, mkdir as mkdir2, readdir as readdir2 } from "fs/promises";
-import { existsSync as existsSync4 } from "fs";
-import path7 from "path";
+import { cp, mkdir as mkdir3, readdir as readdir2 } from "fs/promises";
+import { existsSync as existsSync5 } from "fs";
+import path8 from "path";
 import { fileURLToPath } from "url";
-var __dirname = path7.dirname(fileURLToPath(import.meta.url));
-var PACKAGE_ROOT = path7.join(__dirname, "..");
+var __dirname = path8.dirname(fileURLToPath(import.meta.url));
+var PACKAGE_ROOT = path8.join(__dirname, "..");
 async function initProject(projectDir) {
-  const invokeDir = path7.join(projectDir, ".invoke");
-  const defaultsDir = path7.join(PACKAGE_ROOT, "defaults");
-  await mkdir2(invokeDir, { recursive: true });
-  const configDest = path7.join(invokeDir, "pipeline.yaml");
-  if (!existsSync4(configDest)) {
-    await cp(path7.join(defaultsDir, "pipeline.yaml"), configDest);
+  const invokeDir = path8.join(projectDir, ".invoke");
+  const defaultsDir = path8.join(PACKAGE_ROOT, "defaults");
+  await mkdir3(invokeDir, { recursive: true });
+  const configDest = path8.join(invokeDir, "pipeline.yaml");
+  if (!existsSync5(configDest)) {
+    await cp(path8.join(defaultsDir, "pipeline.yaml"), configDest);
   }
-  await copyDefaults(path7.join(defaultsDir, "roles"), path7.join(invokeDir, "roles"));
-  await copyDefaults(path7.join(defaultsDir, "strategies"), path7.join(invokeDir, "strategies"));
-  await mkdir2(path7.join(invokeDir, "specs", "research"), { recursive: true });
-  await mkdir2(path7.join(invokeDir, "plans"), { recursive: true });
-  await mkdir2(path7.join(invokeDir, "reviews"), { recursive: true });
+  await copyDefaults(path8.join(defaultsDir, "roles"), path8.join(invokeDir, "roles"));
+  await copyDefaults(path8.join(defaultsDir, "strategies"), path8.join(invokeDir, "strategies"));
+  await mkdir3(path8.join(invokeDir, "specs", "research"), { recursive: true });
+  await mkdir3(path8.join(invokeDir, "plans"), { recursive: true });
+  await mkdir3(path8.join(invokeDir, "reviews"), { recursive: true });
 }
 async function copyDefaults(srcDir, destDir) {
-  if (!existsSync4(srcDir)) return;
-  await mkdir2(destDir, { recursive: true });
+  if (!existsSync5(srcDir)) return;
+  await mkdir3(destDir, { recursive: true });
   const entries = await readdir2(srcDir, { withFileTypes: true });
   for (const entry of entries) {
-    const srcPath = path7.join(srcDir, entry.name);
-    const destPath = path7.join(destDir, entry.name);
+    const srcPath = path8.join(srcDir, entry.name);
+    const destPath = path8.join(destDir, entry.name);
     if (entry.isDirectory()) {
       await copyDefaults(srcPath, destPath);
-    } else if (!existsSync4(destPath)) {
+    } else if (!existsSync5(destPath)) {
       await cp(srcPath, destPath);
     }
   }
@@ -39251,7 +39392,7 @@ function registerConfigTools(server, projectDir) {
 // src/tools/dispatch-tools.ts
 init_zod();
 init_config();
-function registerDispatchTools(server, engine, batchManager, projectDir) {
+function registerDispatchTools(server, engine, batchManager, projectDir, metricsManager) {
   server.registerTool(
     "invoke_dispatch",
     {
@@ -39299,6 +39440,7 @@ function registerDispatchTools(server, engine, batchManager, projectDir) {
     async ({ tasks, create_worktrees }) => {
       let taskProviders = [];
       let config2;
+      let warning;
       try {
         config2 = await loadConfig(projectDir);
         taskProviders = tasks.map((t) => {
@@ -39309,10 +39451,27 @@ function registerDispatchTools(server, engine, batchManager, projectDir) {
               provider: p.provider,
               model: p.model,
               effort: p.effort
-            })) ?? []
+            })) ?? [],
+            provider_mode: roleConfig?.provider_mode ?? config2.settings.default_provider_mode ?? "parallel"
           };
         });
       } catch {
+      }
+      const estimatedDispatches = taskProviders.reduce((sum, task) => {
+        const mode = task.provider_mode;
+        return sum + (mode === "parallel" ? task.providers.length : 1);
+      }, 0);
+      if (metricsManager && config2?.settings.max_dispatches !== void 0) {
+        try {
+          const limitStatus = await metricsManager.getLimitStatus(config2);
+          const projectedDispatches = limitStatus.dispatches_used + estimatedDispatches;
+          if (projectedDispatches > limitStatus.max_dispatches) {
+            warning = `Exceeding max_dispatches limit (${projectedDispatches}/${limitStatus.max_dispatches})`;
+          } else if (projectedDispatches / limitStatus.max_dispatches > 0.8) {
+            warning = `Approaching max_dispatches limit (${projectedDispatches}/${limitStatus.max_dispatches})`;
+          }
+        } catch {
+        }
       }
       const maxParallel = config2?.settings?.max_parallel_agents;
       const batchId = batchManager.dispatchBatch({
@@ -39329,7 +39488,9 @@ function registerDispatchTools(server, engine, batchManager, projectDir) {
         content: [{ type: "text", text: JSON.stringify({
           batch_id: batchId,
           status: "dispatched",
-          tasks: taskProviders
+          tasks: taskProviders,
+          dispatch_estimate: estimatedDispatches,
+          warning
         }) }]
       };
     }
@@ -39665,12 +39826,12 @@ init_zod();
 
 // src/tools/config-manager.ts
 var import_yaml2 = __toESM(require_dist2(), 1);
-import { readFile as readFile5, writeFile as writeFile3 } from "fs/promises";
-import path8 from "path";
+import { readFile as readFile6, writeFile as writeFile4 } from "fs/promises";
+import path9 from "path";
 var ConfigManager = class {
   constructor(projectDir) {
     this.projectDir = projectDir;
-    this.configPath = path8.join(projectDir, ".invoke", "pipeline.yaml");
+    this.configPath = path9.join(projectDir, ".invoke", "pipeline.yaml");
   }
   projectDir;
   configPath;
@@ -39696,10 +39857,14 @@ var ConfigManager = class {
     if (raw.roles[op.role][op.subrole]) {
       throw new Error(`Role ${op.role}.${op.subrole} already exists`);
     }
-    raw.roles[op.role][op.subrole] = {
+    const roleConfig = {
       prompt: op.config.prompt,
       providers: op.config.providers
     };
+    if (op.config.provider_mode) {
+      roleConfig.provider_mode = op.config.provider_mode;
+    }
+    raw.roles[op.role][op.subrole] = roleConfig;
     return this.writeAndReload(raw);
   }
   async removeRole(raw, op) {
@@ -39728,22 +39893,34 @@ var ConfigManager = class {
     return this.writeAndReload(raw);
   }
   async readRaw() {
-    const content = await readFile5(this.configPath, "utf-8");
+    const content = await readFile6(this.configPath, "utf-8");
     return (0, import_yaml2.parse)(content);
   }
   async writeAndReload(raw) {
-    await writeFile3(this.configPath, (0, import_yaml2.stringify)(raw));
+    await writeFile4(this.configPath, (0, import_yaml2.stringify)(raw));
     const { loadConfig: loadConfig2 } = await Promise.resolve().then(() => (init_config(), config_exports));
     return loadConfig2(this.projectDir);
   }
 };
 
 // src/tools/config-update-tools.ts
+var ProviderModeSchema2 = external_exports3.enum(["parallel", "fallback", "single"]);
 var ProviderEntrySchema2 = external_exports3.object({
   provider: external_exports3.string(),
   model: external_exports3.string(),
   effort: external_exports3.enum(["low", "medium", "high"])
 });
+var SettingsUpdateSchema = external_exports3.object({
+  default_strategy: external_exports3.string().optional(),
+  agent_timeout: external_exports3.number().positive().optional(),
+  commit_style: external_exports3.enum(["one-commit", "per-batch", "per-task", "custom"]).optional(),
+  work_branch_prefix: external_exports3.string().optional(),
+  post_merge_commands: external_exports3.array(external_exports3.string()).optional(),
+  max_parallel_agents: external_exports3.number().positive().optional(),
+  default_provider_mode: ProviderModeSchema2.optional(),
+  max_dispatches: external_exports3.number().positive().optional(),
+  max_review_cycles: external_exports3.number().positive().optional()
+}).catchall(external_exports3.unknown());
 function registerConfigUpdateTools(server, projectDir) {
   const configManager = new ConfigManager(projectDir);
   server.registerTool(
@@ -39757,9 +39934,10 @@ function registerConfigUpdateTools(server, projectDir) {
         strategy: external_exports3.string().optional().describe("Strategy name (for add_strategy/remove_strategy)"),
         config: external_exports3.object({
           prompt: external_exports3.string().describe("Path to the prompt .md file"),
-          providers: external_exports3.array(ProviderEntrySchema2).optional().describe("Provider configurations (for add_role)")
+          providers: external_exports3.array(ProviderEntrySchema2).optional().describe("Provider configurations (for add_role)"),
+          provider_mode: ProviderModeSchema2.optional().describe("Provider dispatch mode (for add_role)")
         }).optional().describe("Configuration for add_role or add_strategy"),
-        settings: external_exports3.record(external_exports3.string(), external_exports3.unknown()).optional().describe("Settings fields to update (for update_settings)")
+        settings: SettingsUpdateSchema.optional().describe("Settings fields to update (for update_settings)")
       })
     },
     async (input) => {
@@ -39794,7 +39972,8 @@ function buildOperation(input) {
             provider: p.provider,
             model: p.model,
             effort: p.effort
-          }))
+          })),
+          provider_mode: input.config.provider_mode
         }
       };
     }
@@ -39832,31 +40011,31 @@ function buildOperation(input) {
 }
 
 // src/tools/context.ts
-import { readFile as readFile6, writeFile as writeFile4 } from "fs/promises";
-import { existsSync as existsSync5 } from "fs";
-import path9 from "path";
+import { readFile as readFile7, writeFile as writeFile5 } from "fs/promises";
+import { existsSync as existsSync6 } from "fs";
+import path10 from "path";
 var ContextManager = class {
   constructor(projectDir) {
     this.projectDir = projectDir;
-    this.contextPath = path9.join(projectDir, ".invoke", "context.md");
+    this.contextPath = path10.join(projectDir, ".invoke", "context.md");
   }
   projectDir;
   contextPath;
   async get(maxLength) {
-    if (!existsSync5(this.contextPath)) {
+    if (!existsSync6(this.contextPath)) {
       return null;
     }
-    let content = await readFile6(this.contextPath, "utf-8");
+    let content = await readFile7(this.contextPath, "utf-8");
     if (maxLength && content.length > maxLength) {
       content = content.slice(0, maxLength) + "\n\n(truncated)";
     }
     return content;
   }
   exists() {
-    return existsSync5(this.contextPath);
+    return existsSync6(this.contextPath);
   }
   async initialize(content) {
-    await writeFile4(this.contextPath, content);
+    await writeFile5(this.contextPath, content);
   }
   async updateSection(sectionName, content, mode) {
     const current = await this.get();
@@ -39873,10 +40052,10 @@ var ContextManager = class {
     const sectionEnd = nextHeadingIndex === -1 ? current.length : nextHeadingIndex;
     if (mode === "replace") {
       const updated = current.slice(0, afterHeading) + "\n\n" + content + "\n" + current.slice(sectionEnd);
-      await writeFile4(this.contextPath, updated);
+      await writeFile5(this.contextPath, updated);
     } else {
       const updated = current.slice(0, sectionEnd) + content + "\n" + current.slice(sectionEnd);
-      await writeFile4(this.contextPath, updated);
+      await writeFile5(this.contextPath, updated);
     }
   }
 };
@@ -39945,17 +40124,58 @@ function registerContextTools(server, contextManager) {
   );
 }
 
+// src/tools/metrics-tools.ts
+init_zod();
+init_config();
+function registerMetricsTools(server, metricsManager, projectDir) {
+  server.registerTool(
+    "invoke_get_metrics",
+    {
+      description: "Get dispatch metrics, summary totals, and pipeline dispatch limit status.",
+      inputSchema: external_exports3.object({
+        stage: external_exports3.string().optional().describe("Optional stage filter (e.g. build, review)")
+      })
+    },
+    async ({ stage }) => {
+      const options = { stage };
+      try {
+        const entries = await metricsManager.getCurrentPipelineMetrics(options);
+        const summary = await metricsManager.getSummary(options);
+        let limits;
+        try {
+          const config2 = await loadConfig(projectDir);
+          limits = await metricsManager.getLimitStatus(config2);
+        } catch {
+          const pipelineEntries = await metricsManager.getCurrentPipelineMetrics();
+          limits = {
+            dispatches_used: pipelineEntries.length,
+            at_limit: false
+          };
+        }
+        return {
+          content: [{ type: "text", text: JSON.stringify({ entries, summary, limits }, null, 2) }]
+        };
+      } catch (err) {
+        return {
+          content: [{ type: "text", text: `Metrics error: ${err instanceof Error ? err.message : String(err)}` }],
+          isError: true
+        };
+      }
+    }
+  );
+}
+
 // src/defaults-checker.ts
 import { readdir as readdir3 } from "fs/promises";
-import { existsSync as existsSync6 } from "fs";
-import path10 from "path";
+import { existsSync as existsSync7 } from "fs";
+import path11 from "path";
 import { fileURLToPath as fileURLToPath2 } from "url";
-var __dirname2 = path10.dirname(fileURLToPath2(import.meta.url));
-var PACKAGE_ROOT2 = path10.join(__dirname2, "..");
+var __dirname2 = path11.dirname(fileURLToPath2(import.meta.url));
+var PACKAGE_ROOT2 = path11.join(__dirname2, "..");
 async function checkForNewDefaults(projectDir) {
-  const invokeDir = path10.join(projectDir, ".invoke");
-  const defaultsDir = path10.join(PACKAGE_ROOT2, "defaults");
-  if (!existsSync6(invokeDir) || !existsSync6(defaultsDir)) {
+  const invokeDir = path11.join(projectDir, ".invoke");
+  const defaultsDir = path11.join(PACKAGE_ROOT2, "defaults");
+  if (!existsSync7(invokeDir) || !existsSync7(defaultsDir)) {
     return [];
   }
   const missing = [];
@@ -39963,15 +40183,15 @@ async function checkForNewDefaults(projectDir) {
   return missing;
 }
 async function scanDir(srcDir, destDir, relativePath, missing) {
-  if (!existsSync6(srcDir)) return;
+  if (!existsSync7(srcDir)) return;
   const entries = await readdir3(srcDir, { withFileTypes: true });
   for (const entry of entries) {
-    const srcPath = path10.join(srcDir, entry.name);
-    const destPath = path10.join(destDir, entry.name);
+    const srcPath = path11.join(srcDir, entry.name);
+    const destPath = path11.join(destDir, entry.name);
     const relPath = relativePath ? `${relativePath}/${entry.name}` : entry.name;
     if (entry.isDirectory()) {
       await scanDir(srcPath, destPath, relPath, missing);
-    } else if (!existsSync6(destPath)) {
+    } else if (!existsSync7(destPath)) {
       missing.push({
         relativePath: relPath,
         description: describeDefault(relPath)
@@ -39980,18 +40200,18 @@ async function scanDir(srcDir, destDir, relativePath, missing) {
   }
 }
 function describeDefault(relPath) {
-  if (relPath.includes("roles/reviewer/")) return `New reviewer: ${path10.basename(relPath, ".md")}`;
-  if (relPath.includes("roles/researcher/")) return `New researcher: ${path10.basename(relPath, ".md")}`;
-  if (relPath.includes("roles/planner/")) return `New planner: ${path10.basename(relPath, ".md")}`;
-  if (relPath.includes("roles/builder/")) return `New builder: ${path10.basename(relPath, ".md")}`;
-  if (relPath.includes("strategies/")) return `New strategy: ${path10.basename(relPath, ".md")}`;
+  if (relPath.includes("roles/reviewer/")) return `New reviewer: ${path11.basename(relPath, ".md")}`;
+  if (relPath.includes("roles/researcher/")) return `New researcher: ${path11.basename(relPath, ".md")}`;
+  if (relPath.includes("roles/planner/")) return `New planner: ${path11.basename(relPath, ".md")}`;
+  if (relPath.includes("roles/builder/")) return `New builder: ${path11.basename(relPath, ".md")}`;
+  if (relPath.includes("strategies/")) return `New strategy: ${path11.basename(relPath, ".md")}`;
   if (relPath === "context-template.md") return "Project context template";
   return `New default: ${relPath}`;
 }
 
 // src/index.ts
-import { writeFile as writeFile5 } from "fs/promises";
-import path11 from "path";
+import { writeFile as writeFile6 } from "fs/promises";
+import path12 from "path";
 async function main() {
   const projectDir = process.cwd();
   const server = new McpServer({
@@ -40015,8 +40235,8 @@ async function main() {
       }
     }
     try {
-      await writeFile5(
-        path11.join(projectDir, ".invoke", "validation.json"),
+      await writeFile6(
+        path12.join(projectDir, ".invoke", "validation.json"),
         JSON.stringify(validation, null, 2)
       );
     } catch {
@@ -40033,18 +40253,25 @@ async function main() {
   const stateManager = new StateManager(projectDir);
   const artifactManager = new ArtifactManager(projectDir);
   const contextManager = new ContextManager(projectDir);
+  const metricsManager = new MetricsManager(projectDir);
   registerStateTools(server, stateManager, projectDir);
   registerArtifactTools(server, artifactManager);
   registerWorktreeTools(server, worktreeManager, config2, projectDir);
   registerConfigTools(server, projectDir);
   registerConfigUpdateTools(server, projectDir);
   registerContextTools(server, contextManager);
+  registerMetricsTools(server, metricsManager, projectDir);
   if (config2) {
     const providers = createProviderRegistry(config2.providers);
     const parsers = createParserRegistry();
-    const engine = new DispatchEngine({ providers, parsers, projectDir });
+    const engine = new DispatchEngine({
+      providers,
+      parsers,
+      projectDir,
+      onDispatchComplete: (metric) => metricsManager.record(metric)
+    });
     const batchManager = new BatchManager(engine, worktreeManager, stateManager);
-    registerDispatchTools(server, engine, batchManager, projectDir);
+    registerDispatchTools(server, engine, batchManager, projectDir, metricsManager);
   }
   const transport = new StdioServerTransport();
   await server.connect(transport);

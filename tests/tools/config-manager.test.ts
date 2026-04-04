@@ -61,6 +61,27 @@ describe('ConfigManager', () => {
       expect(result.roles.reviewer.security).toBeTruthy()
     })
 
+    it('writes provider_mode when it is provided', async () => {
+      const result = await manager.execute({
+        operation: 'add_role',
+        role: 'reviewer',
+        subrole: 'performance',
+        config: {
+          prompt: '.invoke/roles/reviewer/performance.md',
+          providers: [
+            { provider: 'claude', model: 'claude-opus-4.6', effort: 'high' },
+            { provider: 'codex', model: 'gpt-5', effort: 'medium' },
+          ],
+          provider_mode: 'fallback',
+        },
+      })
+
+      expect(result.roles.reviewer.performance.provider_mode).toBe('fallback')
+
+      const raw = await readFile(path.join(TEST_DIR, '.invoke', 'pipeline.yaml'), 'utf-8')
+      expect(raw).toContain('provider_mode: fallback')
+    })
+
     it('adds a new role group', async () => {
       const result = await manager.execute({
         operation: 'add_role',
@@ -142,6 +163,26 @@ describe('ConfigManager', () => {
       expect(result.settings.agent_timeout).toBe(600000)
       // Unchanged settings preserved
       expect(result.settings.commit_style).toBe('per-batch')
+    })
+
+    it('writes provider mode and review limit settings', async () => {
+      const result = await manager.execute({
+        operation: 'update_settings',
+        settings: {
+          default_provider_mode: 'parallel',
+          max_dispatches: 8,
+          max_review_cycles: 3,
+        },
+      })
+
+      expect(result.settings.default_provider_mode).toBe('parallel')
+      expect(result.settings.max_dispatches).toBe(8)
+      expect(result.settings.max_review_cycles).toBe(3)
+
+      const raw = await readFile(path.join(TEST_DIR, '.invoke', 'pipeline.yaml'), 'utf-8')
+      expect(raw).toContain('default_provider_mode: parallel')
+      expect(raw).toContain('max_dispatches: 8')
+      expect(raw).toContain('max_review_cycles: 3')
     })
   })
 

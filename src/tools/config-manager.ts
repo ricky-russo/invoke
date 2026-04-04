@@ -1,16 +1,13 @@
 import { readFile, writeFile } from 'fs/promises'
 import path from 'path'
 import { parse, stringify } from 'yaml'
-import type { InvokeConfig, ProviderEntry, StrategyConfig } from '../types.js'
+import type { InvokeConfig, RoleConfig, StrategyConfig } from '../types.js'
 
 interface AddRoleOperation {
   operation: 'add_role'
   role: string
   subrole: string
-  config: {
-    prompt: string
-    providers: ProviderEntry[]
-  }
+  config: RoleConfig
 }
 
 interface RemoveRoleOperation {
@@ -74,10 +71,15 @@ export class ConfigManager {
       throw new Error(`Role ${op.role}.${op.subrole} already exists`)
     }
 
-    raw.roles[op.role][op.subrole] = {
+    const roleConfig: RoleConfig = {
       prompt: op.config.prompt,
       providers: op.config.providers,
     }
+    if (op.config.provider_mode) {
+      roleConfig.provider_mode = op.config.provider_mode
+    }
+
+    raw.roles[op.role][op.subrole] = roleConfig
 
     return this.writeAndReload(raw)
   }

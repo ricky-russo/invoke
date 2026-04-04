@@ -3,11 +3,25 @@ import { z } from 'zod'
 import { ConfigManager } from './config-manager.js'
 import type { ConfigOperation } from './config-manager.js'
 
+const ProviderModeSchema = z.enum(['parallel', 'fallback', 'single'])
+
 const ProviderEntrySchema = z.object({
   provider: z.string(),
   model: z.string(),
   effort: z.enum(['low', 'medium', 'high']),
 })
+
+const SettingsUpdateSchema = z.object({
+  default_strategy: z.string().optional(),
+  agent_timeout: z.number().positive().optional(),
+  commit_style: z.enum(['one-commit', 'per-batch', 'per-task', 'custom']).optional(),
+  work_branch_prefix: z.string().optional(),
+  post_merge_commands: z.array(z.string()).optional(),
+  max_parallel_agents: z.number().positive().optional(),
+  default_provider_mode: ProviderModeSchema.optional(),
+  max_dispatches: z.number().positive().optional(),
+  max_review_cycles: z.number().positive().optional(),
+}).catchall(z.unknown())
 
 export function registerConfigUpdateTools(server: McpServer, projectDir: string): void {
   const configManager = new ConfigManager(projectDir)
@@ -28,9 +42,11 @@ export function registerConfigUpdateTools(server: McpServer, projectDir: string)
         config: z.object({
           prompt: z.string().describe('Path to the prompt .md file'),
           providers: z.array(ProviderEntrySchema).optional().describe('Provider configurations (for add_role)'),
+          provider_mode: ProviderModeSchema.optional()
+            .describe('Provider dispatch mode (for add_role)'),
         }).optional()
           .describe('Configuration for add_role or add_strategy'),
-        settings: z.record(z.string(), z.unknown()).optional()
+        settings: SettingsUpdateSchema.optional()
           .describe('Settings fields to update (for update_settings)'),
       }),
     },
@@ -56,7 +72,11 @@ function buildOperation(input: {
   role?: string
   subrole?: string
   strategy?: string
-  config?: { prompt: string; providers?: Array<{ provider: string; model: string; effort: string }> }
+  config?: {
+    prompt: string
+    providers?: Array<{ provider: string; model: string; effort: string }>
+    provider_mode?: 'parallel' | 'fallback' | 'single'
+  }
   settings?: Record<string, unknown>
 }): ConfigOperation {
   switch (input.operation) {
@@ -75,6 +95,7 @@ function buildOperation(input: {
             model: p.model,
             effort: p.effort as 'low' | 'medium' | 'high',
           })),
+          provider_mode: input.config.provider_mode,
         },
       }
     }

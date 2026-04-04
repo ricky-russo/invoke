@@ -30,10 +30,14 @@ export class ConfigManager {
         if (raw.roles[op.role][op.subrole]) {
             throw new Error(`Role ${op.role}.${op.subrole} already exists`);
         }
-        raw.roles[op.role][op.subrole] = {
+        const roleConfig = {
             prompt: op.config.prompt,
             providers: op.config.providers,
         };
+        if (op.config.provider_mode) {
+            roleConfig.provider_mode = op.config.provider_mode;
+        }
+        raw.roles[op.role][op.subrole] = roleConfig;
         return this.writeAndReload(raw);
     }
     async removeRole(raw, op) {
