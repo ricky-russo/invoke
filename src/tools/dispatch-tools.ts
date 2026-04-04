@@ -3,15 +3,21 @@ import { z } from 'zod'
 import type { DispatchEngine } from '../dispatch/engine.js'
 import type { BatchManager } from '../dispatch/batch-manager.js'
 import type { MetricsManager } from '../metrics/manager.js'
-import type { InvokeConfig } from '../types.js'
+import type { InvokeConfig, ProviderMode } from '../types.js'
 import { loadConfig } from '../config.js'
+
+type TaskProviderInfo = {
+  task_id: string
+  providers: { provider: string; model: string; effort: string }[]
+  provider_mode: ProviderMode
+}
 
 export function registerDispatchTools(
   server: McpServer,
   engine: DispatchEngine,
   batchManager: BatchManager,
   projectDir: string,
-  _metricsManager: MetricsManager
+  metricsManager?: MetricsManager
 ): void {
   server.registerTool(
     'invoke_dispatch',
@@ -60,8 +66,10 @@ export function registerDispatchTools(
     },
     async ({ tasks, create_worktrees }) => {
       // Read current config to report accurate provider info
-      let taskProviders: { task_id: string; providers: { provider: string; model: string; effort: string }[] }[] = []
+      let taskProviders: TaskProviderInfo[] = []
       let config: InvokeConfig | undefined
+      let warning: string | undefined
+
       try {
         config = await loadConfig(projectDir)
         taskProviders = tasks.map(t => {
@@ -73,10 +81,31 @@ export function registerDispatchTools(
               model: p.model,
               effort: p.effort,
             })) ?? [],
+            provider_mode: roleConfig?.provider_mode ?? config!.settings.default_provider_mode ?? 'parallel',
           }
         })
       } catch {
         // Config read failed — return without provider info
+      }
+
+      const estimatedDispatches = taskProviders.reduce((sum, task) => {
+        const mode = task.provider_mode
+        return sum + (mode === 'parallel' ? task.providers.length : 1)
+      }, 0)
+
+      if (metricsManager && config?.settings.max_dispatches !== undefined) {
+        try {
+          const limitStatus = await metricsManager.getLimitStatus(config)
+          const projectedDispatches = limitStatus.dispatches_used + estimatedDispatches
+
+          if (projectedDispatches > limitStatus.max_dispatches!) {
+            warning = `Exceeding max_dispatches limit (${projectedDispatches}/${limitStatus.max_dispatches})`
+          } else if (projectedDispatches / limitStatus.max_dispatches! > 0.8) {
+            warning = `Approaching max_dispatches limit (${projectedDispatches}/${limitStatus.max_dispatches})`
+          }
+        } catch {
+          // Metrics lookup failed — omit warning without blocking dispatch
+        }
       }
 
       const maxParallel = config?.settings?.max_parallel_agents
@@ -97,6 +126,8 @@ export function registerDispatchTools(
           batch_id: batchId,
           status: 'dispatched',
           tasks: taskProviders,
+          dispatch_estimate: estimatedDispatches,
+          warning,
         }) }],
       }
     }

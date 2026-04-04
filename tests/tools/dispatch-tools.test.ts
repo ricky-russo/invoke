@@ -1,84 +1,280 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
+import type { BatchManager } from '../../src/dispatch/batch-manager.js'
+import type { DispatchEngine } from '../../src/dispatch/engine.js'
+import type { MetricsManager } from '../../src/metrics/manager.js'
 
 vi.mock('../../src/config.js', () => ({
   loadConfig: vi.fn(),
 }))
 
 import { loadConfig } from '../../src/config.js'
+import { registerDispatchTools } from '../../src/tools/dispatch-tools.js'
 import type { InvokeConfig } from '../../src/types.js'
 
-const testConfig: InvokeConfig = {
-  providers: {
-    claude: { cli: 'claude', args: ['--print', '--model', '{{model}}'] },
-  },
-  roles: {
-    builder: {
-      default: {
-        prompt: '.invoke/roles/builder/default.md',
-        providers: [{ provider: 'claude', model: 'claude-sonnet-4-6', effort: 'medium' as const }],
-      },
-    },
-  },
-  strategies: {},
-  settings: {
-    default_strategy: 'tdd',
-    agent_timeout: 300,
-    commit_style: 'per-batch' as const,
-    work_branch_prefix: 'invoke/work',
-  },
+type ToolResponse = {
+  content: Array<{ type: string; text: string }>
+  isError?: boolean
 }
 
-describe('dispatch batch response', () => {
+type RegisteredHandler = (args: any) => Promise<ToolResponse>
+
+function createConfig(overrides: Partial<InvokeConfig> = {}): InvokeConfig {
+  const config: InvokeConfig = {
+    providers: {
+      claude: { cli: 'claude', args: ['--print', '--model', '{{model}}'] },
+      codex: { cli: 'codex', args: ['run', '--model', '{{model}}'] },
+      gemini: { cli: 'gemini', args: ['--model', '{{model}}'] },
+    },
+    roles: {
+      builder: {
+        parallel: {
+          prompt: '.invoke/roles/builder/parallel.md',
+          providers: [
+            { provider: 'claude', model: 'claude-sonnet-4-6', effort: 'medium' },
+            { provider: 'codex', model: 'gpt-5', effort: 'high' },
+          ],
+          provider_mode: 'parallel',
+        },
+        fallback: {
+          prompt: '.invoke/roles/builder/fallback.md',
+          providers: [
+            { provider: 'claude', model: 'claude-sonnet-4-6', effort: 'medium' },
+            { provider: 'codex', model: 'gpt-5', effort: 'high' },
+          ],
+          provider_mode: 'fallback',
+        },
+        inherited: {
+          prompt: '.invoke/roles/builder/inherited.md',
+          providers: [
+            { provider: 'claude', model: 'claude-sonnet-4-6', effort: 'medium' },
+            { provider: 'gemini', model: 'gemini-2.5-pro', effort: 'low' },
+          ],
+        },
+      },
+    },
+    strategies: {},
+    settings: {
+      default_strategy: 'tdd',
+      agent_timeout: 300,
+      commit_style: 'per-batch',
+      work_branch_prefix: 'invoke/work',
+      default_provider_mode: 'single',
+    },
+  }
+
+  return {
+    ...config,
+    ...overrides,
+    providers: overrides.providers ?? config.providers,
+    roles: overrides.roles ?? config.roles,
+    strategies: overrides.strategies ?? config.strategies,
+    settings: {
+      ...config.settings,
+      ...overrides.settings,
+    },
+  }
+}
+
+function createTestContext(metricsManager?: MetricsManager) {
+  const handlers = new Map<string, RegisteredHandler>()
+  const dispatchBatch = vi.fn().mockReturnValue('batch-123')
+  const server = {
+    registerTool: vi.fn((name: string, _config: unknown, handler: RegisteredHandler) => {
+      handlers.set(name, handler)
+    }),
+  } as unknown as McpServer
+
+  const engine = {
+    dispatch: vi.fn(),
+  } as unknown as DispatchEngine
+
+  const batchManager = {
+    dispatchBatch,
+    getStatus: vi.fn(),
+    waitForStatus: vi.fn(),
+    cancel: vi.fn(),
+  } as unknown as BatchManager
+
+  registerDispatchTools(server, engine, batchManager, '/tmp/project', metricsManager)
+
+  return {
+    handlers,
+    dispatchBatch,
+  }
+}
+
+describe('registerDispatchTools', () => {
   beforeEach(() => {
-    vi.mocked(loadConfig).mockResolvedValue(testConfig)
+    vi.clearAllMocks()
   })
 
-  it('resolves provider info from current pipeline config', async () => {
-    const config = await loadConfig('/tmp/test')
-    const tasks = [
-      { task_id: 'task-1', role: 'builder', subrole: 'default', task_context: {} },
-    ]
+  it('includes provider_mode in the batch response and estimates dispatches by mode without metrics', async () => {
+    vi.mocked(loadConfig).mockResolvedValue(createConfig({
+      settings: {
+        default_strategy: 'tdd',
+        agent_timeout: 300,
+        commit_style: 'per-batch',
+        work_branch_prefix: 'invoke/work',
+        default_provider_mode: 'single',
+        max_parallel_agents: 4,
+      },
+    }))
 
-    const taskProviders = tasks.map(t => {
-      const roleConfig = config.roles[t.role]?.[t.subrole]
-      return {
-        task_id: t.task_id,
-        providers: roleConfig?.providers.map(p => ({
-          provider: p.provider,
-          model: p.model,
-          effort: p.effort,
-        })) ?? [],
-      }
+    const { handlers, dispatchBatch } = createTestContext()
+    const invokeDispatchBatch = handlers.get('invoke_dispatch_batch')
+
+    expect(invokeDispatchBatch).toBeDefined()
+
+    const response = await invokeDispatchBatch!({
+      tasks: [
+        { task_id: 'task-1', role: 'builder', subrole: 'parallel', task_context: {} },
+        { task_id: 'task-2', role: 'builder', subrole: 'fallback', task_context: {} },
+        { task_id: 'task-3', role: 'builder', subrole: 'inherited', task_context: {} },
+      ],
+      create_worktrees: true,
     })
 
-    expect(taskProviders).toHaveLength(1)
-    expect(taskProviders[0].task_id).toBe('task-1')
-    expect(taskProviders[0].providers).toHaveLength(1)
-    expect(taskProviders[0].providers[0]).toEqual({
-      provider: 'claude',
-      model: 'claude-sonnet-4-6',
-      effort: 'medium',
+    expect(dispatchBatch).toHaveBeenCalledWith({
+      tasks: [
+        { taskId: 'task-1', role: 'builder', subrole: 'parallel', taskContext: {} },
+        { taskId: 'task-2', role: 'builder', subrole: 'fallback', taskContext: {} },
+        { taskId: 'task-3', role: 'builder', subrole: 'inherited', taskContext: {} },
+      ],
+      createWorktrees: true,
+      maxParallel: 4,
+    })
+
+    const payload = JSON.parse(response.content[0].text)
+
+    expect(payload).toEqual({
+      batch_id: 'batch-123',
+      status: 'dispatched',
+      tasks: [
+        {
+          task_id: 'task-1',
+          providers: [
+            { provider: 'claude', model: 'claude-sonnet-4-6', effort: 'medium' },
+            { provider: 'codex', model: 'gpt-5', effort: 'high' },
+          ],
+          provider_mode: 'parallel',
+        },
+        {
+          task_id: 'task-2',
+          providers: [
+            { provider: 'claude', model: 'claude-sonnet-4-6', effort: 'medium' },
+            { provider: 'codex', model: 'gpt-5', effort: 'high' },
+          ],
+          provider_mode: 'fallback',
+        },
+        {
+          task_id: 'task-3',
+          providers: [
+            { provider: 'claude', model: 'claude-sonnet-4-6', effort: 'medium' },
+            { provider: 'gemini', model: 'gemini-2.5-pro', effort: 'low' },
+          ],
+          provider_mode: 'single',
+        },
+      ],
+      dispatch_estimate: 4,
     })
   })
 
-  it('returns empty providers for unknown role', async () => {
-    const config = await loadConfig('/tmp/test')
-    const tasks = [
-      { task_id: 'task-1', role: 'nonexistent', subrole: 'nope', task_context: {} },
-    ]
+  it('adds an approaching max_dispatches warning when the projected usage exceeds 80 percent', async () => {
+    const config = createConfig({
+      settings: {
+        default_strategy: 'tdd',
+        agent_timeout: 300,
+        commit_style: 'per-batch',
+        work_branch_prefix: 'invoke/work',
+        default_provider_mode: 'parallel',
+        max_dispatches: 10,
+      },
+    })
+    const metricsManager = {
+      getLimitStatus: vi.fn().mockResolvedValue({
+        dispatches_used: 7,
+        max_dispatches: 10,
+        at_limit: false,
+      }),
+    } as unknown as MetricsManager
 
-    const taskProviders = tasks.map(t => {
-      const roleConfig = config.roles[t.role]?.[t.subrole]
-      return {
-        task_id: t.task_id,
-        providers: roleConfig?.providers.map(p => ({
-          provider: p.provider,
-          model: p.model,
-          effort: p.effort,
-        })) ?? [],
-      }
+    vi.mocked(loadConfig).mockResolvedValue(config)
+
+    const { handlers } = createTestContext(metricsManager)
+    const response = await handlers.get('invoke_dispatch_batch')!({
+      tasks: [
+        { task_id: 'task-1', role: 'builder', subrole: 'parallel', task_context: {} },
+      ],
+      create_worktrees: false,
     })
 
-    expect(taskProviders[0].providers).toEqual([])
+    expect(metricsManager.getLimitStatus).toHaveBeenCalledWith(config)
+
+    const payload = JSON.parse(response.content[0].text)
+    expect(payload.dispatch_estimate).toBe(2)
+    expect(payload.warning).toBe('Approaching max_dispatches limit (9/10)')
+  })
+
+  it('adds an exceeding max_dispatches warning when the projected usage exceeds the limit', async () => {
+    const metricsManager = {
+      getLimitStatus: vi.fn().mockResolvedValue({
+        dispatches_used: 9,
+        max_dispatches: 10,
+        at_limit: false,
+      }),
+    } as unknown as MetricsManager
+
+    vi.mocked(loadConfig).mockResolvedValue(createConfig({
+      settings: {
+        default_strategy: 'tdd',
+        agent_timeout: 300,
+        commit_style: 'per-batch',
+        work_branch_prefix: 'invoke/work',
+        default_provider_mode: 'parallel',
+        max_dispatches: 10,
+      },
+    }))
+
+    const { handlers } = createTestContext(metricsManager)
+    const response = await handlers.get('invoke_dispatch_batch')!({
+      tasks: [
+        { task_id: 'task-1', role: 'builder', subrole: 'parallel', task_context: {} },
+      ],
+      create_worktrees: false,
+    })
+
+    const payload = JSON.parse(response.content[0].text)
+    expect(payload.dispatch_estimate).toBe(2)
+    expect(payload.warning).toBe('Exceeding max_dispatches limit (11/10)')
+  })
+
+  it('does not query metrics or include a warning when max_dispatches is not configured', async () => {
+    const metricsManager = {
+      getLimitStatus: vi.fn(),
+    } as unknown as MetricsManager
+
+    vi.mocked(loadConfig).mockResolvedValue(createConfig({
+      settings: {
+        default_strategy: 'tdd',
+        agent_timeout: 300,
+        commit_style: 'per-batch',
+        work_branch_prefix: 'invoke/work',
+        default_provider_mode: 'parallel',
+      },
+    }))
+
+    const { handlers } = createTestContext(metricsManager)
+    const response = await handlers.get('invoke_dispatch_batch')!({
+      tasks: [
+        { task_id: 'task-1', role: 'builder', subrole: 'parallel', task_context: {} },
+      ],
+      create_worktrees: false,
+    })
+
+    expect(metricsManager.getLimitStatus).not.toHaveBeenCalled()
+
+    const payload = JSON.parse(response.content[0].text)
+    expect(payload).not.toHaveProperty('warning')
   })
 })
