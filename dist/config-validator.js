@@ -88,11 +88,26 @@ export async function validateConfig(config, projectDir) {
             suggestion: `Available strategies: ${available}`,
         });
     }
-    // 3–5. Per-role checks
+    // 3. Settings limits are sane when present
+    if (config.settings.max_review_cycles !== undefined && config.settings.max_review_cycles < 1) {
+        warnings.push({
+            level: 'error',
+            path: 'settings.max_review_cycles',
+            message: 'max_review_cycles must be greater than or equal to 1.',
+        });
+    }
+    if (config.settings.max_dispatches !== undefined && config.settings.max_dispatches < 1) {
+        warnings.push({
+            level: 'error',
+            path: 'settings.max_dispatches',
+            message: 'max_dispatches must be greater than or equal to 1.',
+        });
+    }
+    // 4–7. Per-role checks
     for (const [roleGroup, subroles] of Object.entries(config.roles)) {
         for (const [subroleName, roleConfig] of Object.entries(subroles)) {
             const rolePath = `roles.${roleGroup}.${subroleName}`;
-            // 3. Prompt file exists on disk
+            // 4. Prompt file exists on disk
             const promptPath = path.isAbsolute(roleConfig.prompt)
                 ? roleConfig.prompt
                 : path.join(projectDir, roleConfig.prompt);
@@ -106,11 +121,20 @@ export async function validateConfig(config, projectDir) {
                     message: `Prompt file '${roleConfig.prompt}' not found.`,
                 });
             }
-            // 4 & 5. Per-provider-entry checks
+            // Multiple providers without an explicit mode will fan out implicitly.
+            if (roleConfig.providers.length > 1 && !roleConfig.provider_mode) {
+                warnings.push({
+                    level: 'warning',
+                    path: `${rolePath}.provider_mode`,
+                    message: `Role '${roleGroup}.${subroleName}' has multiple providers and no explicit provider_mode.`,
+                    suggestion: "Set provider_mode to 'parallel', 'fallback', or 'single' to avoid implicit parallel fan-out.",
+                });
+            }
+            // 5 & 6. Per-provider-entry checks
             for (let i = 0; i < roleConfig.providers.length; i++) {
                 const entry = roleConfig.providers[i];
                 const entryPath = `${rolePath}.providers[${i}]`;
-                // 4. Provider name exists in config.providers
+                // 5. Provider name exists in config.providers
                 if (!config.providers[entry.provider]) {
                     warnings.push({
                         level: 'error',
@@ -119,7 +143,7 @@ export async function validateConfig(config, projectDir) {
                         suggestion: `Available providers: ${Object.keys(config.providers).join(', ')}`,
                     });
                 }
-                // 5. Model matches provider patterns
+                // 6. Model matches provider patterns
                 if (!isValidModelForProvider(entry.provider, entry.model)) {
                     const suggestion = suggestModel(entry.provider, entry.model);
                     warnings.push({

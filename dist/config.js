@@ -12,6 +12,7 @@ const ProviderEntrySchema = z.object({
     effort: z.enum(['low', 'medium', 'high']),
     timeout: z.number().positive().optional(),
 });
+const ProviderModeSchema = z.enum(['parallel', 'fallback', 'single']);
 // Accept either single-provider shorthand or providers array
 const RawRoleConfigSchema = z.object({
     prompt: z.string(),
@@ -21,6 +22,7 @@ const RawRoleConfigSchema = z.object({
     effort: z.enum(['low', 'medium', 'high']).optional(),
     // Multi-provider array (optional)
     providers: z.array(ProviderEntrySchema).optional(),
+    provider_mode: ProviderModeSchema.optional(),
 });
 const StrategyConfigSchema = z.object({
     prompt: z.string(),
@@ -32,6 +34,9 @@ const SettingsSchema = z.object({
     work_branch_prefix: z.string(),
     post_merge_commands: z.array(z.string()).optional(),
     max_parallel_agents: z.number().positive().optional(),
+    default_provider_mode: ProviderModeSchema.optional(),
+    max_dispatches: z.number().positive().optional(),
+    max_review_cycles: z.number().positive().optional(),
 });
 const RawInvokeConfigSchema = z.object({
     providers: z.record(z.string(), ProviderConfigSchema),
@@ -48,6 +53,7 @@ function normalizeConfig(raw) {
                 roles[roleGroup][subroleName] = {
                     prompt: subrole.prompt,
                     providers: subrole.providers,
+                    provider_mode: subrole.provider_mode,
                 };
             }
             else if (subrole.provider && subrole.model && subrole.effort) {
@@ -58,6 +64,7 @@ function normalizeConfig(raw) {
                             model: subrole.model,
                             effort: subrole.effort,
                         }],
+                    provider_mode: subrole.provider_mode,
                 };
             }
             else {

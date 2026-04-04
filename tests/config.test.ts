@@ -92,6 +92,84 @@ settings:
     expect(config.roles.reviewer.security.providers[1].model).toBe('gpt-5.4')
   })
 
+  it('loads provider_mode and new optional settings fields', async () => {
+    const yaml = `
+providers:
+  claude:
+    cli: claude
+    args: ["--print", "--model", "{{model}}"]
+
+roles:
+  reviewer:
+    security:
+      prompt: .invoke/roles/reviewer/security.md
+      provider: claude
+      model: opus-4.6
+      effort: high
+      provider_mode: single
+
+strategies:
+  tdd:
+    prompt: .invoke/strategies/tdd.md
+
+settings:
+  default_strategy: tdd
+  agent_timeout: 300000
+  commit_style: per-batch
+  work_branch_prefix: invoke/work
+  default_provider_mode: fallback
+  max_dispatches: 8
+  max_review_cycles: 3
+`
+    await writeFile(path.join(TEST_DIR, '.invoke', 'pipeline.yaml'), yaml)
+
+    const config = await loadConfig(TEST_DIR)
+
+    expect(config.roles.reviewer.security.provider_mode).toBe('single')
+    expect(config.settings.default_provider_mode).toBe('fallback')
+    expect(config.settings.max_dispatches).toBe(8)
+    expect(config.settings.max_review_cycles).toBe(3)
+  })
+
+  it('leaves provider_mode undefined when it is omitted', async () => {
+    const yaml = `
+providers:
+  claude:
+    cli: claude
+    args: ["--print", "--model", "{{model}}"]
+  codex:
+    cli: codex
+    args: ["--model", "{{model}}"]
+
+roles:
+  reviewer:
+    security:
+      prompt: .invoke/roles/reviewer/security.md
+      providers:
+        - provider: claude
+          model: opus-4.6
+          effort: high
+        - provider: codex
+          model: gpt-5.4
+          effort: medium
+
+strategies:
+  tdd:
+    prompt: .invoke/strategies/tdd.md
+
+settings:
+  default_strategy: tdd
+  agent_timeout: 300000
+  commit_style: per-batch
+  work_branch_prefix: invoke/work
+`
+    await writeFile(path.join(TEST_DIR, '.invoke', 'pipeline.yaml'), yaml)
+
+    const config = await loadConfig(TEST_DIR)
+
+    expect(config.roles.reviewer.security.provider_mode).toBeUndefined()
+  })
+
   it('handles mixed formats in same config', async () => {
     const yaml = `
 providers:

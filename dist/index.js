@@ -28440,7 +28440,8 @@ function normalizeConfig(raw) {
       if (subrole.providers && subrole.providers.length > 0) {
         roles[roleGroup][subroleName] = {
           prompt: subrole.prompt,
-          providers: subrole.providers
+          providers: subrole.providers,
+          provider_mode: subrole.provider_mode
         };
       } else if (subrole.provider && subrole.model && subrole.effort) {
         roles[roleGroup][subroleName] = {
@@ -28449,7 +28450,8 @@ function normalizeConfig(raw) {
             provider: subrole.provider,
             model: subrole.model,
             effort: subrole.effort
-          }]
+          }],
+          provider_mode: subrole.provider_mode
         };
       } else {
         throw new Error(
@@ -28472,7 +28474,7 @@ async function loadConfig(projectDir) {
   const validated = RawInvokeConfigSchema.parse(raw);
   return normalizeConfig(validated);
 }
-var import_yaml, ProviderConfigSchema, ProviderEntrySchema, RawRoleConfigSchema, StrategyConfigSchema, SettingsSchema, RawInvokeConfigSchema;
+var import_yaml, ProviderConfigSchema, ProviderEntrySchema, ProviderModeSchema, RawRoleConfigSchema, StrategyConfigSchema, SettingsSchema, RawInvokeConfigSchema;
 var init_config = __esm({
   "src/config.ts"() {
     "use strict";
@@ -28488,6 +28490,7 @@ var init_config = __esm({
       effort: external_exports3.enum(["low", "medium", "high"]),
       timeout: external_exports3.number().positive().optional()
     });
+    ProviderModeSchema = external_exports3.enum(["parallel", "fallback", "single"]);
     RawRoleConfigSchema = external_exports3.object({
       prompt: external_exports3.string(),
       // Single-provider shorthand fields (optional)
@@ -28495,7 +28498,8 @@ var init_config = __esm({
       model: external_exports3.string().optional(),
       effort: external_exports3.enum(["low", "medium", "high"]).optional(),
       // Multi-provider array (optional)
-      providers: external_exports3.array(ProviderEntrySchema).optional()
+      providers: external_exports3.array(ProviderEntrySchema).optional(),
+      provider_mode: ProviderModeSchema.optional()
     });
     StrategyConfigSchema = external_exports3.object({
       prompt: external_exports3.string()
@@ -28506,7 +28510,10 @@ var init_config = __esm({
       commit_style: external_exports3.enum(["one-commit", "per-batch", "per-task", "custom"]),
       work_branch_prefix: external_exports3.string(),
       post_merge_commands: external_exports3.array(external_exports3.string()).optional(),
-      max_parallel_agents: external_exports3.number().positive().optional()
+      max_parallel_agents: external_exports3.number().positive().optional(),
+      default_provider_mode: ProviderModeSchema.optional(),
+      max_dispatches: external_exports3.number().positive().optional(),
+      max_review_cycles: external_exports3.number().positive().optional()
     });
     RawInvokeConfigSchema = external_exports3.object({
       providers: external_exports3.record(external_exports3.string(), ProviderConfigSchema),
@@ -38165,6 +38172,20 @@ async function validateConfig(config2, projectDir) {
       suggestion: `Available strategies: ${available}`
     });
   }
+  if (config2.settings.max_review_cycles !== void 0 && config2.settings.max_review_cycles < 1) {
+    warnings.push({
+      level: "error",
+      path: "settings.max_review_cycles",
+      message: "max_review_cycles must be greater than or equal to 1."
+    });
+  }
+  if (config2.settings.max_dispatches !== void 0 && config2.settings.max_dispatches < 1) {
+    warnings.push({
+      level: "error",
+      path: "settings.max_dispatches",
+      message: "max_dispatches must be greater than or equal to 1."
+    });
+  }
   for (const [roleGroup, subroles] of Object.entries(config2.roles)) {
     for (const [subroleName, roleConfig] of Object.entries(subroles)) {
       const rolePath = `roles.${roleGroup}.${subroleName}`;
@@ -38176,6 +38197,14 @@ async function validateConfig(config2, projectDir) {
           level: "error",
           path: `${rolePath}.prompt`,
           message: `Prompt file '${roleConfig.prompt}' not found.`
+        });
+      }
+      if (roleConfig.providers.length > 1 && !roleConfig.provider_mode) {
+        warnings.push({
+          level: "warning",
+          path: `${rolePath}.provider_mode`,
+          message: `Role '${roleGroup}.${subroleName}' has multiple providers and no explicit provider_mode.`,
+          suggestion: "Set provider_mode to 'parallel', 'fallback', or 'single' to avoid implicit parallel fan-out."
         });
       }
       for (let i = 0; i < roleConfig.providers.length; i++) {

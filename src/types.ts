@@ -12,9 +12,12 @@ export interface ProviderEntry {
   timeout?: number
 }
 
+export type ProviderMode = 'parallel' | 'fallback' | 'single'
+
 export interface RoleConfig {
   prompt: string
   providers: ProviderEntry[]
+  provider_mode?: ProviderMode
 }
 
 export interface StrategyConfig {
@@ -28,6 +31,9 @@ export interface Settings {
   work_branch_prefix: string
   post_merge_commands?: string[]
   max_parallel_agents?: number
+  default_provider_mode?: ProviderMode
+  max_dispatches?: number
+  max_review_cycles?: number
 }
 
 export interface InvokeConfig {
@@ -60,6 +66,28 @@ export interface AgentResult {
     raw?: string
   }
   duration: number
+}
+
+export interface DispatchMetric {
+  pipeline_id: string | null
+  stage: string
+  role: string
+  subrole: string
+  provider: string
+  model: string
+  effort: 'low' | 'medium' | 'high'
+  prompt_size_chars: number
+  duration_ms: number
+  status: 'success' | 'error' | 'timeout'
+  started_at: string
+}
+
+export interface MetricsSummary {
+  total_dispatches: number
+  total_prompt_chars: number
+  total_duration_ms: number
+  by_stage: Record<string, { dispatches: number; duration_ms: number; prompt_chars: number }>
+  by_provider_model: Record<string, { dispatches: number; duration_ms: number; prompt_chars: number }>
 }
 
 export interface Finding {
@@ -138,6 +166,8 @@ export interface ReviewCycle {
   id: number
   reviewers: string[]
   findings: Finding[]
+  batch_id?: number
+  scope?: 'batch' | 'final'
   triaged?: {
     accepted: Finding[]
     dismissed: Finding[]

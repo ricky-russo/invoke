@@ -159,6 +159,29 @@ describe('validateConfig', () => {
     expect(result.warnings).toHaveLength(0)
   })
 
+  it('warns when a multi-provider role has no explicit provider_mode', async () => {
+    const config = structuredClone(baseConfig)
+    config.providers.codex = {
+      cli: 'node',
+      args: ['--model', '{{model}}'],
+    }
+    config.roles.reviewer.security.providers.push({
+      provider: 'codex',
+      model: 'gpt-4.1',
+      effort: 'medium',
+    })
+
+    const result = await validateConfig(config, TEST_DIR)
+
+    expect(result.valid).toBe(true)
+    expect(result.warnings).toContainEqual(expect.objectContaining({
+      level: 'warning',
+      path: 'roles.reviewer.security.provider_mode',
+      message: expect.stringContaining('multiple providers'),
+      suggestion: expect.stringContaining("provider_mode"),
+    }))
+  })
+
   it('returns a warning with suggestion for opus-4.6 model', async () => {
     const config = structuredClone(baseConfig)
     config.roles.reviewer.security.providers[0].model = 'opus-4.6'
@@ -238,5 +261,25 @@ describe('validateConfig', () => {
     const result = await validateConfig(config, TEST_DIR)
     const timeoutWarnings = result.warnings.filter(w => w.path.includes('timeout'))
     expect(timeoutWarnings).toHaveLength(0)
+  })
+
+  it('returns errors when max_review_cycles or max_dispatches are less than 1', async () => {
+    const config = structuredClone(baseConfig)
+    config.settings.max_review_cycles = 0
+    config.settings.max_dispatches = 0
+
+    const result = await validateConfig(config, TEST_DIR)
+
+    expect(result.valid).toBe(false)
+    expect(result.warnings).toContainEqual(expect.objectContaining({
+      level: 'error',
+      path: 'settings.max_review_cycles',
+      message: expect.stringContaining('greater than or equal to 1'),
+    }))
+    expect(result.warnings).toContainEqual(expect.objectContaining({
+      level: 'error',
+      path: 'settings.max_dispatches',
+      message: expect.stringContaining('greater than or equal to 1'),
+    }))
   })
 })
