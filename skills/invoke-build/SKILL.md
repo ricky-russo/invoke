@@ -25,11 +25,33 @@ The first time build runs for this pipeline, note the current branch. All build 
 
 For each batch in order:
 
-#### a. Select Builders
+#### a. Check Review Cycle Guard Rail
+
+Before selecting builders, call `invoke_get_review_cycle_count` with the current orchestration batch ID (`batch.id`).
+
+If the response includes `max_review_cycles` and `count >= max_review_cycles`, warn the user that this batch has reached the configured review-cycle limit and ask whether to continue allowing review cycles for this batch or skip further review cycles for it. Use `AskUserQuestion`:
+
+```
+AskUserQuestion({
+  questions: [{
+    question: "Batch [N] has already used [count]/[max_review_cycles] review cycles. Continue allowing review cycles for this batch?",
+    header: "Review limit",
+    multiSelect: false,
+    options: [
+      { label: "Continue", description: "Keep inter-batch review available for this batch" },
+      { label: "Skip further review", description: "Build and validate this batch, but skip more review cycles for it" }
+    ]
+  }]
+})
+```
+
+This guard rail is advisory. Do NOT block the build batch itself.
+
+#### b. Select Builders
 
 Present available builders using `AskUserQuestion` with `multiSelect: true`, noting the batch number and task count in the question text. Each option's description includes provider(s), model(s), and effort.
 
-#### b. Dispatch Batch
+#### c. Dispatch Batch
 
 Call `invoke_dispatch_batch` with:
 - `tasks`: the batch's tasks with their task_context
@@ -37,36 +59,38 @@ Call `invoke_dispatch_batch` with:
 
 The response includes the **resolved provider/model/effort** for each task (read from the current pipeline.yaml). Use this info for your dispatch message — do NOT guess the provider before the tool returns. Display the dispatch summary AFTER receiving the response.
 
-#### c. Monitor Progress
+After dispatching, note that `invoke_get_metrics` can be called at any time to inspect current pipeline usage and dispatch limits.
+
+#### d. Monitor Progress
 
 Call `invoke_get_batch_status` with the batch ID — it will wait up to 60 seconds for a status change before returning. Keep calling until the batch completes. Do NOT use `sleep` between calls. Report progress to the user:
 > "Batch N progress: task-1 ✅, task-2 running, task-3 running"
 
-**CRITICAL: Do NOT proceed to step d while any tasks in the batch are still running.** You must wait for all tasks to complete or fail. If the batch has been running for more than 10 minutes, use `AskUserQuestion` to ask the user whether to keep waiting, cancel remaining tasks and proceed with completed ones, or abort the batch.
+**CRITICAL: Do NOT proceed to step e while any tasks in the batch are still running.** You must wait for all tasks to complete or fail. If the batch has been running for more than 10 minutes, use `AskUserQuestion` to ask the user whether to keep waiting, cancel remaining tasks and proceed with completed ones, or abort the batch.
 
-#### d. Collect Results
+#### e. Collect Results
 
 When the batch completes, review results:
 - For successful tasks: proceed to merge
 - For failed tasks: present the error and ask: "Retry, skip, or abort batch?"
 
-#### e. Merge Worktrees
+#### f. Merge Worktrees
 
 For each completed task, call `invoke_merge_worktree` with the task_id. This merges the worktree branch and cleans up.
 
 If a merge conflict occurs, present it to the user and help resolve it.
 
-#### f. Post-Merge Validation
+#### g. Post-Merge Validation
 
 After all worktrees in a batch are merged, call `invoke_run_post_merge` to regenerate lockfiles (e.g., `composer.lock`, `package-lock.json`) before running validation. If any command fails, present the error and help the user resolve it before continuing.
 
 The post-merge validation hook will run automatically (lint, tests). If it fails, present the failure and help fix it before proceeding.
 
-#### g. Update State
+#### h. Update State
 
 Update the batch status in the pipeline state via `invoke_set_state`.
 
-#### h. Inter-Batch Review (optional)
+#### i. Inter-Batch Review (optional)
 
 After each batch is merged and validated, ask the user if they want to run reviewers before proceeding to the next batch. Use `AskUserQuestion`:
 
@@ -86,7 +110,11 @@ AskUserQuestion({
 
 If the user selects reviewers, present the available reviewers from `invoke_get_config` using `AskUserQuestion` with `multiSelect: true` (same as the review stage selection). Then follow the standard review flow: dispatch selected reviewers, present findings. For triage, always offer "Fix all / Dismiss all / Triage individually" as the first choice before drilling into individual findings.
 
+If step a resulted in "Skip further review", skip this prompt for the current batch and continue to the next batch after validation.
+
 **For accepted findings that need fixing: ALWAYS dispatch builder agents via `invoke_dispatch_batch` with worktrees.** Do NOT fix code directly in the session — that bypasses the pipeline (no worktrees, no state tracking, no validation). Bundle accepted findings as fix tasks, dispatch builders, merge, validate — same flow as a regular build batch.
+
+When you record an inter-batch review cycle with `invoke_set_state`, include `batch_id: <current batch id>` and `scope: 'batch'`. This is especially important when accepted findings trigger fix dispatches, so later review-cycle checks stay tied to the correct batch.
 
 ### 4. Build Complete
 
