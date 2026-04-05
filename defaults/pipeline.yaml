@@ -16,6 +16,10 @@ providers:
     cli: codex
     args: ["exec", "--model", "{{model}}", "--full-auto", "-c", "reasoning_effort={{effort}}"]
 
+# Each subrole lists one or more providers. When multiple providers are listed,
+# provider_mode controls dispatch behavior: parallel (all run concurrently),
+# fallback (try in order until one succeeds), or single (first provider only).
+# Override the global default per-subrole by setting provider_mode on that subrole.
 roles:
   researcher:
     codebase:
@@ -152,15 +156,26 @@ settings:
   agent_timeout: 300
   commit_style: per-batch
   work_branch_prefix: invoke/work
+  # Global default for subroles with multiple providers (parallel/fallback/single):
   default_provider_mode: parallel
   max_review_cycles: 3
   # Commands to run after merging worktrees (e.g., regenerate lockfiles):
   # post_merge_commands:
   #   - composer install
   #   - npm install
-  # review_tiers:
-  #   critical: [spec-compliance, security]
-  #   quality: [code-quality, performance]
-  #   polish: [ux, accessibility]
-  # Maximum agents to run in parallel per batch (0 or omit for unlimited):
+  # Maximum agents to run in parallel per batch (omit for unlimited):
   # max_parallel_agents: 4
+  # Global cap on total dispatches across the entire pipeline run:
+  # max_dispatches: 20
+  # Days before sessions are considered stale and eligible for cleanup:
+  # stale_session_days: 7
+  # Activate a named preset defined in the presets section:
+  # preset: minimal
+  # Tiered reviewer groups — each tier has a name and a list of reviewer subrole keys:
+  # review_tiers:
+  #   - name: critical
+  #     reviewers: [spec-compliance, security]
+  #   - name: quality
+  #     reviewers: [code-quality, performance]
+  #   - name: polish
+  #     reviewers: [ux, accessibility]
