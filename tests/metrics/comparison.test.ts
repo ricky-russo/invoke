@@ -212,6 +212,46 @@ describe('compareSessions', () => {
     expect(comparison.delta).toBeNull()
   })
 
+  it('returns N/A percentage deltas when the baseline session has zero totals', () => {
+    const comparison = compareSessions(
+      new Map([
+        ['session-a', []],
+        ['session-b', [createMetric({ duration_ms: 400, prompt_size_chars: 250, estimated_cost_usd: 0.2 })]],
+      ])
+    )
+
+    expect(comparison.delta).toEqual({
+      dispatches: 1,
+      dispatches_percentage: 'N/A',
+      duration_ms: 400,
+      duration_ms_percentage: 'N/A',
+      prompt_chars: 250,
+      prompt_chars_percentage: 'N/A',
+      estimated_cost_usd: 0.2,
+      estimated_cost_usd_percentage: 'N/A',
+    })
+  })
+
+  it('returns 0.0% percentage deltas when both sessions have zero totals', () => {
+    const comparison = compareSessions(
+      new Map([
+        ['session-a', []],
+        ['session-b', []],
+      ])
+    )
+
+    expect(comparison.delta).toEqual({
+      dispatches: 0,
+      dispatches_percentage: '0.0%',
+      duration_ms: 0,
+      duration_ms_percentage: '0.0%',
+      prompt_chars: 0,
+      prompt_chars_percentage: '0.0%',
+      estimated_cost_usd: 0,
+      estimated_cost_usd_percentage: '0.0%',
+    })
+  })
+
   it('handles empty metrics arrays without errors', () => {
     const comparison = compareSessions(new Map([['session-empty', []]]))
 
@@ -262,11 +302,30 @@ describe('formatComparisonTable', () => {
 
     expect(formatComparisonTable(comparison)).toBe(
       [
-        '| Session | Dispatches | Duration | Prompt Chars | Est. Cost |',
-        '| --- | ---: | ---: | ---: | ---: |',
-        '| session-a | 1 | 200 | 100 | 0.05 |',
-        '| session-b | 1 | 500 | 160 | 0.08 |',
-        '| Delta | 0 | 300 | 60 | 0.03 |',
+        '| Session | Dispatches | Success Rate | Duration | Prompt Chars | Est. Cost |',
+        '| --- | ---: | ---: | ---: | ---: | ---: |',
+        '| session-a | 1 | 100.0% | 200 | 100 | 0.05 |',
+        '| session-b | 1 | 100.0% | 500 | 160 | 0.08 |',
+        '| Delta | 0 (0.0%) | 0.0 pts (0.0%) | 300 (150.0%) | 60 (60.0%) | 0.03 (60.0%) |',
+      ].join('\n')
+    )
+  })
+
+  it('renders success rate and N/A delta percentages when the baseline session is empty', () => {
+    const comparison = compareSessions(
+      new Map([
+        ['session-a', []],
+        ['session-b', [createMetric({ duration_ms: 300, prompt_size_chars: 150, estimated_cost_usd: 0.1 })]],
+      ])
+    )
+
+    expect(formatComparisonTable(comparison)).toBe(
+      [
+        '| Session | Dispatches | Success Rate | Duration | Prompt Chars | Est. Cost |',
+        '| --- | ---: | ---: | ---: | ---: | ---: |',
+        '| session-a | 0 | 0.0% | 0 | 0 | 0 |',
+        '| session-b | 1 | 100.0% | 300 | 150 | 0.1 |',
+        '| Delta | 1 (N/A) | 100.0 pts (N/A) | 300 (N/A) | 150 (N/A) | 0.1 (N/A) |',
       ].join('\n')
     )
   })

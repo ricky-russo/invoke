@@ -8,12 +8,12 @@ export function compareSessions(sessionMetrics) {
 }
 export function formatComparisonTable(comparison) {
     const lines = [
-        '| Session | Dispatches | Duration | Prompt Chars | Est. Cost |',
-        '| --- | ---: | ---: | ---: | ---: |',
-        ...comparison.sessions.map(session => formatRow(session.session_id, session.total_dispatches, session.total_duration_ms, session.total_prompt_chars, session.total_estimated_cost_usd)),
+        '| Session | Dispatches | Success Rate | Duration | Prompt Chars | Est. Cost |',
+        '| --- | ---: | ---: | ---: | ---: | ---: |',
+        ...comparison.sessions.map(session => formatStandardRow(session.session_id, session.total_dispatches.toString(), formatSuccessRate(session.success_rate), session.total_duration_ms.toString(), session.total_prompt_chars.toString(), formatCost(session.total_estimated_cost_usd))),
     ];
     if (comparison.delta) {
-        lines.push(formatRow('Delta', comparison.delta.dispatches, comparison.delta.duration_ms, comparison.delta.prompt_chars, comparison.delta.estimated_cost_usd));
+        lines.push(formatDeltaRow(comparison.sessions[0], comparison.sessions[1], comparison.delta));
     }
     return lines.join('\n');
 }
@@ -77,8 +77,11 @@ function createDelta(sessionA, sessionB) {
         estimated_cost_usd_percentage: formatPercentageChange(sessionA.total_estimated_cost_usd, sessionB.total_estimated_cost_usd),
     };
 }
-function formatRow(label, dispatches, durationMs, promptChars, estimatedCostUsd) {
-    return `| ${escapeTableCell(label)} | ${dispatches} | ${durationMs} | ${promptChars} | ${formatCost(estimatedCostUsd)} |`;
+function formatStandardRow(label, dispatches, successRate, durationMs, promptChars, estimatedCostUsd) {
+    return `| ${escapeTableCell(label)} | ${dispatches} | ${successRate} | ${durationMs} | ${promptChars} | ${estimatedCostUsd} |`;
+}
+function formatDeltaRow(sessionA, sessionB, delta) {
+    return formatStandardRow('Delta', formatDeltaValue(delta.dispatches.toString(), delta.dispatches_percentage), formatDeltaValue(formatSuccessRateDelta(sessionA.success_rate, sessionB.success_rate), formatPercentageChange(sessionA.success_rate, sessionB.success_rate)), formatDeltaValue(delta.duration_ms.toString(), delta.duration_ms_percentage), formatDeltaValue(delta.prompt_chars.toString(), delta.prompt_chars_percentage), formatDeltaValue(formatCost(delta.estimated_cost_usd), delta.estimated_cost_usd_percentage));
 }
 function escapeTableCell(value) {
     return value.replaceAll('|', '\\|');
@@ -93,7 +96,21 @@ function formatCost(value) {
 function normalizeCost(value) {
     return Math.round(value * COST_PRECISION) / COST_PRECISION;
 }
+function formatSuccessRate(value) {
+    return `${(value * 100).toFixed(1)}%`;
+}
+function formatSuccessRateDelta(a, b) {
+    const deltaPoints = (b - a) * 100;
+    const normalizedDeltaPoints = Math.abs(deltaPoints) < 0.05 ? 0 : deltaPoints;
+    return `${normalizedDeltaPoints.toFixed(1)} pts`;
+}
+function formatDeltaValue(value, percentage) {
+    return `${value} (${percentage})`;
+}
 function formatPercentageChange(a, b) {
+    if (a === 0) {
+        return b === 0 ? '0.0%' : 'N/A';
+    }
     return `${(((b - a) / a) * 100).toFixed(1)}%`;
 }
 //# sourceMappingURL=comparison.js.map

@@ -141,11 +141,11 @@ describe('registerComparisonTools', () => {
     expect(result.isError).toBeUndefined()
     expect(result.content[0].text).toBe(
       [
-        '| Session | Dispatches | Duration | Prompt Chars | Est. Cost |',
-        '| --- | ---: | ---: | ---: | ---: |',
-        '| session-a | 1 | 200 | 100 | 0.05 |',
-        '| session-b | 2 | 500 | 210 | 0.08 |',
-        '| Delta | 1 | 300 | 110 | 0.03 |',
+        '| Session | Dispatches | Success Rate | Duration | Prompt Chars | Est. Cost |',
+        '| --- | ---: | ---: | ---: | ---: | ---: |',
+        '| session-a | 1 | 100.0% | 200 | 100 | 0.05 |',
+        '| session-b | 2 | 50.0% | 500 | 210 | 0.08 |',
+        '| Delta | 1 (100.0%) | -50.0 pts (-50.0%) | 300 (150.0%) | 110 (110.0%) | 0.03 (60.0%) |',
       ].join('\n')
     )
   })

@@ -97,6 +97,10 @@ describe('checkCliExists', () => {
   it('returns false for a nonexistent CLI', () => {
     expect(checkCliExists('nonexistent-cli-that-does-not-exist-xyz')).toBe(false)
   })
+
+  it('does not execute shell metacharacters embedded in the CLI name', () => {
+    expect(checkCliExists('node; echo injected')).toBe(false)
+  })
 })
 
 // ---------------------------------------------------------------------------

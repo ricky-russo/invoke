@@ -38280,7 +38280,7 @@ var StdioServerTransport = class {
 init_config();
 
 // src/config-validator.ts
-import { execSync } from "child_process";
+import { execFileSync } from "child_process";
 import { access, readdir } from "fs/promises";
 import path2 from "path";
 import { fileURLToPath as fileURLToPath2 } from "url";
@@ -38321,7 +38321,7 @@ function isValidModelForProvider(provider, model) {
 }
 function checkCliExists(cli) {
   try {
-    execSync(`which ${cli}`, { stdio: "pipe" });
+    execFileSync("which", [cli], { stdio: "pipe" });
     return true;
   } catch {
     return false;
@@ -39568,7 +39568,7 @@ function cloneAgentResult(result) {
 }
 
 // src/worktree/manager.ts
-import { execSync as execSync2 } from "child_process";
+import { execSync } from "child_process";
 import { existsSync } from "fs";
 import path4 from "path";
 import os from "os";
@@ -39581,7 +39581,7 @@ var WorktreeManager = class {
   async create(taskId) {
     const branch = `invoke-wt-${taskId}`;
     const worktreePath = path4.join(os.tmpdir(), `invoke-worktree-${taskId}-${Date.now()}`);
-    execSync2(
+    execSync(
       `git worktree add "${worktreePath}" -b "${branch}"`,
       { cwd: this.repoDir, stdio: "pipe" }
     );
@@ -39595,26 +39595,26 @@ var WorktreeManager = class {
       throw new Error(`No worktree found for task: ${taskId}`);
     }
     try {
-      execSync2("git add -A", { cwd: info.worktreePath, stdio: "pipe" });
-      execSync2(
+      execSync("git add -A", { cwd: info.worktreePath, stdio: "pipe" });
+      execSync(
         `git diff --cached --quiet`,
         { cwd: info.worktreePath, stdio: "pipe" }
       );
     } catch {
       try {
-        execSync2(
+        execSync(
           `git commit -m "agent work: ${taskId}"`,
           { cwd: info.worktreePath, stdio: "pipe" }
         );
       } catch {
       }
     }
-    execSync2(
+    execSync(
       `git merge --squash "${info.branch}"`,
       { cwd: this.repoDir, stdio: "pipe" }
     );
     const message = commitMessage ?? `feat: ${taskId}`;
-    execSync2(
+    execSync(
       `git commit -m "${message.replace(/"/g, '\\"')}"`,
       { cwd: this.repoDir, stdio: "pipe" }
     );
@@ -39623,13 +39623,13 @@ var WorktreeManager = class {
     const info = this.worktrees.get(taskId);
     if (!info) return;
     if (existsSync(info.worktreePath)) {
-      execSync2(
+      execSync(
         `git worktree remove "${info.worktreePath}" --force`,
         { cwd: this.repoDir, stdio: "pipe" }
       );
     }
     try {
-      execSync2(
+      execSync(
         `git branch -D "${info.branch}"`,
         { cwd: this.repoDir, stdio: "pipe" }
       );
@@ -39647,7 +39647,7 @@ var WorktreeManager = class {
   }
   async discoverOrphaned() {
     try {
-      const output = execSync2("git worktree list --porcelain", {
+      const output = execSync("git worktree list --porcelain", {
         cwd: this.repoDir,
         stdio: "pipe"
       }).toString();
@@ -40441,13 +40441,13 @@ function registerDispatchTools(server, engine, batchManager, projectDir, metrics
 init_zod();
 
 // src/tools/post-merge.ts
-import { execSync as execSync3 } from "child_process";
+import { execSync as execSync2 } from "child_process";
 function runPostMergeCommands(config2, projectDir) {
   const commands = config2.settings.post_merge_commands ?? [];
   const results = [];
   for (const command of commands) {
     try {
-      const output = execSync3(command, {
+      const output = execSync2(command, {
         cwd: projectDir,
         stdio: "pipe",
         timeout: 6e4
@@ -40680,26 +40680,25 @@ function compareSessions(sessionMetrics) {
 }
 function formatComparisonTable(comparison) {
   const lines = [
-    "| Session | Dispatches | Duration | Prompt Chars | Est. Cost |",
-    "| --- | ---: | ---: | ---: | ---: |",
+    "| Session | Dispatches | Success Rate | Duration | Prompt Chars | Est. Cost |",
+    "| --- | ---: | ---: | ---: | ---: | ---: |",
     ...comparison.sessions.map(
-      (session) => formatRow(
+      (session) => formatStandardRow(
         session.session_id,
-        session.total_dispatches,
-        session.total_duration_ms,
-        session.total_prompt_chars,
-        session.total_estimated_cost_usd
+        session.total_dispatches.toString(),
+        formatSuccessRate(session.success_rate),
+        session.total_duration_ms.toString(),
+        session.total_prompt_chars.toString(),
+        formatCost(session.total_estimated_cost_usd)
       )
     )
   ];
   if (comparison.delta) {
     lines.push(
-      formatRow(
-        "Delta",
-        comparison.delta.dispatches,
-        comparison.delta.duration_ms,
-        comparison.delta.prompt_chars,
-        comparison.delta.estimated_cost_usd
+      formatDeltaRow(
+        comparison.sessions[0],
+        comparison.sessions[1],
+        comparison.delta
       )
     );
   }
@@ -40780,8 +40779,24 @@ function createDelta(sessionA, sessionB) {
     )
   };
 }
-function formatRow(label, dispatches, durationMs, promptChars, estimatedCostUsd) {
-  return `| ${escapeTableCell(label)} | ${dispatches} | ${durationMs} | ${promptChars} | ${formatCost(estimatedCostUsd)} |`;
+function formatStandardRow(label, dispatches, successRate, durationMs, promptChars, estimatedCostUsd) {
+  return `| ${escapeTableCell(label)} | ${dispatches} | ${successRate} | ${durationMs} | ${promptChars} | ${estimatedCostUsd} |`;
+}
+function formatDeltaRow(sessionA, sessionB, delta) {
+  return formatStandardRow(
+    "Delta",
+    formatDeltaValue(delta.dispatches.toString(), delta.dispatches_percentage),
+    formatDeltaValue(
+      formatSuccessRateDelta(sessionA.success_rate, sessionB.success_rate),
+      formatPercentageChange(sessionA.success_rate, sessionB.success_rate)
+    ),
+    formatDeltaValue(delta.duration_ms.toString(), delta.duration_ms_percentage),
+    formatDeltaValue(delta.prompt_chars.toString(), delta.prompt_chars_percentage),
+    formatDeltaValue(
+      formatCost(delta.estimated_cost_usd),
+      delta.estimated_cost_usd_percentage
+    )
+  );
 }
 function escapeTableCell(value) {
   return value.replaceAll("|", "\\|");
@@ -40796,7 +40811,21 @@ function formatCost(value) {
 function normalizeCost2(value) {
   return Math.round(value * COST_PRECISION2) / COST_PRECISION2;
 }
+function formatSuccessRate(value) {
+  return `${(value * 100).toFixed(1)}%`;
+}
+function formatSuccessRateDelta(a, b) {
+  const deltaPoints = (b - a) * 100;
+  const normalizedDeltaPoints = Math.abs(deltaPoints) < 0.05 ? 0 : deltaPoints;
+  return `${normalizedDeltaPoints.toFixed(1)} pts`;
+}
+function formatDeltaValue(value, percentage) {
+  return `${value} (${percentage})`;
+}
 function formatPercentageChange(a, b) {
+  if (a === 0) {
+    return b === 0 ? "0.0%" : "N/A";
+  }
   return `${((b - a) / a * 100).toFixed(1)}%`;
 }
 

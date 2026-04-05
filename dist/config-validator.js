@@ -1,4 +1,4 @@
-import { execSync } from 'child_process';
+import { execFileSync } from 'child_process';
 import { access, readdir } from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -49,7 +49,7 @@ export function isValidModelForProvider(provider, model) {
 // ---------------------------------------------------------------------------
 export function checkCliExists(cli) {
     try {
-        execSync(`which ${cli}`, { stdio: 'pipe' });
+        execFileSync('which', [cli], { stdio: 'pipe' });
         return true;
     }
     catch {

@@ -23,27 +23,26 @@ export function compareSessions(
 
 export function formatComparisonTable(comparison: SessionComparison): string {
   const lines = [
-    '| Session | Dispatches | Duration | Prompt Chars | Est. Cost |',
-    '| --- | ---: | ---: | ---: | ---: |',
+    '| Session | Dispatches | Success Rate | Duration | Prompt Chars | Est. Cost |',
+    '| --- | ---: | ---: | ---: | ---: | ---: |',
     ...comparison.sessions.map(session =>
-      formatRow(
+      formatStandardRow(
         session.session_id,
-        session.total_dispatches,
-        session.total_duration_ms,
-        session.total_prompt_chars,
-        session.total_estimated_cost_usd
+        session.total_dispatches.toString(),
+        formatSuccessRate(session.success_rate),
+        session.total_duration_ms.toString(),
+        session.total_prompt_chars.toString(),
+        formatCost(session.total_estimated_cost_usd)
       )
     ),
   ]
 
   if (comparison.delta) {
     lines.push(
-      formatRow(
-        'Delta',
-        comparison.delta.dispatches,
-        comparison.delta.duration_ms,
-        comparison.delta.prompt_chars,
-        comparison.delta.estimated_cost_usd
+      formatDeltaRow(
+        comparison.sessions[0],
+        comparison.sessions[1],
+        comparison.delta
       )
     )
   }
@@ -145,14 +144,36 @@ function createDelta(
   }
 }
 
-function formatRow(
+function formatStandardRow(
   label: string,
-  dispatches: number,
-  durationMs: number,
-  promptChars: number,
-  estimatedCostUsd: number
+  dispatches: string,
+  successRate: string,
+  durationMs: string,
+  promptChars: string,
+  estimatedCostUsd: string
 ): string {
-  return `| ${escapeTableCell(label)} | ${dispatches} | ${durationMs} | ${promptChars} | ${formatCost(estimatedCostUsd)} |`
+  return `| ${escapeTableCell(label)} | ${dispatches} | ${successRate} | ${durationMs} | ${promptChars} | ${estimatedCostUsd} |`
+}
+
+function formatDeltaRow(
+  sessionA: SessionComparisonEntry,
+  sessionB: SessionComparisonEntry,
+  delta: SessionComparisonDelta
+): string {
+  return formatStandardRow(
+    'Delta',
+    formatDeltaValue(delta.dispatches.toString(), delta.dispatches_percentage),
+    formatDeltaValue(
+      formatSuccessRateDelta(sessionA.success_rate, sessionB.success_rate),
+      formatPercentageChange(sessionA.success_rate, sessionB.success_rate)
+    ),
+    formatDeltaValue(delta.duration_ms.toString(), delta.duration_ms_percentage),
+    formatDeltaValue(delta.prompt_chars.toString(), delta.prompt_chars_percentage),
+    formatDeltaValue(
+      formatCost(delta.estimated_cost_usd),
+      delta.estimated_cost_usd_percentage
+    )
+  )
 }
 
 function escapeTableCell(value: string): string {
@@ -173,6 +194,24 @@ function normalizeCost(value: number): number {
   return Math.round(value * COST_PRECISION) / COST_PRECISION
 }
 
+function formatSuccessRate(value: number): string {
+  return `${(value * 100).toFixed(1)}%`
+}
+
+function formatSuccessRateDelta(a: number, b: number): string {
+  const deltaPoints = (b - a) * 100
+  const normalizedDeltaPoints = Math.abs(deltaPoints) < 0.05 ? 0 : deltaPoints
+  return `${normalizedDeltaPoints.toFixed(1)} pts`
+}
+
+function formatDeltaValue(value: string, percentage: string): string {
+  return `${value} (${percentage})`
+}
+
 function formatPercentageChange(a: number, b: number): string {
+  if (a === 0) {
+    return b === 0 ? '0.0%' : 'N/A'
+  }
+
   return `${(((b - a) / a) * 100).toFixed(1)}%`
 }
