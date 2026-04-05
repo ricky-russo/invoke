@@ -39251,6 +39251,7 @@ var BatchManager = class {
   worktreeManager;
   stateManager;
   batches = /* @__PURE__ */ new Map();
+  batchRegistrationQueue = Promise.resolve();
   async dispatchBatch(request) {
     const batchId = randomUUID().slice(0, 8);
     const agents = request.tasks.map((task) => ({
@@ -39258,20 +39259,31 @@ var BatchManager = class {
       status: "pending"
     }));
     const abortController = new AbortController();
-    const currentBatchIndex = this.stateManager ? await this.getPersistedBatchIndex() : this.batches.size;
-    const record2 = {
-      status: { batchId, status: "running", agents },
-      abortController,
-      batchIndex: currentBatchIndex
-    };
-    await this.addPersistedBatch(currentBatchIndex, request);
-    this.batches.set(batchId, record2);
-    void this.runBatch(batchId, request, abortController.signal, currentBatchIndex);
+    const record2 = await this.enqueueBatchRegistration(async () => {
+      const currentBatchIndex = this.stateManager ? await this.getPersistedBatchIndex() : this.batches.size;
+      const nextRecord = {
+        status: { batchId, status: "running", agents },
+        abortController,
+        batchIndex: currentBatchIndex
+      };
+      await this.addPersistedBatch(currentBatchIndex, request);
+      this.batches.set(batchId, nextRecord);
+      return nextRecord;
+    });
+    void this.runBatch(batchId, request, abortController.signal, record2.batchIndex);
     return batchId;
   }
   async getPersistedBatchIndex() {
     const state = await this.stateManager?.get();
     return state ? state.batches.length : 0;
+  }
+  enqueueBatchRegistration(operation) {
+    const queuedOperation = this.batchRegistrationQueue.then(operation);
+    this.batchRegistrationQueue = queuedOperation.then(
+      () => void 0,
+      () => void 0
+    );
+    return queuedOperation;
   }
   getStatus(batchId) {
     const record2 = this.batches.get(batchId);
@@ -39396,10 +39408,6 @@ var BatchManager = class {
     const dependencies = trimmed.split(",").map((dependency) => dependency.trim()).filter(Boolean);
     return dependencies.length > 0 ? dependencies : void 0;
   }
-  async mergeTaskWorktree(batchIndex, taskId) {
-    await this.worktreeManager.merge(taskId);
-    await this.persistTaskUpdate(batchIndex, taskId, { merged: true });
-  }
   async runLayer(tasks, maxParallel, signal, runTask) {
     if (tasks.length === 0) return;
     if (maxParallel > 0 && tasks.length > maxParallel) {
@@ -39438,8 +39446,38 @@ var BatchManager = class {
       index,
       depends_on: this.getTaskDependencies(task)
     }));
+    const taskIndexById = new Map(scheduledTasks.map((task) => [task.taskId, task.index]));
+    const settleTask = async (task, status, result) => {
+      const agentStatus = record2.status.agents[task.index];
+      agentStatus.status = status;
+      agentStatus.result = cloneAgentResult(result);
+      await this.persistTaskStatus(batchIndex, task.taskId, status, result);
+      await this.updateBatchStatus(record2);
+    };
     const runTask = async (task) => {
       if (signal.aborted) return;
+      const failedDependencyId = task.depends_on?.find((dependencyId) => {
+        const dependencyIndex = taskIndexById.get(dependencyId);
+        if (dependencyIndex === void 0) {
+          return true;
+        }
+        const dependencyStatus = record2.status.agents[dependencyIndex];
+        return dependencyStatus.status !== "completed" || dependencyStatus.result?.status !== "success";
+      });
+      if (failedDependencyId) {
+        await settleTask(task, "error", {
+          role: task.role,
+          subrole: task.subrole,
+          provider: "unknown",
+          model: "unknown",
+          status: "error",
+          output: {
+            summary: `Prerequisite ${failedDependencyId} failed`
+          },
+          duration: 0
+        });
+        return;
+      }
       const agentStatus = record2.status.agents[task.index];
       try {
         let workDir;
@@ -39466,15 +39504,17 @@ var BatchManager = class {
           workDir
         });
         if (signal.aborted) return;
-        agentStatus.status = "completed";
-        agentStatus.result = cloneAgentResult(result);
-        await this.persistTaskStatus(batchIndex, task.taskId, "completed", result);
-        if (request.createWorktrees) {
-          await this.mergeTaskWorktree(batchIndex, task.taskId);
+        if (result.status === "success") {
+          await settleTask(task, "completed", result);
+          return;
         }
-        await this.updateBatchStatus(record2);
+        if (result.status === "timeout") {
+          await settleTask(task, "timeout", result);
+          return;
+        }
+        await settleTask(task, "error", result);
       } catch (err) {
-        const errorResult = {
+        await settleTask(task, "error", {
           role: task.role,
           subrole: task.subrole,
           provider: "unknown",
@@ -39485,11 +39525,7 @@ var BatchManager = class {
             raw: String(err)
           },
           duration: 0
-        };
-        agentStatus.status = "error";
-        agentStatus.result = cloneAgentResult(errorResult);
-        await this.persistTaskStatus(batchIndex, task.taskId, "error", errorResult);
-        await this.updateBatchStatus(record2);
+        });
       }
     };
     try {

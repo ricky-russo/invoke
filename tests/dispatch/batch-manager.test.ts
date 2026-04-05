@@ -16,6 +16,18 @@ const mockResult: AgentResult = {
   duration: 5000,
 }
 
+const mockErrorResult: AgentResult = {
+  ...mockResult,
+  status: 'error',
+  output: { summary: 'Build failed', raw: 'Error output' },
+}
+
+const mockTimeoutResult: AgentResult = {
+  ...mockResult,
+  status: 'timeout',
+  output: { summary: 'Build timed out', raw: 'Timeout output' },
+}
+
 const mockEngine = {
   dispatch: vi.fn().mockResolvedValue(mockResult),
 } as unknown as DispatchEngine
@@ -112,6 +124,58 @@ describe('BatchManager', () => {
     expect(finalStatus!.agents[0].status).toBe('error')
     expect(finalStatus!.agents[0].result?.output.summary).toBe('boom')
     expect(finalStatus!.agents[0].result?.output.raw).toBeUndefined()
+  })
+
+  it('treats resolved error results as task errors and skips merging', async () => {
+    vi.mocked(mockEngine.dispatch).mockResolvedValueOnce(mockErrorResult)
+
+    const batchId = await manager.dispatchBatch({
+      tasks: [
+        { taskId: 'task-1', role: 'builder', subrole: 'default', taskContext: {} },
+      ],
+      createWorktrees: true,
+    })
+
+    await vi.waitFor(() => {
+      expect(manager.getStatus(batchId)!.status).toBe('error')
+    }, { timeout: 2000 })
+
+    const finalStatus = manager.getStatus(batchId)
+    expect(finalStatus!.agents[0].status).toBe('error')
+    expect(finalStatus!.agents[0].result).toEqual({
+      ...mockErrorResult,
+      output: {
+        ...mockErrorResult.output,
+        raw: undefined,
+      },
+    })
+    expect(mockWorktreeManager.merge).not.toHaveBeenCalled()
+  })
+
+  it('treats resolved timeout results as task timeouts and skips merging', async () => {
+    vi.mocked(mockEngine.dispatch).mockResolvedValueOnce(mockTimeoutResult)
+
+    const batchId = await manager.dispatchBatch({
+      tasks: [
+        { taskId: 'task-1', role: 'builder', subrole: 'default', taskContext: {} },
+      ],
+      createWorktrees: true,
+    })
+
+    await vi.waitFor(() => {
+      expect(manager.getStatus(batchId)!.status).toBe('error')
+    }, { timeout: 2000 })
+
+    const finalStatus = manager.getStatus(batchId)
+    expect(finalStatus!.agents[0].status).toBe('timeout')
+    expect(finalStatus!.agents[0].result).toEqual({
+      ...mockTimeoutResult,
+      output: {
+        ...mockTimeoutResult.output,
+        raw: undefined,
+      },
+    })
+    expect(mockWorktreeManager.merge).not.toHaveBeenCalled()
   })
 
   it('creates worktrees when requested', async () => {
@@ -370,6 +434,30 @@ describe('max_parallel_agents', () => {
     buildLayersSpy.mockRestore()
   })
 
+  it('marks dependent DAG tasks as errored when a prerequisite fails', async () => {
+    vi.mocked(mockEngine.dispatch).mockResolvedValueOnce(mockErrorResult)
+
+    const batchId = await manager.dispatchBatch({
+      tasks: [
+        { taskId: 'A', role: 'builder', subrole: 'default', taskContext: { task_description: 'A' } },
+        { taskId: 'B', role: 'builder', subrole: 'default', taskContext: { task_description: 'B' }, depends_on: ['A'] },
+      ],
+      createWorktrees: false,
+      maxParallel: 1,
+    })
+
+    await vi.waitFor(() => {
+      expect(manager.getStatus(batchId)!.status).toBe('error')
+    }, { timeout: 2000 })
+
+    const finalStatus = manager.getStatus(batchId)
+    expect(finalStatus!.agents[0].status).toBe('error')
+    expect(finalStatus!.agents[1].status).toBe('error')
+    expect(finalStatus!.agents[1].result?.status).toBe('error')
+    expect(finalStatus!.agents[1].result?.output.summary).toBe('Prerequisite A failed')
+    expect(vi.mocked(mockEngine.dispatch)).toHaveBeenCalledTimes(1)
+  })
+
   it('skips the DAG scheduler when no task declares dependencies', async () => {
     const buildLayersSpy = vi.spyOn(dagScheduler, 'buildExecutionLayers')
 
@@ -498,9 +586,8 @@ describe('max_parallel_agents', () => {
     }, { timeout: 2000 })
   })
 
-  it('merges completed worktrees immediately within a DAG layer', async () => {
+  it('does not auto-merge completed worktrees within a DAG layer', async () => {
     const started: string[] = []
-    const merged: string[] = []
     const deferreds = new Map([
       ['A', createDeferred<AgentResult>()],
       ['B', createDeferred<AgentResult>()],
@@ -511,9 +598,6 @@ describe('max_parallel_agents', () => {
       const taskName = request.taskContext.task_description
       started.push(taskName)
       return deferreds.get(taskName)!.promise
-    })
-    vi.mocked(mockWorktreeManager.merge).mockImplementation(async (taskId: string) => {
-      merged.push(taskId)
     })
 
     const batchId = await manager.dispatchBatch({
@@ -534,16 +618,12 @@ describe('max_parallel_agents', () => {
 
     await vi.waitFor(() => {
       expect(started).toEqual(['A', 'B', 'C'])
-      expect(merged).toEqual(['A'])
     }, { timeout: 2000 })
+    expect(mockWorktreeManager.merge).not.toHaveBeenCalled()
 
     deferreds.get('B')!.resolve(mockResult)
-
-    await vi.waitFor(() => {
-      expect(merged).toContain('B')
-    }, { timeout: 2000 })
-
-    expect(merged).not.toContain('C')
+    await new Promise(resolve => setTimeout(resolve, 25))
+    expect(mockWorktreeManager.merge).not.toHaveBeenCalled()
 
     deferreds.get('C')!.resolve(mockResult)
 
@@ -551,7 +631,7 @@ describe('max_parallel_agents', () => {
       expect(manager.getStatus(batchId)!.status).toBe('completed')
     }, { timeout: 5000 })
 
-    expect(merged).toEqual(['A', 'B', 'C'])
+    expect(mockWorktreeManager.merge).not.toHaveBeenCalled()
   })
 
   it('does not schedule later DAG layers after cancellation', async () => {
@@ -724,6 +804,54 @@ describe('BatchManager with state persistence', () => {
     expect(addBatch.mock.calls.every(([batch]) => batch.id === 2)).toBe(true)
     expect(updateTask.mock.calls.every(([batchIndex]) => batchIndex === 2)).toBe(true)
     expect(updateBatch.mock.calls.every(([batchIndex]) => batchIndex === 2)).toBe(true)
+  })
+
+  it('serializes concurrent batch registration so persisted batch indexes stay unique', async () => {
+    const gate = createDeferred<void>()
+    let firstAddBatch = true
+
+    addBatch.mockImplementation(async (batch) => {
+      if (firstAddBatch) {
+        firstAddBatch = false
+        await gate.promise
+      }
+
+      persistedState = {
+        ...persistedState,
+        last_updated: new Date().toISOString(),
+        batches: [...persistedState.batches, { ...batch, tasks: batch.tasks.map(task => ({ ...task })) }],
+      }
+      return persistedState
+    })
+
+    const firstDispatch = statefulManager.dispatchBatch({
+      tasks: [
+        { taskId: 'task-2', role: 'builder', subrole: 'default', taskContext: {} },
+      ],
+      createWorktrees: false,
+    })
+    const secondDispatch = statefulManager.dispatchBatch({
+      tasks: [
+        { taskId: 'task-3', role: 'builder', subrole: 'default', taskContext: {} },
+      ],
+      createWorktrees: false,
+    })
+
+    await vi.waitFor(() => {
+      expect(addBatch).toHaveBeenCalledTimes(1)
+    }, { timeout: 2000 })
+
+    gate.resolve()
+
+    const [firstBatchId, secondBatchId] = await Promise.all([firstDispatch, secondDispatch])
+
+    await vi.waitFor(() => {
+      expect(addBatch).toHaveBeenCalledTimes(2)
+    }, { timeout: 3000 })
+
+    expect(addBatch.mock.calls.map(([batch]) => batch.id)).toEqual([2, 3])
+    expect((statefulManager as any).batches.get(firstBatchId).batchIndex).toBe(2)
+    expect((statefulManager as any).batches.get(secondBatchId).batchIndex).toBe(3)
   })
 
   it('persists batch completion status', async () => {

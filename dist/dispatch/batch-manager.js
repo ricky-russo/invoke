@@ -11,6 +11,7 @@ export class BatchManager {
     worktreeManager;
     stateManager;
     batches = new Map();
+    batchRegistrationQueue = Promise.resolve();
     constructor(engine, worktreeManager, stateManager) {
         this.engine = engine;
         this.worktreeManager = worktreeManager;
@@ -23,23 +24,31 @@ export class BatchManager {
             status: 'pending',
         }));
         const abortController = new AbortController();
-        const currentBatchIndex = this.stateManager
-            ? await this.getPersistedBatchIndex()
-            : this.batches.size;
-        const record = {
-            status: { batchId, status: 'running', agents },
-            abortController,
-            batchIndex: currentBatchIndex,
-        };
-        await this.addPersistedBatch(currentBatchIndex, request);
-        this.batches.set(batchId, record);
-        // Fire and forget — dispatch all tasks in parallel
-        void this.runBatch(batchId, request, abortController.signal, currentBatchIndex);
+        const record = await this.enqueueBatchRegistration(async () => {
+            const currentBatchIndex = this.stateManager
+                ? await this.getPersistedBatchIndex()
+                : this.batches.size;
+            const nextRecord = {
+                status: { batchId, status: 'running', agents },
+                abortController,
+                batchIndex: currentBatchIndex,
+            };
+            await this.addPersistedBatch(currentBatchIndex, request);
+            this.batches.set(batchId, nextRecord);
+            return nextRecord;
+        });
+        // Fire and forget — run the batch asynchronously.
+        void this.runBatch(batchId, request, abortController.signal, record.batchIndex);
         return batchId;
     }
     async getPersistedBatchIndex() {
         const state = await this.stateManager?.get();
         return state ? state.batches.length : 0;
+    }
+    enqueueBatchRegistration(operation) {
+        const queuedOperation = this.batchRegistrationQueue.then(operation);
+        this.batchRegistrationQueue = queuedOperation.then(() => undefined, () => undefined);
+        return queuedOperation;
     }
     getStatus(batchId) {
         const record = this.batches.get(batchId);
@@ -186,10 +195,6 @@ export class BatchManager {
             .filter(Boolean);
         return dependencies.length > 0 ? dependencies : undefined;
     }
-    async mergeTaskWorktree(batchIndex, taskId) {
-        await this.worktreeManager.merge(taskId);
-        await this.persistTaskUpdate(batchIndex, taskId, { merged: true });
-    }
     async runLayer(tasks, maxParallel, signal, runTask) {
         if (tasks.length === 0)
             return;
@@ -197,6 +202,8 @@ export class BatchManager {
             let active = 0;
             let nextIndex = 0;
             await new Promise((resolveAll) => {
+                // Multiple resolveAll() calls below are intentional; resolving an already-settled
+                // promise is a no-op and keeps the exit conditions simple.
                 const tryNext = () => {
                     while (active < maxParallel && nextIndex < tasks.length && !signal.aborted) {
                         const task = tasks[nextIndex++];
@@ -229,9 +236,39 @@ export class BatchManager {
             index,
             depends_on: this.getTaskDependencies(task),
         }));
+        const taskIndexById = new Map(scheduledTasks.map(task => [task.taskId, task.index]));
+        const settleTask = async (task, status, result) => {
+            const agentStatus = record.status.agents[task.index];
+            agentStatus.status = status;
+            agentStatus.result = cloneAgentResult(result);
+            await this.persistTaskStatus(batchIndex, task.taskId, status, result);
+            await this.updateBatchStatus(record);
+        };
         const runTask = async (task) => {
             if (signal.aborted)
                 return;
+            const failedDependencyId = task.depends_on?.find(dependencyId => {
+                const dependencyIndex = taskIndexById.get(dependencyId);
+                if (dependencyIndex === undefined) {
+                    return true;
+                }
+                const dependencyStatus = record.status.agents[dependencyIndex];
+                return (dependencyStatus.status !== 'completed' || dependencyStatus.result?.status !== 'success');
+            });
+            if (failedDependencyId) {
+                await settleTask(task, 'error', {
+                    role: task.role,
+                    subrole: task.subrole,
+                    provider: 'unknown',
+                    model: 'unknown',
+                    status: 'error',
+                    output: {
+                        summary: `Prerequisite ${failedDependencyId} failed`,
+                    },
+                    duration: 0,
+                });
+                return;
+            }
             const agentStatus = record.status.agents[task.index];
             try {
                 let workDir;
@@ -263,16 +300,18 @@ export class BatchManager {
                 });
                 if (signal.aborted)
                     return;
-                agentStatus.status = 'completed';
-                agentStatus.result = cloneAgentResult(result);
-                await this.persistTaskStatus(batchIndex, task.taskId, 'completed', result);
-                if (request.createWorktrees) {
-                    await this.mergeTaskWorktree(batchIndex, task.taskId);
+                if (result.status === 'success') {
+                    await settleTask(task, 'completed', result);
+                    return;
                 }
-                await this.updateBatchStatus(record);
+                if (result.status === 'timeout') {
+                    await settleTask(task, 'timeout', result);
+                    return;
+                }
+                await settleTask(task, 'error', result);
             }
             catch (err) {
-                const errorResult = {
+                await settleTask(task, 'error', {
                     role: task.role,
                     subrole: task.subrole,
                     provider: 'unknown',
@@ -283,19 +322,15 @@ export class BatchManager {
                         raw: String(err),
                     },
                     duration: 0,
-                };
-                agentStatus.status = 'error';
-                agentStatus.result = cloneAgentResult(errorResult);
-                await this.persistTaskStatus(batchIndex, task.taskId, 'error', errorResult);
-                await this.updateBatchStatus(record);
+                });
             }
         };
         try {
             const hasDependencies = scheduledTasks.some(task => (task.depends_on?.length ?? 0) > 0);
             if (hasDependencies) {
                 const executionLayers = buildExecutionLayers(scheduledTasks);
-                // Tasks still run with layer barriers. Completed tasks can merge immediately
-                // within a layer, but unblocking downstream layers per-task is future work.
+                // Tasks still run with layer barriers; unblocking downstream layers per-task
+                // is future work.
                 for (const layer of executionLayers) {
                     if (signal.aborted)
                         break;

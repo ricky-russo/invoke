@@ -7,9 +7,11 @@ export declare class BatchManager {
     private worktreeManager;
     private stateManager?;
     private batches;
+    private batchRegistrationQueue;
     constructor(engine: DispatchEngine, worktreeManager: WorktreeManager, stateManager?: StateManager | undefined);
     dispatchBatch(request: BatchRequest): Promise<string>;
     private getPersistedBatchIndex;
+    private enqueueBatchRegistration;
     getStatus(batchId: string): BatchStatus | null;
     waitForStatus(batchId: string, waitSeconds: number): Promise<BatchStatus | null>;
     cancel(batchId: string): void;
@@ -23,7 +25,6 @@ export declare class BatchManager {
     private updateBatchStatus;
     private persistTaskStatus;
     private getTaskDependencies;
-    private mergeTaskWorktree;
     private runLayer;
     private runBatch;
     private stripRawOutput;
