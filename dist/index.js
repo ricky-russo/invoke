@@ -38887,21 +38887,39 @@ var MODEL_PRICING = {
     input: 2 / 1e6,
     output: 8 / 1e6
   },
+  "gpt-4.1": {
+    input: 2 / 1e6,
+    output: 8 / 1e6
+  },
   "o3-mini": {
     input: 1.1 / 1e6,
     output: 4.4 / 1e6
   }
 };
-function charsToTokens(chars) {
-  return Math.ceil(chars / 4);
+var MODEL_NAME_ALIASES = {
+  "opus-4.6": "claude-opus-4-6",
+  "opus-4-6": "claude-opus-4-6",
+  "sonnet-4.6": "claude-sonnet-4-6",
+  "sonnet-4-6": "claude-sonnet-4-6"
+};
+var CHARS_PER_TOKEN = {
+  prose: 4,
+  code: 3
+};
+function normalizeModelName(model) {
+  const normalized = model.trim().toLowerCase();
+  return MODEL_NAME_ALIASES[normalized] ?? normalized;
 }
-function estimateCost(model, inputChars, outputChars) {
-  const pricing = MODEL_PRICING[model];
+function charsToTokens(chars, contentType = "prose") {
+  return Math.ceil(chars / CHARS_PER_TOKEN[contentType]);
+}
+function estimateCost(model, inputChars, outputChars, contentType = "prose") {
+  const pricing = MODEL_PRICING[normalizeModelName(model)];
   if (!pricing) {
     return null;
   }
-  const inputTokens = charsToTokens(inputChars);
-  const outputTokens = charsToTokens(outputChars);
+  const inputTokens = charsToTokens(inputChars, contentType);
+  const outputTokens = charsToTokens(outputChars, contentType);
   const costUsd = Number(
     (inputTokens * pricing.input + outputTokens * pricing.output).toFixed(6)
   );
@@ -38930,9 +38948,11 @@ var DispatchEngine = class {
     if (!roleConfig) {
       throw new Error(`Role not found: ${request.role}.${request.subrole}`);
     }
+    const strategyPath = request.taskContext.strategy ? config2.strategies[request.taskContext.strategy]?.prompt : void 0;
     const prompt = await composePrompt({
       projectDir: this.projectDir,
       promptPath: roleConfig.prompt,
+      strategyPath,
       taskContext: request.taskContext
     });
     const workDir = request.workDir ?? this.projectDir;
@@ -39001,8 +39021,6 @@ var DispatchEngine = class {
       commandSpec.cwd
     );
     const duration3 = Date.now() - startTime;
-    const outputSizeChars = stdout.length;
-    const costEstimate = estimateCost(entry.model, prompt.length, outputSizeChars);
     let result;
     if (timedOut) {
       result = {
@@ -39027,6 +39045,8 @@ var DispatchEngine = class {
         duration: duration3
       });
     }
+    const outputSizeChars = result.output.raw?.length ?? stdout.length;
+    const costEstimate = estimateCost(entry.model, prompt.length, outputSizeChars);
     this.onDispatchComplete?.({
       pipeline_id: request.taskContext.pipeline_id ?? null,
       stage: request.taskContext.stage ?? "unknown",

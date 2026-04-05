@@ -44,9 +44,14 @@ export class DispatchEngine {
       throw new Error(`Role not found: ${request.role}.${request.subrole}`)
     }
 
+    const strategyPath = request.taskContext.strategy
+      ? config.strategies[request.taskContext.strategy]?.prompt
+      : undefined
+
     const prompt = await composePrompt({
       projectDir: this.projectDir,
       promptPath: roleConfig.prompt,
+      strategyPath,
       taskContext: request.taskContext,
     })
 
@@ -151,8 +156,6 @@ export class DispatchEngine {
       commandSpec.cwd
     )
     const duration = Date.now() - startTime
-    const outputSizeChars = stdout.length
-    const costEstimate = estimateCost(entry.model, prompt.length, outputSizeChars)
 
     let result: AgentResult
     if (timedOut) {
@@ -180,6 +183,9 @@ export class DispatchEngine {
         duration,
       })
     }
+
+    const outputSizeChars = result.output.raw?.length ?? stdout.length
+    const costEstimate = estimateCost(entry.model, prompt.length, outputSizeChars)
 
     this.onDispatchComplete?.({
       pipeline_id: request.taskContext.pipeline_id ?? null,

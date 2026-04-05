@@ -15,21 +15,39 @@ export const MODEL_PRICING = {
         input: 2 / 1_000_000,
         output: 8 / 1_000_000,
     },
+    'gpt-4.1': {
+        input: 2 / 1_000_000,
+        output: 8 / 1_000_000,
+    },
     'o3-mini': {
         input: 1.1 / 1_000_000,
         output: 4.4 / 1_000_000,
     },
 };
-export function charsToTokens(chars) {
-    return Math.ceil(chars / 4);
+const MODEL_NAME_ALIASES = {
+    'opus-4.6': 'claude-opus-4-6',
+    'opus-4-6': 'claude-opus-4-6',
+    'sonnet-4.6': 'claude-sonnet-4-6',
+    'sonnet-4-6': 'claude-sonnet-4-6',
+};
+const CHARS_PER_TOKEN = {
+    prose: 4,
+    code: 3,
+};
+export function normalizeModelName(model) {
+    const normalized = model.trim().toLowerCase();
+    return MODEL_NAME_ALIASES[normalized] ?? normalized;
 }
-export function estimateCost(model, inputChars, outputChars) {
-    const pricing = MODEL_PRICING[model];
+export function charsToTokens(chars, contentType = 'prose') {
+    return Math.ceil(chars / CHARS_PER_TOKEN[contentType]);
+}
+export function estimateCost(model, inputChars, outputChars, contentType = 'prose') {
+    const pricing = MODEL_PRICING[normalizeModelName(model)];
     if (!pricing) {
         return null;
     }
-    const inputTokens = charsToTokens(inputChars);
-    const outputTokens = charsToTokens(outputChars);
+    const inputTokens = charsToTokens(inputChars, contentType);
+    const outputTokens = charsToTokens(outputChars, contentType);
     const costUsd = Number((inputTokens * pricing.input + outputTokens * pricing.output).toFixed(6));
     return {
         input_tokens: inputTokens,
