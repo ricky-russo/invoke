@@ -146,7 +146,7 @@ The orchestrate stage translates the chosen plan into a concrete, executable tas
 - Keywords `fix`, `bug`, `regression`, or `broken` → suggests `bug-fix`
 - Keywords `prototype`, `spike`, `mvp`, `quickly`, or `urgent` → suggests `prototype`
 - `test` mentioned in the text combined with existing test files in the repo → suggests `tdd` (medium confidence)
-- No matching pattern → suggests the configured default strategy (low confidence)
+- No matching pattern → suggests `tdd` as the default strategy (low confidence)
 
 The suggestion is presented alongside the confidence level and matching keywords. The user always has final choice and can select any configured strategy regardless of the suggestion.
 
@@ -197,7 +197,7 @@ Each agent works in its own worktree (a separate `git worktree add` branch under
 
 **Review cycle guard.** The `max_review_cycles` setting caps the number of inter-batch (and final) review iterations (`src/types.ts:43`). Before initiating a review cycle, `invoke_get_review_cycle_count` returns the current cycle count for the batch alongside the configured limit (`src/tools/state-tools.ts:131-166`). When the limit is reached, additional review cycles are not offered.
 
-After all worktrees in a batch are merged, post-merge commands run (e.g., regenerating `composer.lock` or `package-lock.json`), followed by the configured validation hook (lint, tests). If validation fails, the failure is presented and must be resolved before the next batch starts.
+After each individual task is merged, `invoke_run_post_merge` runs the configured post-merge commands (e.g., regenerating `composer.lock` or `package-lock.json`), followed by the configured validation hook (lint, tests). If validation fails, the failure is presented and must be resolved before merging or dispatching additional tasks. Post-merge commands run per merge, not once at the end of the batch.
 
 Between batches, the user can optionally run reviewers against the current state of the codebase before proceeding. This follows the same flow as the review stage and can catch issues early.
 
@@ -277,7 +277,7 @@ If interrupted before reviewers are dispatched, invoke-review resumes at reviewe
 
 **Step 3 — Present task-level progress.** The status summary shows pipeline metadata (ID, start date, last active timestamp) plus a per-batch breakdown listing every task and its status (completed, merged, error with summary, or pending). If the last activity was more than 24 hours ago the timestamp is highlighted.
 
-**Step 4 — Discover orphaned worktrees.** `invoke_cleanup_worktrees` runs in discovery mode to find any worktrees left over from the interrupted session. If found, the user is offered three options: keep and merge whatever was completed, discard all worktrees and restart affected tasks, or inspect each worktree's git status and log individually before deciding.
+**Step 4 — Clean up tracked worktrees.** `invoke_cleanup_worktrees` removes any tracked worktrees left over from the interrupted session. Orphaned worktrees that are no longer tracked in pipeline state can be discovered manually via `git worktree list` and then cleaned up with `invoke_cleanup_worktrees`.
 
 **Step 5 — Offer actions.** The user chooses one of:
 - **Continue** — load the appropriate stage skill and pick up exactly where the pipeline left off (see per-stage resume behavior above)
