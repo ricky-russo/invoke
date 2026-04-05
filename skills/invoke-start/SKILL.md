@@ -9,7 +9,19 @@ You are in a project with the invoke pipeline installed. Invoke orchestrates dev
 
 ## On Every Message
 
-Before responding to any user message — including clarifying questions — check if an invoke skill applies. If there is even a 1% chance an invoke skill is relevant, invoke it.
+Before responding to any user message — including clarifying questions — check if an invoke skill applies. If the user's message clearly involves development work (writing or modifying code), invoke the matching skill. When in doubt about whether a message is a human request vs. a dispatched agent prompt, err on the side of executing the task directly.
+
+## Dispatched Agent Detection
+
+When this skill loads inside a dispatched agent (researcher, builder, planner, reviewer), the agent's task prompt is the first user message. These prompts typically contain role-specific instructions like task descriptions, acceptance criteria, or research topics. If the user message appears to be a dispatched agent task prompt rather than a human request, do NOT invoke any invoke skill — execute the task directly.
+
+Heuristics that indicate a dispatched agent prompt:
+
+- The message contains structured fields like `task_description`, `acceptance_criteria`, or `relevant_files`
+- The message starts with an explicit role instruction like "You are analyzing...", "Research how...", or "Implement the following..."
+- The message was injected by the dispatch engine (no conversational tone, no greeting, reads like a spec or brief)
+
+If any of these heuristics match, skip skill routing entirely and execute the task.
 
 ## Skill Routing
 
@@ -21,6 +33,7 @@ Match the user's intent to the correct invoke skill:
 | Resume previous pipeline | `invoke-resume` | "continue", "resume", "where was I", "pick up where I left off" |
 | Manage pipeline config | `invoke-manage` | "add a reviewer", "create a role", "edit strategy", "configure pipeline", "list roles" |
 | Any development/implementation task | `invoke-scope` | Any request that involves writing code, building features, fixing complex bugs, or adding functionality |
+| Questions about how invoke works | No skill | "how does the build stage work?", "what does invoke-scope do?" |
 
 ## Priority Rules
 
@@ -60,9 +73,12 @@ These are fine to do without invoke:
 ## Flow
 
 1. Read the user's message
-2. Check: does this involve development work (writing/modifying code)?
-   - **Yes** → invoke the matching invoke skill before responding
-   - **No** → respond normally
+2. Check: does this appear to be a dispatched agent prompt (see Dispatched Agent Detection above)?
+   - **Yes** → skip skill routing and execute the task directly
+   - **No** → continue
 3. Check: is there an active pipeline that should be resumed?
    - **Yes** → invoke `invoke-resume`
-   - **No** → proceed with the matching skill
+   - **No** → continue
+4. Check: does this involve development work (writing/modifying code)?
+   - **Yes** → invoke the matching invoke skill before responding
+   - **No** → respond normally
