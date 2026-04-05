@@ -60,15 +60,7 @@ export function registerSessionTools(server, sessionManager, projectDir) {
 }
 async function getSessionsWithStatus(sessionManager, projectDir) {
     const staleSessionDays = await getStaleSessionDays(projectDir);
-    const sessions = await sessionManager.list(staleSessionDays);
-    return Promise.all(sessions.map(async (session) => ({
-        ...session,
-        status: session.current_stage === 'complete'
-            ? 'complete'
-            : await sessionManager.isStale(session.session_id, staleSessionDays)
-                ? 'stale'
-                : 'active',
-    })));
+    return sessionManager.list(staleSessionDays);
 }
 async function getStaleSessionDays(projectDir) {
     try {

@@ -1,9 +1,8 @@
-import path from 'path';
 import { z } from 'zod';
 import { loadConfig } from '../config.js';
 import { MetricsManager } from '../metrics/manager.js';
 const sessionMetricsCache = new Map();
-export function registerMetricsTools(server, metricsManager, projectDir) {
+export function registerMetricsTools(server, metricsManager, projectDir, sessionManager) {
     server.registerTool('invoke_get_metrics', {
         description: 'Get dispatch metrics, summary totals, and pipeline dispatch limit status.',
         inputSchema: z.object({
@@ -13,8 +12,11 @@ export function registerMetricsTools(server, metricsManager, projectDir) {
     }, async ({ stage, session_id }) => {
         let activeMetricsManager = metricsManager;
         if (session_id) {
+            if (!sessionManager) {
+                throw new Error('Session manager is required for session-scoped metrics');
+            }
             if (!sessionMetricsCache.has(session_id)) {
-                sessionMetricsCache.set(session_id, new MetricsManager(projectDir, path.join(projectDir, '.invoke', 'sessions', session_id)));
+                sessionMetricsCache.set(session_id, new MetricsManager(projectDir, sessionManager.resolve(session_id)));
             }
             activeMetricsManager = sessionMetricsCache.get(session_id);
         }

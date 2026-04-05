@@ -3,6 +3,7 @@ export declare class StateManager {
     private statePath;
     private tmpPath;
     private storageDir;
+    private dirEnsured;
     constructor(projectDir: string, sessionDir?: string);
     get(): Promise<PipelineState | null>;
     initialize(pipelineId: string): Promise<PipelineState>;

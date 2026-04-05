@@ -1,14 +1,16 @@
 import { z } from 'zod';
-import path from 'path';
 import { loadConfig } from '../config.js';
 import { StateManager } from './state.js';
-export function registerDispatchTools(server, engine, batchManager, projectDir, metricsManager) {
+export function registerDispatchTools(server, engine, batchManager, projectDir, metricsManager, sessionManager) {
     function resolveBatchManager(sessionId) {
         if (!sessionId) {
             return batchManager;
         }
+        if (!sessionManager) {
+            throw new Error('Session manager is required for session-scoped dispatch');
+        }
         return Object.assign(Object.create(Object.getPrototypeOf(batchManager)), batchManager, {
-            stateManager: new StateManager(projectDir, path.join(projectDir, '.invoke', 'sessions', sessionId)),
+            stateManager: new StateManager(projectDir, sessionManager.resolve(sessionId)),
         });
     }
     server.registerTool('invoke_dispatch', {
@@ -77,7 +79,7 @@ export function registerDispatchTools(server, engine, batchManager, projectDir, 
             const mode = task.provider_mode;
             return sum + (mode === 'parallel' ? task.providers.length : 1);
         }, 0);
-        if (metricsManager && config?.settings.max_dispatches !== undefined) {
+        if (config?.settings.max_dispatches !== undefined) {
             try {
                 const limitStatus = await metricsManager.getLimitStatus(config);
                 const projectedDispatches = limitStatus.dispatches_used + estimatedDispatches;

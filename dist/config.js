@@ -36,7 +36,6 @@ const SettingsSchema = z.object({
     post_merge_commands: z.array(z.string()).optional(),
     max_parallel_agents: z.number().positive().optional(),
     default_provider_mode: ProviderModeSchema.optional(),
-    stale_session_days: z.number().positive().optional(),
     max_dispatches: z.number().positive().optional(),
     max_review_cycles: z.number().positive().optional(),
 });

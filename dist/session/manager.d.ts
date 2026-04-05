@@ -5,7 +5,7 @@ export declare class SessionManager {
     constructor(projectDir: string);
     create(sessionId: string): Promise<string>;
     resolve(sessionId: string): string;
-    list(): Promise<SessionInfo[]>;
+    list(staleDays?: number): Promise<SessionInfo[]>;
     isStale(sessionId: string, staleDays?: number): Promise<boolean>;
     migrate(): Promise<{
         migrated: boolean;
@@ -19,6 +19,7 @@ export declare class SessionManager {
     private getLegacyMetricsPath;
     private readState;
     private readSessionInfo;
+    private validateSessionId;
     private isStateStale;
     private isMissingFileError;
 }

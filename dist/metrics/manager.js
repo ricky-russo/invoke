@@ -12,6 +12,7 @@ export class MetricsManager {
     loaded = false;
     loadPromise = null;
     writeChain = Promise.resolve();
+    dirEnsured = false;
     constructor(projectDir, sessionDir) {
         this.projectDir = projectDir;
         const metricsDir = sessionDir ?? path.join(projectDir, '.invoke');
@@ -130,7 +131,10 @@ export class MetricsManager {
         this.loaded = true;
     }
     async writeAtomic(metrics) {
-        await mkdir(path.dirname(this.metricsPath), { recursive: true });
+        if (!this.dirEnsured) {
+            await mkdir(path.dirname(this.metricsPath), { recursive: true });
+            this.dirEnsured = true;
+        }
         const content = JSON.stringify(metrics, null, 2) + '\n';
         await writeFile(this.tmpPath, content);
         await rename(this.tmpPath, this.metricsPath);

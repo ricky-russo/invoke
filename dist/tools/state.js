@@ -5,6 +5,7 @@ export class StateManager {
     statePath;
     tmpPath;
     storageDir;
+    dirEnsured = false;
     constructor(projectDir, sessionDir) {
         this.storageDir = sessionDir ?? path.join(projectDir, '.invoke');
         this.statePath = path.join(this.storageDir, 'state.json');
@@ -95,7 +96,10 @@ export class StateManager {
         }
     }
     async writeAtomic(state) {
-        await mkdir(this.storageDir, { recursive: true });
+        if (!this.dirEnsured) {
+            await mkdir(this.storageDir, { recursive: true });
+            this.dirEnsured = true;
+        }
         const content = JSON.stringify(state, null, 2) + '\n';
         await writeFile(this.tmpPath, content);
         await rename(this.tmpPath, this.statePath);

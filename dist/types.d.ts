@@ -26,7 +26,6 @@ export interface Settings {
     post_merge_commands?: string[];
     max_parallel_agents?: number;
     default_provider_mode?: ProviderMode;
-    stale_session_days?: number;
     max_dispatches?: number;
     max_review_cycles?: number;
 }
