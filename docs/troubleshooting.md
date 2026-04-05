@@ -223,6 +223,32 @@ Call `invoke_compare_sessions` to place two sessions side by side. The output is
 
 ---
 
+## Metrics and cost tracking
+
+### Where metrics are stored
+
+Invoke records a metric entry for each agent dispatch. These are written to `.invoke/sessions/{session_id}/metrics.json` — one file per session, updated after each dispatch.
+
+### Viewing metrics
+
+Call `invoke_get_metrics` to get a summary of the current session's dispatches. The summary includes:
+
+- `total_dispatches` — number of agents invoked.
+- `total_duration_ms` — cumulative wall-clock time across all dispatches.
+- `total_estimated_cost_usd` — estimated spend for the session.
+- `by_stage` — breakdown of the above fields per pipeline stage.
+- `by_provider_model` — breakdown per provider/model pair (e.g., `claude:claude-opus-4-6`).
+
+### Cost estimates
+
+Cost figures are approximations. Invoke estimates token counts from character counts using a fixed ratio: 4 characters per token for prose content, 3 characters per token for code. Actual billing depends on the provider's tokenizer and may differ.
+
+### Comparing sessions
+
+Call `invoke_compare_sessions` to place two sessions side by side. The output is a table of dispatches, success rate, duration, prompt size, and estimated cost, with a delta row showing the difference between sessions. This is useful for comparing the cost or speed of different model configurations against the same task.
+
+---
+
 ## Plugin not activating
 
 ### Check settings.local.json
