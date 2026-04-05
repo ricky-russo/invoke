@@ -17,6 +17,10 @@ export interface RoleConfig {
 export interface StrategyConfig {
     prompt: string;
 }
+export interface ReviewTier {
+    name: string;
+    reviewers: string[];
+}
 export interface Settings {
     default_strategy: string;
     agent_timeout: number;
@@ -28,12 +32,26 @@ export interface Settings {
     default_provider_mode?: ProviderMode;
     max_dispatches?: number;
     max_review_cycles?: number;
+    review_tiers?: ReviewTier[];
+}
+export interface PresetConfig {
+    name?: string;
+    description?: string;
+    settings?: Partial<Settings>;
+    reviewer_selection?: string[];
+    strategy_selection?: string[];
 }
 export interface InvokeConfig {
     providers: Record<string, ProviderConfig>;
     roles: Record<string, Record<string, RoleConfig>>;
     strategies: Record<string, StrategyConfig>;
     settings: Settings;
+    presets?: Record<string, PresetConfig>;
+}
+export interface StrategyDetection {
+    strategy: string;
+    confidence: 'high' | 'medium' | 'low';
+    reason: string;
 }
 export interface DispatchRequest {
     role: string;
@@ -68,11 +86,16 @@ export interface DispatchMetric {
     duration_ms: number;
     status: 'success' | 'error' | 'timeout';
     started_at: string;
+    estimated_input_tokens?: number;
+    estimated_output_tokens?: number;
+    estimated_cost_usd?: number;
+    output_size_chars?: number;
 }
 export interface MetricsSummary {
     total_dispatches: number;
     total_prompt_chars: number;
     total_duration_ms: number;
+    total_estimated_cost_usd?: number;
     by_stage: Record<string, {
         dispatches: number;
         duration_ms: number;
@@ -132,7 +155,7 @@ export interface PipelineState {
 }
 export interface BatchState {
     id: number;
-    status: 'pending' | 'in_progress' | 'completed' | 'error';
+    status: 'pending' | 'in_progress' | 'partial' | 'completed' | 'error';
     tasks: TaskState[];
 }
 export interface TaskState {
@@ -142,6 +165,8 @@ export interface TaskState {
     worktree_branch?: string;
     result_summary?: string;
     result_status?: 'success' | 'error' | 'timeout';
+    depends_on?: string[];
+    merged?: boolean;
 }
 export interface ReviewCycle {
     id: number;
@@ -149,6 +174,7 @@ export interface ReviewCycle {
     findings: Finding[];
     batch_id?: number;
     scope?: 'batch' | 'final';
+    tier?: string;
     triaged?: {
         accepted: Finding[];
         dismissed: Finding[];
@@ -161,5 +187,22 @@ export interface SessionInfo {
     started: string;
     last_updated: string;
     status: 'active' | 'complete' | 'stale';
+}
+export interface SessionComparisonEntry {
+    session_id: string;
+    pipeline_id: string;
+    stage: string;
+    total_dispatches: number;
+    total_duration_ms: number;
+    total_estimated_cost_usd: number;
+    started: string;
+}
+export interface SessionComparison {
+    sessions: SessionComparisonEntry[];
+    delta?: {
+        duration_ms: number;
+        dispatches: number;
+        estimated_cost_usd: number;
+    };
 }
 //# sourceMappingURL=types.d.ts.map
