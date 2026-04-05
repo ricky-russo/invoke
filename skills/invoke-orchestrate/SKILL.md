@@ -5,7 +5,7 @@ description: "MUST USE when an implementation plan has been approved and needs t
 
 # Invoke — Orchestrate Stage
 
-You are running the orchestrate stage. Your job is to break the approved plan into small, isolated, context-safe tasks grouped into sequential batches.
+You are running the orchestrate stage. Your job is to break the approved plan into small, isolated, context-safe tasks grouped into sequential batches, with explicit task dependencies where needed so DAG-aware runners can start downstream work as soon as prerequisites finish.
 
 ## Messaging
 
@@ -19,11 +19,25 @@ All `invoke_get_state` and `invoke_set_state` calls in this flow must include `s
 
 Call `invoke_get_state` with `session_id: <pipeline_id>` to verify we're at the orchestrate stage. Read the plan from `invoke_read_artifact` with `stage: "plans"`, `filename: "plan.md"`.
 
+If the state includes `spec`, read that artifact too (use the filename from `state.spec` with `stage: "specs"`). Use the approved spec text for strategy auto-detection. If `spec` is missing, fall back to the approved plan text.
+
 ### 2. Choose Build Strategy
 
 Read the config with `invoke_get_config` to see available strategies.
 
-Present available strategies using `AskUserQuestion` with `multiSelect: false`. Mark the default strategy (from `settings.default_strategy`) with "(Recommended)" in its label.
+Before presenting the strategy picker, tell the user that strategy auto-detection is available and which strategy it suggests.
+
+Use this inline heuristic for the suggestion (case-insensitive, based on the approved spec text; fall back to the plan text if needed):
+- If the text contains `bug`, `fix`, or `broken`, suggest `bug-fix`
+- If the text contains `prototype` or `spike`, suggest `prototype`
+- Otherwise, suggest `settings.default_strategy`
+
+Present available strategies using `AskUserQuestion` with `multiSelect: false`. Mark the suggested option in its label using the reason that matches the heuristic:
+- `Bug-fix (Recommended — detected bug fix keywords)`
+- `Prototype (Recommended — detected prototype keywords)`
+- `[Default strategy name] (Recommended — default from settings)`
+
+If the heuristic falls back to `settings.default_strategy`, still mention that auto-detection selected the default from settings before asking the question.
 
 ### 3. Break Down Tasks
 
@@ -35,28 +49,35 @@ Decompose the plan into tasks. Each task must be:
 
 For each task, define:
 - `task_id` — unique identifier (e.g., "auth-types", "auth-validate", "auth-middleware")
+- `depends_on` — optional array of prerequisite `task_id` values from this same task breakdown; include it when a task needs specific upstream outputs, omit it when the task can start immediately
 - `task_description` — what to build
 - `acceptance_criteria` — how to verify it's done
 - `relevant_files` — existing files the agent needs to read
 - `interfaces` — type signatures, function contracts the code must conform to
 
+Use the narrowest valid dependency set. If a task only needs one earlier task, set `depends_on` to that specific `task_id` instead of treating the whole earlier batch as a blocker.
+
 ### 4. Group into Batches
 
-Organize tasks into sequential batches:
-- **Batch 1** — foundational tasks (types, interfaces, core utilities) — all can run in parallel
-- **Batch 2** — depends on Batch 1 outputs — all can run in parallel
-- **Batch 3** — depends on Batch 2 outputs — etc.
+Organize tasks into sequential batches for backward compatibility, while also encoding the true dependency graph with `depends_on`:
+- **Batch 1** — foundational tasks with no prerequisites — all can run in parallel
+- **Batch 2** — tasks that depend on specific Batch 1 outputs
+- **Batch 3** — tasks that depend on specific Batch 1 and/or Batch 2 outputs — etc.
 
-Within each batch, tasks must be independent — no task in the same batch can depend on another task in the same batch.
+For simple cases, batches alone are enough and `depends_on` can be omitted. When a task has prerequisites, it must both:
+- live in a later batch than every task it depends on
+- list those prerequisite task IDs in `depends_on`
+
+Within each batch, tasks must still be independent — no task in the same batch can depend on another task in the same batch. The batch structure remains the compatibility layer for simple runners, while `depends_on` lets DAG-aware runners start a downstream task as soon as its prerequisites finish instead of waiting for the entire previous batch.
 
 ### 5. Present for Approval
 
 **Print the full task breakdown as text output first** so the user can read it:
 
 For each batch:
-> **Batch N** (parallel)
-> - Task: [id] — [description] (files: [list])
-> - Task: [id] — [description] (files: [list])
+> **Batch N** (parallel where dependencies allow)
+> - Task: [id] — [description] (files: [list], depends_on: [none or ids])
+> - Task: [id] — [description] (files: [list], depends_on: [none or ids])
 
 THEN, in a separate message, ask for approval using `AskUserQuestion`. Do NOT combine the breakdown and the approval prompt.
 
@@ -77,7 +98,24 @@ The format:
       "id": 1,
       "tasks": [
         {
-          "task_id": "task-id",
+          "task_id": "auth-types",
+          "role": "builder",
+          "subrole": "default",
+          "task_context": {
+            "task_description": "...",
+            "acceptance_criteria": "...",
+            "relevant_files": "...",
+            "interfaces": "..."
+          }
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "tasks": [
+        {
+          "task_id": "auth-middleware",
+          "depends_on": ["auth-types"],
           "role": "builder",
           "subrole": "default",
           "task_context": {
@@ -93,6 +131,8 @@ The format:
 }
 ```
 
+`depends_on` is optional. Keep the `batches` structure even when the dependency graph is simple.
+
 ### 7. Update State
 
 Call `invoke_set_state` with `session_id: <pipeline_id>` and:
@@ -106,6 +146,15 @@ The build stage skill will auto-trigger from here.
 - If a task touches more than 3 files, it's probably too big. Split it.
 - If a task requires understanding more than 500 lines of existing code, it's probably too big. Split it.
 - If you can't write clear acceptance criteria in 3-5 bullet points, the task is too vague. Refine it.
+
+## CRITICAL: Dependency Validation
+
+**Before finalizing the task breakdown, validate every dependency edge.**
+
+1. List every `task_id` in the task breakdown
+2. Verify every `depends_on` entry matches a real `task_id` in the same tasks file
+3. Reject self-dependencies and circular dependencies
+4. Keep every dependent task in a later batch than all task IDs referenced in its `depends_on`
 
 ## CRITICAL: File Conflict Prevention
 
