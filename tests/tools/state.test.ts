@@ -155,6 +155,47 @@ describe('StateManager', () => {
     expect(state!.batches[0].tasks[1].worktree_path).toBe('/tmp/invoke-worktree-task-2')
   })
 
+  it('serializes concurrent updateTask calls so task updates are not lost', async () => {
+    await stateManager.initialize('pipeline-123')
+    await stateManager.addBatch({
+      id: 1,
+      status: 'in_progress',
+      tasks: [
+        { id: 'task-1', status: 'pending' },
+        { id: 'task-2', status: 'pending' },
+      ],
+    })
+
+    let releaseFirstWrite: (() => void) | null = null
+    let markFirstWriteStarted: (() => void) | null = null
+    const firstWriteStarted = new Promise<void>(resolve => {
+      markFirstWriteStarted = resolve
+    })
+    const writeAtomic = (stateManager as any).writeAtomic.bind(stateManager)
+
+    vi.spyOn(stateManager as any, 'writeAtomic').mockImplementation(async (state: unknown) => {
+      if (!releaseFirstWrite) {
+        markFirstWriteStarted?.()
+        await new Promise<void>(resolve => {
+          releaseFirstWrite = resolve
+        })
+      }
+
+      return writeAtomic(state)
+    })
+
+    const firstUpdate = stateManager.updateTask(0, 'task-1', { status: 'running' })
+    await firstWriteStarted
+    const secondUpdate = stateManager.updateTask(0, 'task-2', { status: 'completed' })
+
+    releaseFirstWrite?.()
+    await Promise.all([firstUpdate, secondUpdate])
+
+    const state = await stateManager.get()
+    expect(state!.batches[0].tasks[0].status).toBe('running')
+    expect(state!.batches[0].tasks[1].status).toBe('completed')
+  })
+
   it('throws when updating task in nonexistent batch', async () => {
     await stateManager.initialize('pipeline-123')
     await expect(

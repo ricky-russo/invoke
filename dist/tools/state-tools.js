@@ -58,7 +58,8 @@ export function registerStateTools(server, stateManager, projectDir, sessionMana
             strategy: z.string().optional(),
             batches: z.array(z.object({
                 id: z.number(),
-                status: z.enum(['pending', 'in_progress', 'completed', 'error']),
+                status: z.enum(['pending', 'in_progress', 'partial', 'completed', 'error']),
+                merged_tasks: z.array(z.string()).optional(),
                 tasks: z.array(z.object({
                     id: z.string(),
                     status: z.enum(['pending', 'dispatched', 'running', 'completed', 'error', 'timeout']),
@@ -66,6 +67,7 @@ export function registerStateTools(server, stateManager, projectDir, sessionMana
                     worktree_branch: z.string().optional(),
                     result_summary: z.string().optional(),
                     result_status: z.enum(['success', 'error', 'timeout']).optional(),
+                    merged: z.boolean().optional(),
                 })),
             })).optional(),
             review_cycles: z.array(z.object({
@@ -74,6 +76,7 @@ export function registerStateTools(server, stateManager, projectDir, sessionMana
                 findings: z.array(z.any()),
                 batch_id: z.number().optional(),
                 scope: z.enum(['batch', 'final']).optional(),
+                tier: z.string().optional(),
                 triaged: z.object({
                     accepted: z.array(z.any()),
                     dismissed: z.array(z.any()),

@@ -4,6 +4,7 @@ export declare class StateManager {
     private tmpPath;
     private storageDir;
     private dirEnsured;
+    private writeQueue;
     constructor(projectDir: string, sessionDir?: string);
     get(): Promise<PipelineState | null>;
     initialize(pipelineId: string): Promise<PipelineState>;
@@ -13,6 +14,7 @@ export declare class StateManager {
     updateTask(batchIndex: number, taskId: string, updates: Partial<TaskState>): Promise<PipelineState>;
     getReviewCycleCount(batchId?: number): Promise<number>;
     reset(): Promise<void>;
+    private enqueueWrite;
     private writeAtomic;
 }
 //# sourceMappingURL=state.d.ts.map

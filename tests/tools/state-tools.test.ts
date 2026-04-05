@@ -94,7 +94,7 @@ describe('registerStateTools', () => {
     ).toBe(true)
   })
 
-  it('accepts batch_id and scope in invoke_set_state review_cycles', async () => {
+  it('accepts batch_id, scope, and tier in invoke_set_state review_cycles', async () => {
     const createSpy = vi.spyOn(sessionManager, 'create')
     const setStateTool = getTool('invoke_set_state')
     const input = {
@@ -107,6 +107,7 @@ describe('registerStateTools', () => {
           findings: [],
           batch_id: 2,
           scope: 'batch' as const,
+          tier: 'critical',
           triaged: {
             accepted: [],
             dismissed: [],
@@ -133,6 +134,7 @@ describe('registerStateTools', () => {
         findings: [],
         batch_id: 2,
         scope: 'batch',
+        tier: 'critical',
         triaged: {
           accepted: [],
           dismissed: [],
@@ -140,6 +142,63 @@ describe('registerStateTools', () => {
       },
     ])
     await expect(stateManager.get()).resolves.toBeNull()
+  })
+
+  it('accepts partial batch state and merged task flags in invoke_set_state', async () => {
+    const setStateTool = getTool('invoke_set_state')
+    const input = {
+      session_id: 'session-1',
+      pipeline_id: 'pipeline-123',
+      batches: [
+        {
+          id: 1,
+          status: 'partial' as const,
+          merged_tasks: ['task-1'],
+          tasks: [
+            {
+              id: 'task-1',
+              status: 'completed' as const,
+              result_status: 'success' as const,
+              merged: true,
+            },
+            {
+              id: 'task-2',
+              status: 'running' as const,
+            },
+          ],
+        },
+      ],
+    }
+
+    expect(setStateTool.config.inputSchema.safeParse(input).success).toBe(true)
+
+    const result = await setStateTool.handler(input)
+    expect(result.isError).toBeUndefined()
+
+    const sessionStateManager = new StateManager(
+      TEST_DIR,
+      sessionManager.resolve('session-1')
+    )
+    const state = await sessionStateManager.get()
+    expect(state?.batches).toEqual([
+      {
+        id: 1,
+        status: 'partial',
+        merged_tasks: ['task-1'],
+        tasks: [
+          {
+            id: 'task-1',
+            status: 'completed',
+            result_status: 'success',
+            merged: true,
+          },
+          {
+            id: 'task-2',
+            status: 'running',
+          },
+        ],
+      },
+    ])
   })
 
   it('returns session-scoped state when session_id is provided to invoke_get_state', async () => {

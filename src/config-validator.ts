@@ -1,6 +1,7 @@
-import { execSync } from 'child_process'
-import { access } from 'fs/promises'
+import { execFileSync } from 'child_process'
+import { access, readdir } from 'fs/promises'
 import path from 'path'
+import { fileURLToPath } from 'url'
 import type { InvokeConfig } from './types.js'
 
 // ---------------------------------------------------------------------------
@@ -18,6 +19,10 @@ export interface ValidationResult {
   valid: boolean
   warnings: ValidationWarning[]
 }
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
+const PACKAGE_ROOT = path.join(__dirname, '..')
+const DEFAULT_PRESETS_DIR = path.join(PACKAGE_ROOT, 'defaults', 'presets')
 
 // ---------------------------------------------------------------------------
 // Model Patterns
@@ -69,7 +74,7 @@ export function isValidModelForProvider(provider: string, model: string): boolea
 
 export function checkCliExists(cli: string): boolean {
   try {
-    execSync(`which ${cli}`, { stdio: 'pipe' })
+    execFileSync('which', [cli], { stdio: 'pipe' })
     return true
   } catch {
     return false
@@ -86,6 +91,58 @@ function suggestModel(provider: string, model: string): string | undefined {
   return suggestions[model]
 }
 
+async function pathExists(filePath: string): Promise<boolean> {
+  try {
+    await access(filePath)
+    return true
+  } catch {
+    return false
+  }
+}
+
+function toPresetFileName(presetName: string): string {
+  return /\.(ya?ml)$/i.test(presetName) ? presetName : `${presetName}.yaml`
+}
+
+async function listAvailablePresets(projectDir: string): Promise<string[]> {
+  const presetDirs = [
+    DEFAULT_PRESETS_DIR,
+    path.join(projectDir, '.invoke', 'presets'),
+  ]
+  const presetNames = new Set<string>()
+
+  for (const presetDir of presetDirs) {
+    if (!await pathExists(presetDir)) {
+      continue
+    }
+
+    const entries = await readdir(presetDir, { withFileTypes: true })
+    for (const entry of entries) {
+      if (!entry.isFile()) continue
+      if (!/\.(ya?ml)$/i.test(entry.name)) continue
+      presetNames.add(path.basename(entry.name, path.extname(entry.name)))
+    }
+  }
+
+  return [...presetNames].sort()
+}
+
+async function presetFileExists(projectDir: string, presetName: string): Promise<boolean> {
+  const presetFileName = toPresetFileName(presetName)
+  const presetPaths = [
+    path.join(DEFAULT_PRESETS_DIR, presetFileName),
+    path.join(projectDir, '.invoke', 'presets', presetFileName),
+  ]
+
+  for (const presetPath of presetPaths) {
+    if (await pathExists(presetPath)) {
+      return true
+    }
+  }
+
+  return false
+}
+
 // ---------------------------------------------------------------------------
 // validateConfig
 // ---------------------------------------------------------------------------
@@ -95,6 +152,8 @@ export async function validateConfig(
   projectDir: string,
 ): Promise<ValidationResult> {
   const warnings: ValidationWarning[] = []
+  const reviewerSubroles = new Set(Object.keys(config.roles.reviewer ?? {}))
+  const availablePresetNames = await listAvailablePresets(projectDir)
 
   // 1. CLI existence for each provider
   for (const [providerName, providerConfig] of Object.entries(config.providers)) {
@@ -121,11 +180,11 @@ export async function validateConfig(
   }
 
   // 3. Settings limits are sane when present
-  if (config.settings.max_review_cycles !== undefined && config.settings.max_review_cycles < 1) {
+  if (config.settings.max_review_cycles !== undefined && config.settings.max_review_cycles < 0) {
     warnings.push({
       level: 'error',
       path: 'settings.max_review_cycles',
-      message: 'max_review_cycles must be greater than or equal to 1.',
+      message: 'max_review_cycles must be greater than or equal to 0.',
     })
   }
 
@@ -147,9 +206,7 @@ export async function validateConfig(
         ? roleConfig.prompt
         : path.join(projectDir, roleConfig.prompt)
 
-      try {
-        await access(promptPath)
-      } catch {
+      if (!await pathExists(promptPath)) {
         warnings.push({
           level: 'error',
           path: `${rolePath}.prompt`,
@@ -204,6 +261,40 @@ export async function validateConfig(
         }
       }
     }
+  }
+
+  // 8. Review tiers reference existing reviewer subroles
+  for (const [tierIndex, tier] of (config.settings.review_tiers ?? []).entries()) {
+    for (const [reviewerIndex, reviewerName] of tier.reviewers.entries()) {
+      if (reviewerSubroles.has(reviewerName)) {
+        continue
+      }
+
+      warnings.push({
+        level: 'warning',
+        path: `settings.review_tiers[${tierIndex}].reviewers[${reviewerIndex}]`,
+        message: `Review tier '${tier.name}' references reviewer '${reviewerName}', but roles.reviewer.${reviewerName} is not configured.`,
+        suggestion: `Add roles.reviewer.${reviewerName} to .invoke/pipeline.yaml or update the reviewers listed for tier '${tier.name}'.`,
+      })
+    }
+  }
+
+  // 9. Active preset references resolve to an inline preset or a preset file
+  const activePreset = config.settings.preset
+  if (
+    activePreset
+    && !config.presets?.[activePreset]
+    && !await presetFileExists(projectDir, activePreset)
+  ) {
+    const presetFileName = toPresetFileName(activePreset)
+    warnings.push({
+      level: 'warning',
+      path: 'settings.preset',
+      message: `Preset '${activePreset}' does not have a matching inline preset or file in defaults/presets or .invoke/presets.`,
+      suggestion: availablePresetNames.length > 0
+        ? `Define presets.${activePreset} inline, create '.invoke/presets/${presetFileName}', or rename settings.preset to one of: ${availablePresetNames.join(', ')}.`
+        : `Define presets.${activePreset} inline, create '.invoke/presets/${presetFileName}', or add the preset file to defaults/presets.`,
+    })
   }
 
   const valid = !warnings.some(w => w.level === 'error')

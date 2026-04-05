@@ -56,9 +56,21 @@ Call `invoke_get_context` to check if context.md exists.
 5. THEN ask for approval using `AskUserQuestion`. Do NOT combine the draft and the approval prompt in the same message.
 6. If approved, save via `invoke_init_context`. If the user wants changes, revise and repeat from step 4.
 
-### 3. Dispatch Researchers
+### 3. Select Preset
 
-Read the pipeline config with `invoke_get_config` to see which researchers are available.
+Read the pipeline config with `invoke_get_config` and inspect `config.presets`.
+
+If one or more presets are available, present them using `AskUserQuestion` with `multiSelect: false` before any researcher selection. Include each preset's name as the option label and its description when available. If `settings.preset` is already set, mark that preset as the current/default choice in the question text. Include one option to continue without selecting a preset.
+
+After the user chooses:
+- If they picked a preset, call `invoke_update_config` with `operation: "update_settings"` and `settings: { preset: "<preset name>" }`.
+- If they chose to continue without a preset and `settings.preset` is currently set, leave it unchanged unless the user explicitly asks to clear it.
+
+Once preset handling is complete, continue to researcher selection.
+
+### 4. Dispatch Researchers
+
+Read the pipeline config with `invoke_get_config` again if needed to see which researchers are available after preset selection.
 
 Present the available researchers using `AskUserQuestion` with `multiSelect: true`. Each option's label is the subrole name, description includes provider(s), model(s), and effort level.
 
@@ -102,18 +114,18 @@ AskUserQuestion({
 
 Only the user decides when to skip — never make this decision yourself.
 
-### 4. Review Research
+### 5. Review Research
 
 Read the research reports from the batch results. Use them to inform your scoping questions.
 
-### 5. Ask Clarifying Questions
+### 6. Ask Clarifying Questions
 
 Using the research as context, ask clarifying questions **one at a time**:
 - Focus on decisions only the user can make (don't ask things the research already answered)
 - Use multiple choice when possible
 - Cover: purpose, constraints, success criteria, edge cases, non-functional requirements
 
-### 6. Produce Spec
+### 7. Produce Spec
 
 When scope is clear, write a spec document covering:
 - **Goal** — what we're building and why
@@ -128,13 +140,13 @@ Save the spec using `invoke_save_artifact`:
 - `stage: "specs"`
 - `filename: "YYYY-MM-DD-<slug>-spec.md"` (e.g., `2026-04-03-auth-middleware-spec.md`)
 
-### 7. Update State
+### 8. Update State
 
 Call `invoke_set_state` with `session_id: <pipeline_id>` and:
 - `current_stage: "scope"` (until user approves)
 - `spec: "specs/YYYY-MM-DD-<slug>-spec.md"`
 
-### 8. Get Approval
+### 9. Get Approval
 
 **Print the full spec as text output first** so the user can read it. THEN, in a separate message, ask for approval using `AskUserQuestion`. Do NOT combine the spec content and the approval prompt.
 

@@ -28432,6 +28432,45 @@ __export(config_exports, {
 });
 import { readFile } from "fs/promises";
 import path from "path";
+import { fileURLToPath } from "url";
+function isPlainObject3(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+function deepMerge(base, override) {
+  if (Array.isArray(base) || Array.isArray(override)) {
+    return override;
+  }
+  if (!isPlainObject3(base) || !isPlainObject3(override)) {
+    return override;
+  }
+  const merged = { ...base };
+  for (const [key, value] of Object.entries(override)) {
+    merged[key] = key in merged ? deepMerge(merged[key], value) : value;
+  }
+  return merged;
+}
+async function loadPresetConfig(projectDir, presetName) {
+  const presetPaths = [
+    path.join(projectDir, ".invoke", "presets", `${presetName}.yaml`),
+    path.join(PACKAGE_ROOT, "defaults", "presets", `${presetName}.yaml`)
+  ];
+  for (const presetPath of presetPaths) {
+    try {
+      const content = await readFile(presetPath, "utf-8");
+      return PresetConfigSchema.parse((0, import_yaml.parse)(content));
+    } catch (error48) {
+      if (error48.code === "ENOENT") {
+        continue;
+      }
+      throw new Error(
+        `Failed to load preset '${presetName}' from ${presetPath}: ${error48 instanceof Error ? error48.message : String(error48)}`
+      );
+    }
+  }
+  throw new Error(
+    `Preset '${presetName}' not found. Checked ${presetPaths.join(" and ")}.`
+  );
+}
 function normalizeConfig(raw) {
   const roles = {};
   for (const [roleGroup, subroles] of Object.entries(raw.roles)) {
@@ -28464,22 +28503,36 @@ function normalizeConfig(raw) {
     providers: raw.providers,
     roles,
     strategies: raw.strategies,
-    settings: raw.settings
+    settings: raw.settings,
+    presets: raw.presets
   };
 }
 async function loadConfig(projectDir) {
   const configPath = path.join(projectDir, ".invoke", "pipeline.yaml");
   const content = await readFile(configPath, "utf-8");
-  const raw = (0, import_yaml.parse)(content);
-  const validated = RawInvokeConfigSchema.parse(raw);
+  const raw = RawInvokeConfigSchema.parse((0, import_yaml.parse)(content));
+  let mergedConfig = raw;
+  if (raw.settings.preset) {
+    const preset = raw.presets?.[raw.settings.preset] ?? await loadPresetConfig(projectDir, raw.settings.preset);
+    mergedConfig = deepMerge(
+      {
+        settings: preset.settings ?? {},
+        presets: { [raw.settings.preset]: preset }
+      },
+      raw
+    );
+  }
+  const validated = InvokeConfigSchema.parse(mergedConfig);
   return normalizeConfig(validated);
 }
-var import_yaml, ProviderConfigSchema, ProviderEntrySchema, ProviderModeSchema, RawRoleConfigSchema, StrategyConfigSchema, SettingsSchema, RawInvokeConfigSchema;
+var import_yaml, __dirname, PACKAGE_ROOT, ProviderConfigSchema, ProviderEntrySchema, ProviderModeSchema, ReviewTierSchema, ReviewTiersSchema, RawRoleConfigSchema, StrategyConfigSchema, SettingsSchema, PresetConfigSchema, RawInvokeConfigSchema, InvokeConfigSchema;
 var init_config = __esm({
   "src/config.ts"() {
     "use strict";
     import_yaml = __toESM(require_dist2(), 1);
     init_zod();
+    __dirname = path.dirname(fileURLToPath(import.meta.url));
+    PACKAGE_ROOT = path.join(__dirname, "..");
     ProviderConfigSchema = external_exports3.object({
       cli: external_exports3.string(),
       args: external_exports3.array(external_exports3.string())
@@ -28491,6 +28544,22 @@ var init_config = __esm({
       timeout: external_exports3.number().positive().optional()
     });
     ProviderModeSchema = external_exports3.enum(["parallel", "fallback", "single"]);
+    ReviewTierSchema = external_exports3.object({
+      name: external_exports3.string(),
+      reviewers: external_exports3.array(external_exports3.string())
+    });
+    ReviewTiersSchema = external_exports3.union([
+      external_exports3.array(ReviewTierSchema),
+      external_exports3.record(external_exports3.string(), external_exports3.array(external_exports3.string()))
+    ]).transform((reviewTiers) => {
+      if (Array.isArray(reviewTiers)) {
+        return reviewTiers;
+      }
+      return Object.entries(reviewTiers).map(([name, reviewers]) => ({
+        name,
+        reviewers
+      }));
+    });
     RawRoleConfigSchema = external_exports3.object({
       prompt: external_exports3.string(),
       // Single-provider shorthand fields (optional)
@@ -28509,18 +28578,33 @@ var init_config = __esm({
       agent_timeout: external_exports3.number().positive(),
       commit_style: external_exports3.enum(["one-commit", "per-batch", "per-task", "custom"]),
       work_branch_prefix: external_exports3.string(),
+      preset: external_exports3.string().optional(),
       stale_session_days: external_exports3.number().positive().optional(),
       post_merge_commands: external_exports3.array(external_exports3.string()).optional(),
       max_parallel_agents: external_exports3.number().positive().optional(),
       default_provider_mode: ProviderModeSchema.optional(),
       max_dispatches: external_exports3.number().positive().optional(),
-      max_review_cycles: external_exports3.number().positive().optional()
+      max_review_cycles: external_exports3.number().nonnegative().optional(),
+      review_tiers: ReviewTiersSchema.optional()
+    });
+    PresetConfigSchema = external_exports3.object({
+      name: external_exports3.string().optional(),
+      description: external_exports3.string().optional(),
+      settings: SettingsSchema.partial().optional(),
+      researcher_selection: external_exports3.array(external_exports3.string()).optional(),
+      reviewer_selection: external_exports3.array(external_exports3.string()).optional(),
+      strategy_selection: external_exports3.array(external_exports3.string()).optional()
     });
     RawInvokeConfigSchema = external_exports3.object({
       providers: external_exports3.record(external_exports3.string(), ProviderConfigSchema),
       roles: external_exports3.record(external_exports3.string(), external_exports3.record(external_exports3.string(), RawRoleConfigSchema)),
       strategies: external_exports3.record(external_exports3.string(), StrategyConfigSchema),
-      settings: SettingsSchema
+      settings: SettingsSchema.partial(),
+      presets: external_exports3.record(external_exports3.string(), PresetConfigSchema).optional()
+    });
+    InvokeConfigSchema = RawInvokeConfigSchema.extend({
+      settings: SettingsSchema,
+      presets: external_exports3.record(external_exports3.string(), PresetConfigSchema).optional()
     });
   }
 });
@@ -38196,9 +38280,13 @@ var StdioServerTransport = class {
 init_config();
 
 // src/config-validator.ts
-import { execSync } from "child_process";
-import { access } from "fs/promises";
+import { execFileSync } from "child_process";
+import { access, readdir } from "fs/promises";
 import path2 from "path";
+import { fileURLToPath as fileURLToPath2 } from "url";
+var __dirname2 = path2.dirname(fileURLToPath2(import.meta.url));
+var PACKAGE_ROOT2 = path2.join(__dirname2, "..");
+var DEFAULT_PRESETS_DIR = path2.join(PACKAGE_ROOT2, "defaults", "presets");
 var MODEL_PATTERNS = {
   claude: [
     /^claude-[a-z]+-[\d-]+$/,
@@ -38233,7 +38321,7 @@ function isValidModelForProvider(provider, model) {
 }
 function checkCliExists(cli) {
   try {
-    execSync(`which ${cli}`, { stdio: "pipe" });
+    execFileSync("which", [cli], { stdio: "pipe" });
     return true;
   } catch {
     return false;
@@ -38244,8 +38332,53 @@ function suggestModel(provider, model) {
   if (!suggestions) return void 0;
   return suggestions[model];
 }
+async function pathExists(filePath) {
+  try {
+    await access(filePath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+function toPresetFileName(presetName) {
+  return /\.(ya?ml)$/i.test(presetName) ? presetName : `${presetName}.yaml`;
+}
+async function listAvailablePresets(projectDir) {
+  const presetDirs = [
+    DEFAULT_PRESETS_DIR,
+    path2.join(projectDir, ".invoke", "presets")
+  ];
+  const presetNames = /* @__PURE__ */ new Set();
+  for (const presetDir of presetDirs) {
+    if (!await pathExists(presetDir)) {
+      continue;
+    }
+    const entries = await readdir(presetDir, { withFileTypes: true });
+    for (const entry of entries) {
+      if (!entry.isFile()) continue;
+      if (!/\.(ya?ml)$/i.test(entry.name)) continue;
+      presetNames.add(path2.basename(entry.name, path2.extname(entry.name)));
+    }
+  }
+  return [...presetNames].sort();
+}
+async function presetFileExists(projectDir, presetName) {
+  const presetFileName = toPresetFileName(presetName);
+  const presetPaths = [
+    path2.join(DEFAULT_PRESETS_DIR, presetFileName),
+    path2.join(projectDir, ".invoke", "presets", presetFileName)
+  ];
+  for (const presetPath of presetPaths) {
+    if (await pathExists(presetPath)) {
+      return true;
+    }
+  }
+  return false;
+}
 async function validateConfig(config2, projectDir) {
   const warnings = [];
+  const reviewerSubroles = new Set(Object.keys(config2.roles.reviewer ?? {}));
+  const availablePresetNames = await listAvailablePresets(projectDir);
   for (const [providerName, providerConfig] of Object.entries(config2.providers)) {
     if (!checkCliExists(providerConfig.cli)) {
       warnings.push({
@@ -38266,11 +38399,11 @@ async function validateConfig(config2, projectDir) {
       suggestion: `Available strategies: ${available}`
     });
   }
-  if (config2.settings.max_review_cycles !== void 0 && config2.settings.max_review_cycles < 1) {
+  if (config2.settings.max_review_cycles !== void 0 && config2.settings.max_review_cycles < 0) {
     warnings.push({
       level: "error",
       path: "settings.max_review_cycles",
-      message: "max_review_cycles must be greater than or equal to 1."
+      message: "max_review_cycles must be greater than or equal to 0."
     });
   }
   if (config2.settings.max_dispatches !== void 0 && config2.settings.max_dispatches < 1) {
@@ -38284,9 +38417,7 @@ async function validateConfig(config2, projectDir) {
     for (const [subroleName, roleConfig] of Object.entries(subroles)) {
       const rolePath = `roles.${roleGroup}.${subroleName}`;
       const promptPath = path2.isAbsolute(roleConfig.prompt) ? roleConfig.prompt : path2.join(projectDir, roleConfig.prompt);
-      try {
-        await access(promptPath);
-      } catch {
+      if (!await pathExists(promptPath)) {
         warnings.push({
           level: "error",
           path: `${rolePath}.prompt`,
@@ -38331,6 +38462,29 @@ async function validateConfig(config2, projectDir) {
         }
       }
     }
+  }
+  for (const [tierIndex, tier] of (config2.settings.review_tiers ?? []).entries()) {
+    for (const [reviewerIndex, reviewerName] of tier.reviewers.entries()) {
+      if (reviewerSubroles.has(reviewerName)) {
+        continue;
+      }
+      warnings.push({
+        level: "warning",
+        path: `settings.review_tiers[${tierIndex}].reviewers[${reviewerIndex}]`,
+        message: `Review tier '${tier.name}' references reviewer '${reviewerName}', but roles.reviewer.${reviewerName} is not configured.`,
+        suggestion: `Add roles.reviewer.${reviewerName} to .invoke/pipeline.yaml or update the reviewers listed for tier '${tier.name}'.`
+      });
+    }
+  }
+  const activePreset = config2.settings.preset;
+  if (activePreset && !config2.presets?.[activePreset] && !await presetFileExists(projectDir, activePreset)) {
+    const presetFileName = toPresetFileName(activePreset);
+    warnings.push({
+      level: "warning",
+      path: "settings.preset",
+      message: `Preset '${activePreset}' does not have a matching inline preset or file in defaults/presets or .invoke/presets.`,
+      suggestion: availablePresetNames.length > 0 ? `Define presets.${activePreset} inline, create '.invoke/presets/${presetFileName}', or rename settings.preset to one of: ${availablePresetNames.join(", ")}.` : `Define presets.${activePreset} inline, create '.invoke/presets/${presetFileName}', or add the preset file to defaults/presets.`
+    });
   }
   const valid = !warnings.some((w) => w.level === "error");
   return { valid, warnings };
@@ -38540,35 +38694,171 @@ import { spawn } from "child_process";
 
 // src/dispatch/prompt-composer.ts
 import { readFile as readFile2 } from "fs/promises";
-import { existsSync } from "fs";
 import path3 from "path";
 var CONTEXT_MAX_LENGTH = 4e3;
+var CONTEXT_FILTER_ROLE_KEY = "__context_filter_role";
+var ALWAYS_INCLUDED_SECTION_KEYWORDS = ["purpose", "tech stack", "conventions", "constraints"];
+var ARCHITECTURE_SECTION_KEYWORD = "architecture";
+var COMPLETED_WORK_SECTION_KEYWORD = "completed work";
+function resolvePromptPath(projectDir, promptPath) {
+  return path3.isAbsolute(promptPath) ? promptPath : path3.join(projectDir, promptPath);
+}
+function truncateContext(context, maxLength) {
+  if (context.length <= maxLength) {
+    return context;
+  }
+  return context.slice(0, maxLength) + "\n\n(truncated)";
+}
+function inferRoleFromPromptPath(promptPath) {
+  const match = promptPath.match(/(?:^|\/)roles\/([^/]+)\//i);
+  return match?.[1]?.toLowerCase() ?? "";
+}
+function getContextPreamble(context) {
+  const firstSectionIndex = context.search(/^##\s+/m);
+  if (firstSectionIndex === -1) {
+    return context.trim();
+  }
+  return context.slice(0, firstSectionIndex).trim();
+}
+function extractKeywords(text) {
+  return new Set(text.toLowerCase().match(/[a-z0-9]+/g) ?? []);
+}
+function formatContextSection(section) {
+  return section.content ? `## ${section.header}
+
+${section.content}` : `## ${section.header}`;
+}
+function hasKeywordOverlap(header, taskKeywords) {
+  const headerKeywords = extractKeywords(header);
+  for (const keyword of headerKeywords) {
+    if (taskKeywords.has(keyword)) {
+      return true;
+    }
+  }
+  return false;
+}
+function shouldAlwaysIncludeSection(header) {
+  const normalizedHeader = header.toLowerCase();
+  return ALWAYS_INCLUDED_SECTION_KEYWORDS.some((keyword) => normalizedHeader.includes(keyword));
+}
+function shouldIncludeRoleSection(header, role) {
+  const normalizedHeader = header.toLowerCase();
+  if ((role === "builder" || role === "planner") && normalizedHeader.includes(ARCHITECTURE_SECTION_KEYWORD)) {
+    return true;
+  }
+  if (role === "reviewer" && normalizedHeader.includes(COMPLETED_WORK_SECTION_KEYWORD)) {
+    return true;
+  }
+  return false;
+}
+function buildTaskKeywordSet(taskContext) {
+  const values = Object.entries(taskContext).filter(([key]) => key !== CONTEXT_FILTER_ROLE_KEY).map(([, value]) => value).join(" ");
+  return extractKeywords(values);
+}
+function buildFilteredContext(context, sections, taskContext) {
+  const role = taskContext[CONTEXT_FILTER_ROLE_KEY]?.toLowerCase() ?? "";
+  const taskKeywords = buildTaskKeywordSet(taskContext);
+  const filteredSections = [];
+  const included = [];
+  const excluded = [];
+  for (const section of sections) {
+    const shouldInclude = shouldAlwaysIncludeSection(section.header) || shouldIncludeRoleSection(section.header, role) || hasKeywordOverlap(section.header, taskKeywords);
+    if (shouldInclude) {
+      filteredSections.push(section);
+      included.push(section.header);
+      continue;
+    }
+    excluded.push(section.header);
+  }
+  if (filteredSections.length === 0) {
+    return {
+      filtered: "",
+      included,
+      excluded
+    };
+  }
+  const preamble = getContextPreamble(context);
+  return {
+    filtered: [preamble, ...filteredSections.map(formatContextSection)].filter((part) => part.length > 0).join("\n\n").trim(),
+    included,
+    excluded
+  };
+}
+function parseContextSections(context) {
+  const headingRegex = /^##\s+(.+)$/gm;
+  const matches = Array.from(context.matchAll(headingRegex));
+  return matches.map((match, index) => {
+    const header = match[1].trim();
+    const contentStart = (match.index ?? 0) + match[0].length;
+    const contentEnd = index + 1 < matches.length ? matches[index + 1].index ?? context.length : context.length;
+    const content = context.slice(contentStart, contentEnd).trim();
+    return { header, content };
+  });
+}
+function filterContextSections(context, taskContext, maxLength = CONTEXT_MAX_LENGTH) {
+  const sections = parseContextSections(context);
+  if (context.length <= maxLength) {
+    return {
+      filtered: context,
+      included: sections.map((section) => section.header),
+      excluded: []
+    };
+  }
+  if (sections.length === 0) {
+    return {
+      filtered: truncateContext(context, maxLength),
+      included: [],
+      excluded: []
+    };
+  }
+  const filteredContext = buildFilteredContext(context, sections, taskContext);
+  if (!filteredContext.filtered) {
+    return {
+      ...filteredContext,
+      filtered: truncateContext(context, maxLength)
+    };
+  }
+  return {
+    ...filteredContext,
+    filtered: truncateContext(filteredContext.filtered, maxLength)
+  };
+}
 async function composePrompt(options) {
   const { projectDir, promptPath, strategyPath, taskContext } = options;
   const rolePrompt = await readFile2(
-    path3.join(projectDir, promptPath),
+    resolvePromptPath(projectDir, promptPath),
     "utf-8"
   );
   let composed = rolePrompt;
   if (strategyPath) {
     const strategyPrompt = await readFile2(
-      path3.join(projectDir, strategyPath),
+      resolvePromptPath(projectDir, strategyPath),
       "utf-8"
     );
     composed = composed + "\n\n---\n\n" + strategyPrompt;
   }
   const contextPath = path3.join(projectDir, ".invoke", "context.md");
   let projectContext = "";
-  if (existsSync(contextPath)) {
-    projectContext = await readFile2(contextPath, "utf-8");
-    if (projectContext.length > CONTEXT_MAX_LENGTH) {
-      projectContext = projectContext.slice(0, CONTEXT_MAX_LENGTH) + "\n\n(truncated)";
+  try {
+    const rawProjectContext = await readFile2(contextPath, "utf-8");
+    const contextFilter = filterContextSections(rawProjectContext, {
+      ...taskContext,
+      [CONTEXT_FILTER_ROLE_KEY]: inferRoleFromPromptPath(promptPath)
+    });
+    if (rawProjectContext.length > CONTEXT_MAX_LENGTH && (contextFilter.included.length > 0 || contextFilter.excluded.length > 0)) {
+      console.error("[prompt-composer] Filtered project context sections", {
+        included: contextFilter.included,
+        excluded: contextFilter.excluded
+      });
+    }
+    projectContext = contextFilter.filtered;
+  } catch (error48) {
+    if (error48.code !== "ENOENT") {
+      throw error48;
     }
   }
   composed = composed.replaceAll("{{project_context}}", projectContext);
-  for (const [key, value] of Object.entries(taskContext)) {
-    composed = composed.replaceAll(`{{${key}}}`, value);
-  }
+  composed = composed.replace(/\{\{(\w+)\}\}/g, (match, key) => taskContext[key] ?? match);
   return composed;
 }
 
@@ -38622,6 +38912,71 @@ function wordOverlap(textA, textB) {
 
 // src/dispatch/engine.ts
 init_config();
+
+// src/metrics/pricing.ts
+var MODEL_PRICING = {
+  "claude-opus-4-6": {
+    input: 15 / 1e6,
+    output: 75 / 1e6
+  },
+  "claude-sonnet-4-6": {
+    input: 3 / 1e6,
+    output: 15 / 1e6
+  },
+  "claude-haiku-4-5-20251001": {
+    input: 0.8 / 1e6,
+    output: 4 / 1e6
+  },
+  "gpt-5.4": {
+    input: 2 / 1e6,
+    output: 8 / 1e6
+  },
+  "gpt-4.1": {
+    input: 2 / 1e6,
+    output: 8 / 1e6
+  },
+  "o3-mini": {
+    input: 1.1 / 1e6,
+    output: 4.4 / 1e6
+  }
+};
+var MODEL_NAME_ALIASES = {
+  "opus-4.6": "claude-opus-4-6",
+  "opus-4-6": "claude-opus-4-6",
+  "sonnet-4.6": "claude-sonnet-4-6",
+  "sonnet-4-6": "claude-sonnet-4-6",
+  "haiku-4.5": "claude-haiku-4-5-20251001",
+  "haiku-4-5": "claude-haiku-4-5-20251001"
+};
+var CHARS_PER_TOKEN = {
+  prose: 4,
+  code: 3
+};
+function normalizeModelName(model) {
+  const normalized = model.trim().toLowerCase();
+  return MODEL_NAME_ALIASES[normalized] ?? normalized;
+}
+function charsToTokens(chars, contentType = "prose") {
+  return Math.ceil(chars / CHARS_PER_TOKEN[contentType]);
+}
+function estimateCost(model, inputChars, outputChars, contentType = "prose") {
+  const pricing = MODEL_PRICING[normalizeModelName(model)];
+  if (!pricing) {
+    return null;
+  }
+  const inputTokens = charsToTokens(inputChars, contentType);
+  const outputTokens = charsToTokens(outputChars, contentType);
+  const costUsd = Number(
+    (inputTokens * pricing.input + outputTokens * pricing.output).toFixed(6)
+  );
+  return {
+    input_tokens: inputTokens,
+    output_tokens: outputTokens,
+    cost_usd: costUsd
+  };
+}
+
+// src/dispatch/engine.ts
 var DispatchEngine = class {
   providers;
   parsers;
@@ -38639,9 +38994,11 @@ var DispatchEngine = class {
     if (!roleConfig) {
       throw new Error(`Role not found: ${request.role}.${request.subrole}`);
     }
+    const strategyPath = request.taskContext.strategy ? config2.strategies[request.taskContext.strategy]?.prompt : void 0;
     const prompt = await composePrompt({
       projectDir: this.projectDir,
       promptPath: roleConfig.prompt,
+      strategyPath,
       taskContext: request.taskContext
     });
     const workDir = request.workDir ?? this.projectDir;
@@ -38734,6 +39091,8 @@ var DispatchEngine = class {
         duration: duration3
       });
     }
+    const outputSizeChars = result.output.raw?.length ?? stdout.length;
+    const costEstimate = estimateCost(entry.model, prompt.length, outputSizeChars);
     this.onDispatchComplete?.({
       pipeline_id: request.taskContext.pipeline_id ?? null,
       stage: request.taskContext.stage ?? "unknown",
@@ -38743,9 +39102,13 @@ var DispatchEngine = class {
       model: entry.model,
       effort: entry.effort,
       prompt_size_chars: prompt.length,
+      output_size_chars: outputSizeChars,
       duration_ms: duration3,
       status: result.status,
-      started_at: startedAt
+      started_at: startedAt,
+      estimated_input_tokens: costEstimate?.input_tokens,
+      estimated_output_tokens: costEstimate?.output_tokens,
+      estimated_cost_usd: costEstimate?.cost_usd
     });
     return result;
   }
@@ -38828,6 +39191,61 @@ ${r.output.raw}`).join("\n\n")
 
 // src/dispatch/batch-manager.ts
 import { randomUUID } from "crypto";
+
+// src/dispatch/dag-scheduler.ts
+function buildExecutionLayers(tasks) {
+  if (tasks.length === 0) return [];
+  const taskMap = /* @__PURE__ */ new Map();
+  const inDegree = /* @__PURE__ */ new Map();
+  const dependents = /* @__PURE__ */ new Map();
+  for (const task of tasks) {
+    if (taskMap.has(task.id)) {
+      throw new Error(`Duplicate task ID detected: ${task.id}`);
+    }
+    taskMap.set(task.id, task);
+    inDegree.set(task.id, 0);
+    dependents.set(task.id, []);
+  }
+  for (const task of tasks) {
+    for (const dependencyId of task.depends_on ?? []) {
+      if (!taskMap.has(dependencyId)) {
+        throw new Error(`Task ${task.id} depends on unknown task ${dependencyId}`);
+      }
+      inDegree.set(task.id, inDegree.get(task.id) + 1);
+      dependents.get(dependencyId).push(task.id);
+    }
+  }
+  const layers = [];
+  let currentLayer = tasks.filter((task) => inDegree.get(task.id) === 0);
+  let scheduledCount = 0;
+  while (currentLayer.length > 0) {
+    layers.push(currentLayer);
+    scheduledCount += currentLayer.length;
+    const nextLayer = [];
+    for (const task of currentLayer) {
+      for (const dependentId of dependents.get(task.id) ?? []) {
+        const nextInDegree = inDegree.get(dependentId) - 1;
+        inDegree.set(dependentId, nextInDegree);
+        if (nextInDegree === 0) {
+          nextLayer.push(taskMap.get(dependentId));
+        }
+      }
+    }
+    currentLayer = nextLayer;
+  }
+  if (scheduledCount < tasks.length) {
+    throw new Error("Circular dependency detected in task graph");
+  }
+  return layers;
+}
+
+// src/dispatch/batch-manager.ts
+var persistedBatchStatusMap = {
+  running: "in_progress",
+  partial: "partial",
+  completed: "completed",
+  error: "error"
+};
 var BatchManager = class {
   constructor(engine, worktreeManager, stateManager) {
     this.engine = engine;
@@ -38838,6 +39256,7 @@ var BatchManager = class {
   worktreeManager;
   stateManager;
   batches = /* @__PURE__ */ new Map();
+  batchRegistrationQueue = Promise.resolve();
   async dispatchBatch(request) {
     const batchId = randomUUID().slice(0, 8);
     const agents = request.tasks.map((task) => ({
@@ -38845,19 +39264,31 @@ var BatchManager = class {
       status: "pending"
     }));
     const abortController = new AbortController();
-    const currentBatchIndex = this.stateManager ? await this.getPersistedBatchIndex() : this.batches.size;
-    const record2 = {
-      status: { batchId, status: "running", agents },
-      abortController,
-      batchIndex: currentBatchIndex
-    };
-    this.batches.set(batchId, record2);
-    this.runBatch(batchId, request, abortController.signal, currentBatchIndex);
+    const record2 = await this.enqueueBatchRegistration(async () => {
+      const currentBatchIndex = this.stateManager ? await this.getPersistedBatchIndex() : this.batches.size;
+      const nextRecord = {
+        status: { batchId, status: "running", agents },
+        abortController,
+        batchIndex: currentBatchIndex
+      };
+      await this.addPersistedBatch(currentBatchIndex, request);
+      this.batches.set(batchId, nextRecord);
+      return nextRecord;
+    });
+    void this.runBatch(batchId, request, abortController.signal, record2.batchIndex);
     return batchId;
   }
   async getPersistedBatchIndex() {
     const state = await this.stateManager?.get();
     return state ? state.batches.length : 0;
+  }
+  enqueueBatchRegistration(operation) {
+    const queuedOperation = this.batchRegistrationQueue.then(operation);
+    this.batchRegistrationQueue = queuedOperation.then(
+      () => void 0,
+      () => void 0
+    );
+    return queuedOperation;
   }
   getStatus(batchId) {
     const record2 = this.batches.get(batchId);
@@ -38866,12 +39297,12 @@ var BatchManager = class {
   async waitForStatus(batchId, waitSeconds) {
     const record2 = this.batches.get(batchId);
     if (!record2) return null;
-    if (record2.status.status !== "running") return record2.status;
+    if (this.isTerminalBatchStatus(record2.status.status)) return record2.status;
     const snapshot = record2.status.agents.map((a) => a.status).join(",");
     const deadline = Date.now() + waitSeconds * 1e3;
     while (Date.now() < deadline) {
       await new Promise((resolve) => setTimeout(resolve, 1e3));
-      if (record2.status.status !== "running") return record2.status;
+      if (this.isTerminalBatchStatus(record2.status.status)) return record2.status;
       const current = record2.status.agents.map((a) => a.status).join(",");
       if (current !== snapshot) return record2.status;
     }
@@ -38887,41 +39318,187 @@ var BatchManager = class {
         agent.status = "error";
       }
     }
+    this.stripRawOutput(record2.status.agents);
   }
-  async persistTaskStatus(batchIndex, taskId, status, result) {
+  isTerminalBatchStatus(status) {
+    return status === "completed" || status === "error" || status === "cancelled";
+  }
+  isTerminalAgentStatus(status) {
+    return status === "completed" || status === "error" || status === "timeout";
+  }
+  computeBatchStatus(agents) {
+    const allFinished = agents.every((agent) => this.isTerminalAgentStatus(agent.status));
+    if (allFinished) {
+      const anyError = agents.some((agent) => agent.status === "error" || agent.status === "timeout");
+      return anyError ? "error" : "completed";
+    }
+    const anyFinished = agents.some((agent) => this.isTerminalAgentStatus(agent.status));
+    return anyFinished ? "partial" : "running";
+  }
+  toPersistedBatchStatus(status) {
+    return persistedBatchStatusMap[status];
+  }
+  async addPersistedBatch(batchIndex, request) {
+    if (!this.stateManager) return;
+    await this.stateManager.addBatch({
+      id: batchIndex,
+      status: this.toPersistedBatchStatus("running"),
+      tasks: request.tasks.map((task) => {
+        const dependsOn = this.getTaskDependencies(task);
+        return {
+          id: task.taskId,
+          status: "pending",
+          ...dependsOn ? { depends_on: dependsOn } : {}
+        };
+      })
+    });
+  }
+  async persistTaskUpdate(batchIndex, taskId, updates) {
     if (!this.stateManager) return;
     try {
-      await this.stateManager.updateTask(batchIndex, taskId, {
-        status,
-        result_summary: result?.output.summary,
-        result_status: result?.status
+      await this.stateManager.updateTask(batchIndex, taskId, updates);
+    } catch {
+    }
+  }
+  async persistBatchStatus(batchIndex, status) {
+    if (!this.stateManager || status === "cancelled") return;
+    try {
+      await this.stateManager.updateBatch(batchIndex, {
+        status: this.toPersistedBatchStatus(status)
       });
     } catch {
     }
   }
+  async updateBatchStatus(record2) {
+    if (record2.status.status === "cancelled") return;
+    const nextStatus = this.computeBatchStatus(record2.status.agents);
+    if (record2.status.status === nextStatus) return;
+    record2.status.status = nextStatus;
+    if (this.isTerminalBatchStatus(nextStatus)) {
+      this.stripRawOutput(record2.status.agents);
+    }
+    await this.persistBatchStatus(record2.batchIndex, nextStatus);
+  }
+  async persistTaskStatus(batchIndex, taskId, status, result) {
+    await this.persistTaskUpdate(batchIndex, taskId, {
+      status,
+      result_summary: result?.output.summary,
+      result_status: result?.status
+    });
+  }
+  getTaskDependencies(task) {
+    if (task.depends_on && task.depends_on.length > 0) {
+      return task.depends_on;
+    }
+    const rawDependencies = task.taskContext.depends_on;
+    if (typeof rawDependencies !== "string") {
+      return void 0;
+    }
+    const trimmed = rawDependencies.trim();
+    if (!trimmed) {
+      return void 0;
+    }
+    if (trimmed.startsWith("[")) {
+      try {
+        const parsed = JSON.parse(trimmed);
+        if (Array.isArray(parsed)) {
+          const dependencies2 = parsed.filter(
+            (dependency) => typeof dependency === "string"
+          );
+          return dependencies2.length > 0 ? dependencies2 : void 0;
+        }
+      } catch {
+      }
+    }
+    const dependencies = trimmed.split(",").map((dependency) => dependency.trim()).filter(Boolean);
+    return dependencies.length > 0 ? dependencies : void 0;
+  }
+  async runLayer(tasks, maxParallel, signal, runTask) {
+    if (tasks.length === 0) return;
+    if (maxParallel > 0 && tasks.length > maxParallel) {
+      let active = 0;
+      let nextIndex = 0;
+      await new Promise((resolveAll) => {
+        const tryNext = () => {
+          while (active < maxParallel && nextIndex < tasks.length && !signal.aborted) {
+            const task = tasks[nextIndex++];
+            active++;
+            runTask(task).finally(() => {
+              active--;
+              if (signal.aborted && active === 0 || nextIndex >= tasks.length && active === 0) {
+                resolveAll();
+                return;
+              }
+              tryNext();
+            });
+          }
+          if (tasks.length === 0 || signal.aborted && active === 0 || nextIndex >= tasks.length && active === 0) {
+            resolveAll();
+          }
+        };
+        tryNext();
+      });
+      return;
+    }
+    await Promise.allSettled(tasks.map((task) => runTask(task)));
+  }
   async runBatch(batchId, request, signal, batchIndex) {
     const record2 = this.batches.get(batchId);
     const maxParallel = request.maxParallel ?? 0;
-    const runTask = async (task, index) => {
+    const scheduledTasks = request.tasks.map((task, index) => ({
+      ...task,
+      id: task.taskId,
+      index,
+      depends_on: this.getTaskDependencies(task)
+    }));
+    const taskIndexById = new Map(scheduledTasks.map((task) => [task.taskId, task.index]));
+    const settleTask = async (task, status, result) => {
+      const agentStatus = record2.status.agents[task.index];
+      agentStatus.status = status;
+      agentStatus.result = cloneAgentResult(result);
+      await this.persistTaskStatus(batchIndex, task.taskId, status, result);
+      await this.updateBatchStatus(record2);
+    };
+    const runTask = async (task) => {
       if (signal.aborted) return;
-      const agentStatus = record2.status.agents[index];
+      const failedDependencyId = task.depends_on?.find((dependencyId) => {
+        const dependencyIndex = taskIndexById.get(dependencyId);
+        if (dependencyIndex === void 0) {
+          return true;
+        }
+        const dependencyStatus = record2.status.agents[dependencyIndex];
+        return dependencyStatus.status !== "completed" || dependencyStatus.result?.status !== "success";
+      });
+      if (failedDependencyId) {
+        await settleTask(task, "error", {
+          role: task.role,
+          subrole: task.subrole,
+          provider: "unknown",
+          model: "unknown",
+          status: "error",
+          output: {
+            summary: `Prerequisite ${failedDependencyId} failed`
+          },
+          duration: 0
+        });
+        return;
+      }
+      const agentStatus = record2.status.agents[task.index];
       try {
         let workDir;
         if (request.createWorktrees) {
           agentStatus.status = "dispatched";
           await this.persistTaskStatus(batchIndex, task.taskId, "dispatched");
+          if (signal.aborted) return;
           const wt = await this.worktreeManager.create(task.taskId);
+          if (signal.aborted) return;
           workDir = wt.worktreePath;
-          if (this.stateManager) {
-            try {
-              await this.stateManager.updateTask(batchIndex, task.taskId, {
-                worktree_path: wt.worktreePath,
-                worktree_branch: wt.branch
-              });
-            } catch {
-            }
-          }
+          await this.persistTaskUpdate(batchIndex, task.taskId, {
+            worktree_path: wt.worktreePath,
+            worktree_branch: wt.branch
+          });
         }
+        if (signal.aborted) return;
         agentStatus.status = "running";
         await this.persistTaskStatus(batchIndex, task.taskId, "running");
         if (signal.aborted) return;
@@ -38931,11 +39508,18 @@ var BatchManager = class {
           taskContext: task.taskContext,
           workDir
         });
-        agentStatus.status = "completed";
-        agentStatus.result = result;
-        await this.persistTaskStatus(batchIndex, task.taskId, "completed", result);
+        if (signal.aborted) return;
+        if (result.status === "success") {
+          await settleTask(task, "completed", result);
+          return;
+        }
+        if (result.status === "timeout") {
+          await settleTask(task, "timeout", result);
+          return;
+        }
+        await settleTask(task, "error", result);
       } catch (err) {
-        const errorResult = {
+        await settleTask(task, "error", {
           role: task.role,
           subrole: task.subrole,
           provider: "unknown",
@@ -38946,60 +39530,51 @@ var BatchManager = class {
             raw: String(err)
           },
           duration: 0
-        };
-        agentStatus.status = "error";
-        agentStatus.result = errorResult;
-        await this.persistTaskStatus(batchIndex, task.taskId, "error", errorResult);
+        });
       }
     };
-    if (maxParallel > 0 && request.tasks.length > maxParallel) {
-      let active = 0;
-      let nextIndex = 0;
-      await new Promise((resolveAll) => {
-        const tryNext = () => {
-          while (active < maxParallel && nextIndex < request.tasks.length && !signal.aborted) {
-            const idx = nextIndex++;
-            active++;
-            runTask(request.tasks[idx], idx).finally(() => {
-              active--;
-              if (nextIndex >= request.tasks.length && active === 0) {
-                resolveAll();
-              } else {
-                tryNext();
-              }
-            });
-          }
-          if (request.tasks.length === 0 || nextIndex >= request.tasks.length && active === 0) {
-            resolveAll();
-          }
-        };
-        tryNext();
-      });
-    } else {
-      const promises = request.tasks.map((task, index) => runTask(task, index));
-      await Promise.allSettled(promises);
-    }
-    if (!signal.aborted) {
-      const allDone = record2.status.agents.every(
-        (a) => a.status === "completed" || a.status === "error" || a.status === "timeout"
-      );
-      const anyError = record2.status.agents.some((a) => a.status === "error" || a.status === "timeout");
-      record2.status.status = allDone ? anyError ? "error" : "completed" : "running";
-      if (this.stateManager) {
-        try {
-          await this.stateManager.updateBatch(batchIndex, {
-            status: record2.status.status === "completed" ? "completed" : record2.status.status === "error" ? "error" : "in_progress"
-          });
-        } catch {
+    try {
+      const hasDependencies = scheduledTasks.some((task) => (task.depends_on?.length ?? 0) > 0);
+      if (hasDependencies) {
+        const executionLayers = buildExecutionLayers(scheduledTasks);
+        for (const layer of executionLayers) {
+          if (signal.aborted) break;
+          await this.runLayer(layer, maxParallel, signal, runTask);
         }
+      } else {
+        await this.runLayer(scheduledTasks, maxParallel, signal, runTask);
+      }
+      if (!signal.aborted) {
+        await this.updateBatchStatus(record2);
+      }
+    } catch {
+      if (record2.status.status !== "cancelled") {
+        record2.status.status = "error";
+        this.stripRawOutput(record2.status.agents);
+        await this.persistBatchStatus(batchIndex, "error");
+      }
+    }
+  }
+  stripRawOutput(agents) {
+    for (const agent of agents) {
+      if (agent.result) {
+        agent.result.output.raw = void 0;
       }
     }
   }
 };
+function cloneAgentResult(result) {
+  return {
+    ...result,
+    output: {
+      ...result.output
+    }
+  };
+}
 
 // src/worktree/manager.ts
-import { execSync as execSync2 } from "child_process";
-import { existsSync as existsSync2 } from "fs";
+import { execSync } from "child_process";
+import { existsSync } from "fs";
 import path4 from "path";
 import os from "os";
 var WorktreeManager = class {
@@ -39011,7 +39586,7 @@ var WorktreeManager = class {
   async create(taskId) {
     const branch = `invoke-wt-${taskId}`;
     const worktreePath = path4.join(os.tmpdir(), `invoke-worktree-${taskId}-${Date.now()}`);
-    execSync2(
+    execSync(
       `git worktree add "${worktreePath}" -b "${branch}"`,
       { cwd: this.repoDir, stdio: "pipe" }
     );
@@ -39025,26 +39600,26 @@ var WorktreeManager = class {
       throw new Error(`No worktree found for task: ${taskId}`);
     }
     try {
-      execSync2("git add -A", { cwd: info.worktreePath, stdio: "pipe" });
-      execSync2(
+      execSync("git add -A", { cwd: info.worktreePath, stdio: "pipe" });
+      execSync(
         `git diff --cached --quiet`,
         { cwd: info.worktreePath, stdio: "pipe" }
       );
     } catch {
       try {
-        execSync2(
+        execSync(
           `git commit -m "agent work: ${taskId}"`,
           { cwd: info.worktreePath, stdio: "pipe" }
         );
       } catch {
       }
     }
-    execSync2(
+    execSync(
       `git merge --squash "${info.branch}"`,
       { cwd: this.repoDir, stdio: "pipe" }
     );
     const message = commitMessage ?? `feat: ${taskId}`;
-    execSync2(
+    execSync(
       `git commit -m "${message.replace(/"/g, '\\"')}"`,
       { cwd: this.repoDir, stdio: "pipe" }
     );
@@ -39052,14 +39627,14 @@ var WorktreeManager = class {
   async cleanup(taskId) {
     const info = this.worktrees.get(taskId);
     if (!info) return;
-    if (existsSync2(info.worktreePath)) {
-      execSync2(
+    if (existsSync(info.worktreePath)) {
+      execSync(
         `git worktree remove "${info.worktreePath}" --force`,
         { cwd: this.repoDir, stdio: "pipe" }
       );
     }
     try {
-      execSync2(
+      execSync(
         `git branch -D "${info.branch}"`,
         { cwd: this.repoDir, stdio: "pipe" }
       );
@@ -39077,7 +39652,7 @@ var WorktreeManager = class {
   }
   async discoverOrphaned() {
     try {
-      const output = execSync2("git worktree list --porcelain", {
+      const output = execSync("git worktree list --porcelain", {
         cwd: this.repoDir,
         stdio: "pipe"
       }).toString();
@@ -39104,92 +39679,107 @@ var WorktreeManager = class {
 };
 
 // src/metrics/manager.ts
-import { existsSync as existsSync4 } from "fs";
+import { existsSync as existsSync3 } from "fs";
 import { mkdir as mkdir2, readFile as readFile4, rename as rename2, writeFile as writeFile2 } from "fs/promises";
 import path6 from "path";
 
 // src/tools/state.ts
 import { mkdir, readFile as readFile3, writeFile, rename } from "fs/promises";
-import { existsSync as existsSync3 } from "fs";
+import { existsSync as existsSync2 } from "fs";
 import path5 from "path";
 var StateManager = class {
   statePath;
   tmpPath;
   storageDir;
   dirEnsured = false;
+  writeQueue = Promise.resolve();
   constructor(projectDir, sessionDir) {
     this.storageDir = sessionDir ?? path5.join(projectDir, ".invoke");
     this.statePath = path5.join(this.storageDir, "state.json");
     this.tmpPath = path5.join(this.storageDir, "state.json.tmp");
   }
   async get() {
-    if (!existsSync3(this.statePath)) {
+    if (!existsSync2(this.statePath)) {
       return null;
     }
     const content = await readFile3(this.statePath, "utf-8");
     return JSON.parse(content);
   }
   async initialize(pipelineId) {
-    const now = (/* @__PURE__ */ new Date()).toISOString();
-    const state = {
-      pipeline_id: pipelineId,
-      started: now,
-      last_updated: now,
-      current_stage: "scope",
-      batches: [],
-      review_cycles: []
-    };
-    await this.writeAtomic(state);
-    return state;
+    return this.enqueueWrite(async () => {
+      const now = (/* @__PURE__ */ new Date()).toISOString();
+      const state = {
+        pipeline_id: pipelineId,
+        started: now,
+        last_updated: now,
+        current_stage: "scope",
+        batches: [],
+        review_cycles: []
+      };
+      await this.writeAtomic(state);
+      return state;
+    });
   }
   async update(updates) {
-    const current = await this.get();
-    if (!current) {
-      throw new Error("No active pipeline. Call initialize() first.");
-    }
-    const updated = { ...current, ...updates, last_updated: (/* @__PURE__ */ new Date()).toISOString() };
-    await this.writeAtomic(updated);
-    return updated;
+    return this.enqueueWrite(async () => {
+      const current = await this.get();
+      if (!current) {
+        throw new Error("No active pipeline. Call initialize() first.");
+      }
+      const updated = { ...current, ...updates, last_updated: (/* @__PURE__ */ new Date()).toISOString() };
+      await this.writeAtomic(updated);
+      return updated;
+    });
   }
   async addBatch(batch) {
-    const current = await this.get();
-    if (!current) {
-      throw new Error("No active pipeline. Call initialize() first.");
-    }
-    current.batches.push(batch);
-    current.last_updated = (/* @__PURE__ */ new Date()).toISOString();
-    await this.writeAtomic(current);
-    return current;
+    return this.enqueueWrite(async () => {
+      const current = await this.get();
+      if (!current) {
+        throw new Error("No active pipeline. Call initialize() first.");
+      }
+      current.batches.push(batch);
+      current.last_updated = (/* @__PURE__ */ new Date()).toISOString();
+      await this.writeAtomic(current);
+      return current;
+    });
   }
   async updateBatch(batchIndex, updates) {
-    const current = await this.get();
-    if (!current) {
-      throw new Error("No active pipeline. Call initialize() first.");
-    }
-    if (batchIndex >= current.batches.length) {
-      throw new Error(`Batch index ${batchIndex} out of range (${current.batches.length} batches)`);
-    }
-    current.batches[batchIndex] = { ...current.batches[batchIndex], ...updates };
-    current.last_updated = (/* @__PURE__ */ new Date()).toISOString();
-    await this.writeAtomic(current);
-    return current;
+    return this.enqueueWrite(async () => {
+      const current = await this.get();
+      if (!current) {
+        throw new Error("No active pipeline. Call initialize() first.");
+      }
+      if (batchIndex >= current.batches.length) {
+        throw new Error(
+          `Batch index ${batchIndex} out of range (${current.batches.length} batches)`
+        );
+      }
+      current.batches[batchIndex] = { ...current.batches[batchIndex], ...updates };
+      current.last_updated = (/* @__PURE__ */ new Date()).toISOString();
+      await this.writeAtomic(current);
+      return current;
+    });
   }
   async updateTask(batchIndex, taskId, updates) {
-    const current = await this.get();
-    if (!current) {
-      throw new Error("No active pipeline. Call initialize() first.");
-    }
-    if (batchIndex >= current.batches.length) {
-      throw new Error(`Batch index ${batchIndex} out of range (${current.batches.length} batches)`);
-    }
-    const task = current.batches[batchIndex].tasks.find((t) => t.id === taskId);
-    if (!task) {
-      throw new Error(`Task '${taskId}' not found in batch ${batchIndex}`);
-    }
-    Object.assign(task, updates);
-    current.last_updated = (/* @__PURE__ */ new Date()).toISOString();
-    await this.writeAtomic(current);
-    return current;
+    return this.enqueueWrite(async () => {
+      const current = await this.get();
+      if (!current) {
+        throw new Error("No active pipeline. Call initialize() first.");
+      }
+      if (batchIndex >= current.batches.length) {
+        throw new Error(
+          `Batch index ${batchIndex} out of range (${current.batches.length} batches)`
+        );
+      }
+      const task = current.batches[batchIndex].tasks.find((t) => t.id === taskId);
+      if (!task) {
+        throw new Error(`Task '${taskId}' not found in batch ${batchIndex}`);
+      }
+      Object.assign(task, updates);
+      current.last_updated = (/* @__PURE__ */ new Date()).toISOString();
+      await this.writeAtomic(current);
+      return current;
+    });
   }
   async getReviewCycleCount(batchId) {
     const state = await this.get();
@@ -39200,10 +39790,20 @@ var StateManager = class {
     return state.review_cycles.length;
   }
   async reset() {
-    if (existsSync3(this.statePath)) {
-      const { unlink: unlink2 } = await import("fs/promises");
-      await unlink2(this.statePath);
-    }
+    await this.enqueueWrite(async () => {
+      if (existsSync2(this.statePath)) {
+        const { unlink: unlink2 } = await import("fs/promises");
+        await unlink2(this.statePath);
+      }
+    });
+  }
+  enqueueWrite(operation) {
+    const queuedOperation = this.writeQueue.then(operation);
+    this.writeQueue = queuedOperation.then(
+      () => void 0,
+      () => void 0
+    );
+    return queuedOperation;
   }
   async writeAtomic(state) {
     if (!this.dirEnsured) {
@@ -39217,6 +39817,8 @@ var StateManager = class {
 };
 
 // src/metrics/manager.ts
+var COST_PRECISION = 1e9;
+var FLUSH_DEBOUNCE_MS = 100;
 var MetricsManager = class {
   constructor(projectDir, sessionDir) {
     this.projectDir = projectDir;
@@ -39227,7 +39829,6 @@ var MetricsManager = class {
     this.beforeExitHandler = () => {
       void this.flushPendingWrites();
     };
-    process.on("beforeExit", this.beforeExitHandler);
   }
   projectDir;
   metricsPath;
@@ -39238,9 +39839,12 @@ var MetricsManager = class {
   loaded = false;
   loadPromise = null;
   writeChain = Promise.resolve();
+  flushTimeout = null;
   dirEnsured = false;
+  beforeExitRegistered = false;
   record(metric) {
     try {
+      this.ensureBeforeExitHandler();
       this.metrics.push(metric);
       this.queueFlush();
     } catch (error48) {
@@ -39267,30 +39871,37 @@ var MetricsManager = class {
       total_dispatches: metrics.length,
       total_prompt_chars: 0,
       total_duration_ms: 0,
+      total_estimated_cost_usd: 0,
       by_stage: {},
       by_provider_model: {}
     };
     for (const metric of metrics) {
+      const cost = normalizeCost(metric.estimated_cost_usd ?? 0);
       summary.total_prompt_chars += metric.prompt_size_chars;
       summary.total_duration_ms += metric.duration_ms;
+      summary.total_estimated_cost_usd = normalizeCost(summary.total_estimated_cost_usd + cost);
       const stageEntry = summary.by_stage[metric.stage] ?? {
         dispatches: 0,
         duration_ms: 0,
-        prompt_chars: 0
+        prompt_chars: 0,
+        estimated_cost_usd: 0
       };
       stageEntry.dispatches += 1;
       stageEntry.duration_ms += metric.duration_ms;
       stageEntry.prompt_chars += metric.prompt_size_chars;
+      stageEntry.estimated_cost_usd = normalizeCost(stageEntry.estimated_cost_usd + cost);
       summary.by_stage[metric.stage] = stageEntry;
       const providerModelKey = `${metric.provider}:${metric.model}`;
       const providerEntry = summary.by_provider_model[providerModelKey] ?? {
         dispatches: 0,
         duration_ms: 0,
-        prompt_chars: 0
+        prompt_chars: 0,
+        estimated_cost_usd: 0
       };
       providerEntry.dispatches += 1;
       providerEntry.duration_ms += metric.duration_ms;
       providerEntry.prompt_chars += metric.prompt_size_chars;
+      providerEntry.estimated_cost_usd = normalizeCost(providerEntry.estimated_cost_usd + cost);
       summary.by_provider_model[providerModelKey] = providerEntry;
     }
     return summary;
@@ -39306,6 +39917,15 @@ var MetricsManager = class {
     };
   }
   queueFlush() {
+    if (this.flushTimeout) {
+      clearTimeout(this.flushTimeout);
+    }
+    this.flushTimeout = setTimeout(() => {
+      this.flushTimeout = null;
+      this.enqueueFlush();
+    }, FLUSH_DEBOUNCE_MS);
+  }
+  enqueueFlush() {
     this.writeChain = this.writeChain.then(async () => {
       await this.ensureLoaded();
       await this.writeAtomic(this.metrics);
@@ -39314,6 +39934,11 @@ var MetricsManager = class {
     });
   }
   async flushPendingWrites() {
+    if (this.flushTimeout) {
+      clearTimeout(this.flushTimeout);
+      this.flushTimeout = null;
+      this.enqueueFlush();
+    }
     try {
       await this.writeChain;
     } catch (error48) {
@@ -39332,7 +39957,7 @@ var MetricsManager = class {
     await this.loadPromise;
   }
   async loadFromDisk() {
-    if (!existsSync4(this.metricsPath)) {
+    if (!existsSync3(this.metricsPath)) {
       this.loaded = true;
       return;
     }
@@ -39355,11 +39980,21 @@ var MetricsManager = class {
       `Failed to write metrics: ${error48 instanceof Error ? error48.message : String(error48)}`
     );
   }
+  ensureBeforeExitHandler() {
+    if (this.beforeExitRegistered) {
+      return;
+    }
+    process.on("beforeExit", this.beforeExitHandler);
+    this.beforeExitRegistered = true;
+  }
 };
+function normalizeCost(value) {
+  return Math.round(value * COST_PRECISION) / COST_PRECISION;
+}
 
 // src/session/manager.ts
-import { existsSync as existsSync5 } from "fs";
-import { mkdir as mkdir3, readFile as readFile5, readdir, rename as rename3, rm } from "fs/promises";
+import { existsSync as existsSync4 } from "fs";
+import { mkdir as mkdir3, readFile as readFile5, readdir as readdir2, rename as rename3, rm } from "fs/promises";
 import path7 from "path";
 var MS_PER_DAY = 24 * 60 * 60 * 1e3;
 var SessionManager = class {
@@ -39378,16 +40013,16 @@ var SessionManager = class {
   resolve(sessionId) {
     this.validateSessionId(sessionId);
     const sessionDir = this.getSessionDir(sessionId);
-    if (!existsSync5(sessionDir)) {
+    if (!existsSync4(sessionDir)) {
       throw new Error(`Session '${sessionId}' does not exist`);
     }
     return sessionDir;
   }
   async list(staleDays = 7) {
-    if (!existsSync5(this.sessionsDir)) {
+    if (!existsSync4(this.sessionsDir)) {
       return [];
     }
-    const entries = await readdir(this.sessionsDir, { withFileTypes: true });
+    const entries = await readdir2(this.sessionsDir, { withFileTypes: true });
     const sessions = await Promise.all(
       entries.filter((entry) => entry.isDirectory()).map(async (entry) => this.readSessionInfo(entry.name, staleDays))
     );
@@ -39400,7 +40035,7 @@ var SessionManager = class {
   }
   async migrate() {
     const legacyStatePath = this.getLegacyStatePath();
-    if (!existsSync5(legacyStatePath)) {
+    if (!existsSync4(legacyStatePath)) {
       return { migrated: false };
     }
     const state = JSON.parse(await readFile5(legacyStatePath, "utf-8"));
@@ -39421,7 +40056,7 @@ var SessionManager = class {
       throw error48;
     }
     const legacyMetricsPath = this.getLegacyMetricsPath();
-    if (existsSync5(legacyMetricsPath)) {
+    if (existsSync4(legacyMetricsPath)) {
       try {
         await rename3(legacyMetricsPath, path7.join(sessionDir, "metrics.json"));
       } catch (error48) {
@@ -39438,7 +40073,7 @@ var SessionManager = class {
   }
   exists(sessionId) {
     this.validateSessionId(sessionId);
-    return existsSync5(this.getSessionDir(sessionId));
+    return existsSync4(this.getSessionDir(sessionId));
   }
   getSessionDir(sessionId) {
     return path7.join(this.sessionsDir, sessionId);
@@ -39458,7 +40093,7 @@ var SessionManager = class {
   }
   async readSessionInfo(sessionId, staleDays = 7) {
     const statePath = this.getStatePath(sessionId);
-    if (!existsSync5(statePath)) {
+    if (!existsSync4(statePath)) {
       return null;
     }
     const state = await this.readState(sessionId);
@@ -39485,7 +40120,7 @@ var SessionManager = class {
 };
 
 // src/tools/artifacts.ts
-import { readFile as readFile6, writeFile as writeFile3, mkdir as mkdir4, readdir as readdir2, unlink } from "fs/promises";
+import { readFile as readFile6, writeFile as writeFile3, mkdir as mkdir4, readdir as readdir3, unlink } from "fs/promises";
 import path8 from "path";
 
 // src/session/lock.ts
@@ -39525,7 +40160,7 @@ var ArtifactManager = class {
   async list(stage) {
     const dir = path8.join(this.baseDir, stage);
     try {
-      return await readdir2(dir);
+      return await readdir3(dir);
     } catch {
       return [];
     }
@@ -39541,18 +40176,18 @@ init_zod();
 init_config();
 
 // src/init.ts
-import { cp, mkdir as mkdir5, readdir as readdir3 } from "fs/promises";
-import { existsSync as existsSync6 } from "fs";
+import { cp, mkdir as mkdir5, readdir as readdir4 } from "fs/promises";
+import { existsSync as existsSync5 } from "fs";
 import path9 from "path";
-import { fileURLToPath } from "url";
-var __dirname = path9.dirname(fileURLToPath(import.meta.url));
-var PACKAGE_ROOT = path9.join(__dirname, "..");
+import { fileURLToPath as fileURLToPath3 } from "url";
+var __dirname3 = path9.dirname(fileURLToPath3(import.meta.url));
+var PACKAGE_ROOT3 = path9.join(__dirname3, "..");
 async function initProject(projectDir) {
   const invokeDir = path9.join(projectDir, ".invoke");
-  const defaultsDir = path9.join(PACKAGE_ROOT, "defaults");
+  const defaultsDir = path9.join(PACKAGE_ROOT3, "defaults");
   await mkdir5(invokeDir, { recursive: true });
   const configDest = path9.join(invokeDir, "pipeline.yaml");
-  if (!existsSync6(configDest)) {
+  if (!existsSync5(configDest)) {
     await cp(path9.join(defaultsDir, "pipeline.yaml"), configDest);
   }
   await copyDefaults(path9.join(defaultsDir, "roles"), path9.join(invokeDir, "roles"));
@@ -39562,15 +40197,15 @@ async function initProject(projectDir) {
   await mkdir5(path9.join(invokeDir, "reviews"), { recursive: true });
 }
 async function copyDefaults(srcDir, destDir) {
-  if (!existsSync6(srcDir)) return;
+  if (!existsSync5(srcDir)) return;
   await mkdir5(destDir, { recursive: true });
-  const entries = await readdir3(srcDir, { withFileTypes: true });
+  const entries = await readdir4(srcDir, { withFileTypes: true });
   for (const entry of entries) {
     const srcPath = path9.join(srcDir, entry.name);
     const destPath = path9.join(destDir, entry.name);
     if (entry.isDirectory()) {
       await copyDefaults(srcPath, destPath);
-    } else if (!existsSync6(destPath)) {
+    } else if (!existsSync5(destPath)) {
       await cp(srcPath, destPath);
     }
   }
@@ -39811,13 +40446,13 @@ function registerDispatchTools(server, engine, batchManager, projectDir, metrics
 init_zod();
 
 // src/tools/post-merge.ts
-import { execSync as execSync3 } from "child_process";
+import { execSync as execSync2 } from "child_process";
 function runPostMergeCommands(config2, projectDir) {
   const commands = config2.settings.post_merge_commands ?? [];
   const results = [];
   for (const command of commands) {
     try {
-      const output = execSync3(command, {
+      const output = execSync2(command, {
         cwd: projectDir,
         stdio: "pipe",
         timeout: 6e4
@@ -39932,13 +40567,16 @@ function registerSessionTools(server, sessionManager, projectDir) {
     "invoke_list_sessions",
     {
       description: "List all pipeline sessions.",
-      inputSchema: external_exports3.object({})
+      inputSchema: external_exports3.object({
+        withMetrics: external_exports3.boolean().optional().describe("Include dispatch count, duration, and estimated cost per session")
+      })
     },
-    async () => {
+    async ({ withMetrics }) => {
       try {
         const sessions = await getSessionsWithStatus(sessionManager, projectDir);
+        const responseSessions = withMetrics ? await addSessionMetricsSummaries(sessions, sessionManager, projectDir) : sessions;
         return {
-          content: [{ type: "text", text: JSON.stringify(sessions, null, 2) }]
+          content: [{ type: "text", text: JSON.stringify(responseSessions, null, 2) }]
         };
       } catch (err) {
         return {
@@ -39994,6 +40632,23 @@ async function getSessionsWithStatus(sessionManager, projectDir) {
   const staleSessionDays = await getStaleSessionDays(projectDir);
   return sessionManager.list(staleSessionDays);
 }
+async function addSessionMetricsSummaries(sessions, sessionManager, projectDir) {
+  return Promise.all(
+    sessions.map(async (session) => ({
+      ...session,
+      metrics_summary: await getSessionMetricsSummary(session.session_id, sessionManager, projectDir)
+    }))
+  );
+}
+async function getSessionMetricsSummary(sessionId, sessionManager, projectDir) {
+  const metricsManager = new MetricsManager(projectDir, sessionManager.resolve(sessionId));
+  const summary = await metricsManager.getSummary();
+  return {
+    total_dispatches: summary.total_dispatches,
+    total_duration_ms: summary.total_duration_ms,
+    total_estimated_cost_usd: summary.total_estimated_cost_usd
+  };
+}
 async function getStaleSessionDays(projectDir) {
   try {
     const config2 = await loadConfig(projectDir);
@@ -40011,6 +40666,203 @@ function matchesCleanupFilter(session, filter) {
     case "all":
       return session.status !== "active";
   }
+}
+
+// src/tools/comparison-tools.ts
+init_zod();
+
+// src/metrics/comparison.ts
+var COST_PRECISION2 = 1e9;
+function compareSessions(sessionMetrics) {
+  const sessions = Array.from(
+    sessionMetrics.entries(),
+    ([sessionId, metrics]) => summarizeSession(sessionId, metrics)
+  );
+  return {
+    sessions,
+    delta: sessions.length === 2 ? createDelta(sessions[0], sessions[1]) : null
+  };
+}
+function formatComparisonTable(comparison) {
+  const lines = [
+    "| Session | Dispatches | Success Rate | Duration | Prompt Chars | Est. Cost |",
+    "| --- | ---: | ---: | ---: | ---: | ---: |",
+    ...comparison.sessions.map(
+      (session) => formatStandardRow(
+        session.session_id,
+        session.total_dispatches.toString(),
+        formatSuccessRate(session.success_rate),
+        session.total_duration_ms.toString(),
+        session.total_prompt_chars.toString(),
+        formatCost(session.total_estimated_cost_usd)
+      )
+    )
+  ];
+  if (comparison.delta) {
+    lines.push(
+      formatDeltaRow(
+        comparison.sessions[0],
+        comparison.sessions[1],
+        comparison.delta
+      )
+    );
+  }
+  return lines.join("\n");
+}
+function summarizeSession(sessionId, metrics) {
+  let successfulDispatches = 0;
+  const summary = {
+    session_id: sessionId,
+    total_dispatches: metrics.length,
+    success_rate: 0,
+    total_duration_ms: 0,
+    total_prompt_chars: 0,
+    total_estimated_cost_usd: 0,
+    by_stage: {},
+    by_provider_model: {}
+  };
+  for (const metric of metrics) {
+    const cost = normalizeCost2(metric.estimated_cost_usd ?? 0);
+    if (metric.status === "success") {
+      successfulDispatches += 1;
+    }
+    summary.total_duration_ms += metric.duration_ms;
+    summary.total_prompt_chars += metric.prompt_size_chars;
+    summary.total_estimated_cost_usd = normalizeCost2(summary.total_estimated_cost_usd + cost);
+    const stageSummary = summary.by_stage[metric.stage] ?? {
+      dispatches: 0,
+      duration_ms: 0,
+      prompt_chars: 0,
+      estimated_cost_usd: 0
+    };
+    stageSummary.dispatches += 1;
+    stageSummary.duration_ms += metric.duration_ms;
+    stageSummary.prompt_chars += metric.prompt_size_chars;
+    stageSummary.estimated_cost_usd = normalizeCost2(stageSummary.estimated_cost_usd + cost);
+    summary.by_stage[metric.stage] = stageSummary;
+    const providerModelKey = `${metric.provider}:${metric.model}`;
+    const providerModelSummary = summary.by_provider_model[providerModelKey] ?? {
+      dispatches: 0,
+      duration_ms: 0,
+      prompt_chars: 0,
+      estimated_cost_usd: 0
+    };
+    providerModelSummary.dispatches += 1;
+    providerModelSummary.duration_ms += metric.duration_ms;
+    providerModelSummary.prompt_chars += metric.prompt_size_chars;
+    providerModelSummary.estimated_cost_usd = normalizeCost2(
+      providerModelSummary.estimated_cost_usd + cost
+    );
+    summary.by_provider_model[providerModelKey] = providerModelSummary;
+  }
+  summary.success_rate = summary.total_dispatches === 0 ? 0 : successfulDispatches / summary.total_dispatches;
+  return summary;
+}
+function createDelta(sessionA, sessionB) {
+  return {
+    dispatches: sessionB.total_dispatches - sessionA.total_dispatches,
+    dispatches_percentage: formatPercentageChange(
+      sessionA.total_dispatches,
+      sessionB.total_dispatches
+    ),
+    duration_ms: sessionB.total_duration_ms - sessionA.total_duration_ms,
+    duration_ms_percentage: formatPercentageChange(
+      sessionA.total_duration_ms,
+      sessionB.total_duration_ms
+    ),
+    prompt_chars: sessionB.total_prompt_chars - sessionA.total_prompt_chars,
+    prompt_chars_percentage: formatPercentageChange(
+      sessionA.total_prompt_chars,
+      sessionB.total_prompt_chars
+    ),
+    estimated_cost_usd: normalizeCost2(
+      sessionB.total_estimated_cost_usd - sessionA.total_estimated_cost_usd
+    ),
+    estimated_cost_usd_percentage: formatPercentageChange(
+      sessionA.total_estimated_cost_usd,
+      sessionB.total_estimated_cost_usd
+    )
+  };
+}
+function formatStandardRow(label, dispatches, successRate, durationMs, promptChars, estimatedCostUsd) {
+  return `| ${escapeTableCell(label)} | ${dispatches} | ${successRate} | ${durationMs} | ${promptChars} | ${estimatedCostUsd} |`;
+}
+function formatDeltaRow(sessionA, sessionB, delta) {
+  return formatStandardRow(
+    "Delta",
+    formatDeltaValue(delta.dispatches.toString(), delta.dispatches_percentage),
+    formatDeltaValue(
+      formatSuccessRateDelta(sessionA.success_rate, sessionB.success_rate),
+      formatPercentageChange(sessionA.success_rate, sessionB.success_rate)
+    ),
+    formatDeltaValue(delta.duration_ms.toString(), delta.duration_ms_percentage),
+    formatDeltaValue(delta.prompt_chars.toString(), delta.prompt_chars_percentage),
+    formatDeltaValue(
+      formatCost(delta.estimated_cost_usd),
+      delta.estimated_cost_usd_percentage
+    )
+  );
+}
+function escapeTableCell(value) {
+  return value.replaceAll("|", "\\|");
+}
+function formatCost(value) {
+  const normalized = normalizeCost2(value);
+  if (Number.isInteger(normalized)) {
+    return normalized.toString();
+  }
+  return normalized.toFixed(4).replace(/0+$/, "").replace(/\.$/, "");
+}
+function normalizeCost2(value) {
+  return Math.round(value * COST_PRECISION2) / COST_PRECISION2;
+}
+function formatSuccessRate(value) {
+  return `${(value * 100).toFixed(1)}%`;
+}
+function formatSuccessRateDelta(a, b) {
+  const deltaPoints = (b - a) * 100;
+  const normalizedDeltaPoints = Math.abs(deltaPoints) < 0.05 ? 0 : deltaPoints;
+  return `${normalizedDeltaPoints.toFixed(1)} pts`;
+}
+function formatDeltaValue(value, percentage) {
+  return `${value} (${percentage})`;
+}
+function formatPercentageChange(a, b) {
+  if (a === 0) {
+    return b === 0 ? "0.0%" : "N/A";
+  }
+  return `${((b - a) / a * 100).toFixed(1)}%`;
+}
+
+// src/tools/comparison-tools.ts
+function registerComparisonTools(server, projectDir, sessionManager) {
+  server.registerTool(
+    "invoke_compare_sessions",
+    {
+      description: "Compare dispatch metrics across two or more pipeline sessions.",
+      inputSchema: external_exports3.object({
+        session_ids: external_exports3.array(external_exports3.string()).min(2).describe("Two or more session IDs to compare")
+      })
+    },
+    async ({ session_ids }) => {
+      try {
+        const sessionMetrics = /* @__PURE__ */ new Map();
+        for (const sessionId of session_ids) {
+          const sessionDir = sessionManager.resolve(sessionId);
+          const metricsManager = new MetricsManager(projectDir, sessionDir);
+          sessionMetrics.set(sessionId, await metricsManager.getCurrentPipelineMetrics());
+        }
+        return {
+          content: [{ type: "text", text: formatComparisonTable(compareSessions(sessionMetrics)) }]
+        };
+      } catch (err) {
+        return {
+          content: [{ type: "text", text: `Comparison error: ${err instanceof Error ? err.message : String(err)}` }],
+          isError: true
+        };
+      }
+    }
+  );
 }
 
 // src/tools/state-tools.ts
@@ -40076,14 +40928,16 @@ function registerStateTools(server, stateManager, projectDir, sessionManager) {
         strategy: external_exports3.string().optional(),
         batches: external_exports3.array(external_exports3.object({
           id: external_exports3.number(),
-          status: external_exports3.enum(["pending", "in_progress", "completed", "error"]),
+          status: external_exports3.enum(["pending", "in_progress", "partial", "completed", "error"]),
+          merged_tasks: external_exports3.array(external_exports3.string()).optional(),
           tasks: external_exports3.array(external_exports3.object({
             id: external_exports3.string(),
             status: external_exports3.enum(["pending", "dispatched", "running", "completed", "error", "timeout"]),
             worktree_path: external_exports3.string().optional(),
             worktree_branch: external_exports3.string().optional(),
             result_summary: external_exports3.string().optional(),
-            result_status: external_exports3.enum(["success", "error", "timeout"]).optional()
+            result_status: external_exports3.enum(["success", "error", "timeout"]).optional(),
+            merged: external_exports3.boolean().optional()
           }))
         })).optional(),
         review_cycles: external_exports3.array(external_exports3.object({
@@ -40092,6 +40946,7 @@ function registerStateTools(server, stateManager, projectDir, sessionManager) {
           findings: external_exports3.array(external_exports3.any()),
           batch_id: external_exports3.number().optional(),
           scope: external_exports3.enum(["batch", "final"]).optional(),
+          tier: external_exports3.string().optional(),
           triaged: external_exports3.object({
             accepted: external_exports3.array(external_exports3.any()),
             dismissed: external_exports3.array(external_exports3.any())
@@ -40320,7 +41175,7 @@ var SettingsUpdateSchema = external_exports3.object({
   max_parallel_agents: external_exports3.number().positive().optional(),
   default_provider_mode: ProviderModeSchema2.optional(),
   max_dispatches: external_exports3.number().positive().optional(),
-  max_review_cycles: external_exports3.number().positive().optional()
+  max_review_cycles: external_exports3.number().nonnegative().optional()
 }).catchall(external_exports3.unknown());
 function registerConfigUpdateTools(server, projectDir) {
   const configManager = new ConfigManager(projectDir);
@@ -40413,7 +41268,7 @@ function buildOperation(input) {
 
 // src/tools/context.ts
 import { readFile as readFile8, writeFile as writeFile5 } from "fs/promises";
-import { existsSync as existsSync7 } from "fs";
+import { existsSync as existsSync6 } from "fs";
 import path11 from "path";
 var ContextManager = class {
   constructor(projectDir) {
@@ -40423,7 +41278,7 @@ var ContextManager = class {
   projectDir;
   contextPath;
   async get(maxLength) {
-    if (!existsSync7(this.contextPath)) {
+    if (!existsSync6(this.contextPath)) {
       return null;
     }
     let content = await readFile8(this.contextPath, "utf-8");
@@ -40433,7 +41288,7 @@ var ContextManager = class {
     return content;
   }
   exists() {
-    return existsSync7(this.contextPath);
+    return existsSync6(this.contextPath);
   }
   async initialize(content) {
     await withLock(this.contextPath, async () => {
@@ -40586,16 +41441,16 @@ function registerMetricsTools(server, metricsManager, projectDir, sessionManager
 }
 
 // src/defaults-checker.ts
-import { readdir as readdir4 } from "fs/promises";
-import { existsSync as existsSync8 } from "fs";
+import { readdir as readdir5 } from "fs/promises";
+import { existsSync as existsSync7 } from "fs";
 import path12 from "path";
-import { fileURLToPath as fileURLToPath2 } from "url";
-var __dirname2 = path12.dirname(fileURLToPath2(import.meta.url));
-var PACKAGE_ROOT2 = path12.join(__dirname2, "..");
+import { fileURLToPath as fileURLToPath4 } from "url";
+var __dirname4 = path12.dirname(fileURLToPath4(import.meta.url));
+var PACKAGE_ROOT4 = path12.join(__dirname4, "..");
 async function checkForNewDefaults(projectDir) {
   const invokeDir = path12.join(projectDir, ".invoke");
-  const defaultsDir = path12.join(PACKAGE_ROOT2, "defaults");
-  if (!existsSync8(invokeDir) || !existsSync8(defaultsDir)) {
+  const defaultsDir = path12.join(PACKAGE_ROOT4, "defaults");
+  if (!existsSync7(invokeDir) || !existsSync7(defaultsDir)) {
     return [];
   }
   const missing = [];
@@ -40603,15 +41458,15 @@ async function checkForNewDefaults(projectDir) {
   return missing;
 }
 async function scanDir(srcDir, destDir, relativePath, missing) {
-  if (!existsSync8(srcDir)) return;
-  const entries = await readdir4(srcDir, { withFileTypes: true });
+  if (!existsSync7(srcDir)) return;
+  const entries = await readdir5(srcDir, { withFileTypes: true });
   for (const entry of entries) {
     const srcPath = path12.join(srcDir, entry.name);
     const destPath = path12.join(destDir, entry.name);
     const relPath = relativePath ? `${relativePath}/${entry.name}` : entry.name;
     if (entry.isDirectory()) {
       await scanDir(srcPath, destPath, relPath, missing);
-    } else if (!existsSync8(destPath)) {
+    } else if (!existsSync7(destPath)) {
       missing.push({
         relativePath: relPath,
         description: describeDefault(relPath)
@@ -40624,6 +41479,7 @@ function describeDefault(relPath) {
   if (relPath.includes("roles/researcher/")) return `New researcher: ${path12.basename(relPath, ".md")}`;
   if (relPath.includes("roles/planner/")) return `New planner: ${path12.basename(relPath, ".md")}`;
   if (relPath.includes("roles/builder/")) return `New builder: ${path12.basename(relPath, ".md")}`;
+  if (relPath.includes("presets/")) return `New preset: ${path12.basename(relPath, path12.extname(relPath))}`;
   if (relPath.includes("strategies/")) return `New strategy: ${path12.basename(relPath, ".md")}`;
   if (relPath === "context-template.md") return "Project context template";
   return `New default: ${relPath}`;
@@ -40680,6 +41536,7 @@ async function main() {
     console.error(`Migrated legacy state to session: ${migration.sessionId}`);
   }
   registerSessionTools(server, sessionManager, projectDir);
+  registerComparisonTools(server, projectDir, sessionManager);
   registerStateTools(server, stateManager, projectDir, sessionManager);
   registerArtifactTools(server, artifactManager);
   registerWorktreeTools(server, worktreeManager, config2, projectDir);

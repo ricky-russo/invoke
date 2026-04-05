@@ -19,19 +19,38 @@ All `invoke_get_state`, `invoke_set_state`, and `invoke_get_metrics` calls in th
 
 Call `invoke_get_state` with `session_id: <pipeline_id>` to verify we're at the review stage.
 
-### 2. Show Current Usage
+### 2. Show Current Usage And Cost Summary
 
-Call `invoke_get_metrics` with `session_id: <pipeline_id>` and no stage filter before selecting reviewers. Display the current pipeline usage so the user can see dispatch headroom before review starts. Use `summary` and `limits` to show the current totals, including dispatches used, `max_dispatches` when available, total prompt chars, and total duration.
+Call `invoke_get_metrics` with `session_id: <pipeline_id>` and no stage filter before selecting reviewers or tiers. Display the current pipeline usage and cost summary so the user can see both dispatch headroom and token spend before review starts. Use `summary` and `limits` to show the current totals, including:
+- dispatches used
+- `max_dispatches` when available
+- total prompt chars
+- total duration
+- `summary.total_estimated_cost_usd`
+- current review-stage estimated cost from `summary.by_stage.review.estimated_cost_usd` when present
 
-### 3. Select Reviewers
+Repeat this cost summary before every later reviewer dispatch as well. In tiered review, that means before each tier dispatch and each same-tier re-review after fixes. In fallback review, that means before each full review cycle dispatch.
 
-Read the config with `invoke_get_config` to see available reviewers.
+### 3. Load Review Config
 
-Present available reviewers using `AskUserQuestion` with `multiSelect: true`. Each option's label is the subrole name, description includes provider(s), model(s), and effort. Read the actual configured reviewers from `invoke_get_config` — do not hardcode the list.
+Read the config with `invoke_get_config` to see available reviewers and `config.settings.review_tiers`.
+
+If `review_tiers` is missing or empty, use the fallback path in steps 4-8:
+- present available reviewers using `AskUserQuestion` with `multiSelect: true`
+- each option's label is the subrole name
+- each description includes provider(s), model(s), and effort
+- dispatch all selected reviewers in parallel as one review cycle
+
+If `review_tiers` is configured, do NOT ask for arbitrary reviewer selection. Use the configured tiers instead. Match tier names case-insensitively and run them in this order:
+1. `critical`
+2. `quality`
+3. `polish`
+
+Skip any named tier that is not configured. `polish` is optional even when configured: once `critical` and `quality` are complete, ask the user whether to run the configured polish tier or skip it.
 
 ### 4. Dispatch Reviewers
 
-Dispatch selected reviewers using `invoke_dispatch_batch`:
+Dispatch either the selected reviewers from the fallback flow or the reviewers from the current tier using `invoke_dispatch_batch`:
 - `create_worktrees: false` (reviewers don't modify code)
 - `task_context: { task_description: "<what was built — summary from plan>", diff: "<git diff of all changes>" }`
 
@@ -53,6 +72,9 @@ Call `invoke_get_batch_status` with the batch ID — it will wait up to 60 secon
 > **Code Quality Review** (1 finding)
 > 1. [MEDIUM] Duplicated validation logic in src/api/users.ts:30 and src/api/posts.ts:25 — Extract shared validator
 
+In tiered review, include the tier name in the heading so the user can see which gate is being evaluated, for example:
+> **Critical Tier — Security Review** (3 findings)
+
 ### 6. User Triage
 
 THEN, in a separate message, ask the user how to handle the findings using `AskUserQuestion`. Always offer bulk options first:
@@ -60,7 +82,7 @@ THEN, in a separate message, ask the user how to handle the findings using `AskU
 ```
 AskUserQuestion({
   questions: [{
-    question: "[N] findings from [M] reviewers. How would you like to proceed?",
+    question: "[N] findings from [M] reviewers[ in the <tier name> tier]. How would you like to proceed?",
     header: "Review triage",
     multiSelect: false,
     options: [
@@ -74,7 +96,7 @@ AskUserQuestion({
 
 If the user chooses **Triage individually**, present findings grouped by reviewer using `AskUserQuestion` with `multiSelect: true` — selected findings are accepted, unselected are dismissed. Note: `AskUserQuestion` supports max 4 options per question. If there are more than 4 findings, group into multiple questions by reviewer.
 
-After triage, record the review cycle with `invoke_set_state` using `session_id: <pipeline_id>` under `review_cycles`. Save the reviewers, findings, and triage result (`accepted` / `dismissed`). For final review cycles in this stage, include `scope: 'final'`.
+After triage, record the review cycle with `invoke_set_state` using `session_id: <pipeline_id>` under `review_cycles`. Save the reviewers, findings, and triage result (`accepted` / `dismissed`). For tiered review cycles, include `tier: "<tier name>"` on the `ReviewCycle`. In fallback mode, leave `tier` unset. For final review cycles in this stage, include `scope: 'final'`.
 
 ### 7. Auto-Fix Accepted Findings
 
@@ -89,9 +111,22 @@ Dispatch fix tasks using `invoke_dispatch_batch` with `create_worktrees: true`.
 
 Call `invoke_get_batch_status` to wait for completion. Merge worktrees, run post-merge commands, validate — same flow as a regular build batch.
 
+In tiered review, when accepted findings came from a tier, re-review that same tier only after fixes are applied. Do NOT jump ahead to later tiers until the current tier clears. In fallback review, accepted findings lead to another full review cycle only if the user asks for it in step 8.
+
 ### 8. Next Cycle
 
-After fixes are applied, ask the user:
+If `review_tiers` is configured, run staged tiered review:
+
+1. `critical` tier: dispatch only the configured critical-tier reviewers first (for example, `spec-compliance` and `security` when those reviewers are configured). Present findings, let the user triage them, record the cycle with `tier: "critical"`, and fix any accepted findings by dispatching builders. After fixes merge and validate, re-review the `critical` tier only. Do NOT start the `quality` tier until the latest critical-tier cycle has no unresolved `critical` or `high` findings after triage and any accepted fixes have been re-reviewed.
+2. `quality` tier: once the critical tier clears, dispatch only the configured quality-tier reviewers (for example, `code-quality` and `performance`). Use the same triage -> fix -> same-tier re-review loop. Do NOT proceed past quality until the current quality-tier cycle has no unresolved accepted findings remaining.
+3. `polish` tier: if a polish tier is configured, ask the user whether to run it. If the user opts in, dispatch only the configured polish-tier reviewers and use the same triage -> fix -> same-tier re-review loop, recording `tier: "polish"` on each cycle. If the user skips it, proceed to completion.
+
+If `review_tiers` is NOT configured, keep the current behavior:
+- let the user select reviewers with `AskUserQuestion` using `multiSelect: true`
+- dispatch all selected reviewers in parallel
+- present findings, let the user triage them, record the cycle, and dispatch builder fixes for accepted findings
+- after fixes are applied, ask the user:
+
 > "Fixes applied. Want to run another review cycle, or are you satisfied?"
 
 If another cycle: loop back to step 3.
@@ -152,10 +187,11 @@ Update state via `invoke_set_state` with `session_id: <pipeline_id>`:
 
 - If a reviewer fails, present the error and proceed with other reviewers' results
 - If fix agents fail, present the error and let the user decide: retry, fix manually, or dismiss the finding
-- If all reviewers return no findings, congratulate and proceed to commit
+- If a tier or full review cycle returns no findings, say so explicitly and continue according to the configured flow
 
 ## Key Principles
 
 - Present findings clearly — severity, location, description, suggestion
 - Let the user make all triage decisions — never auto-dismiss findings
-- The loop continues until the user is satisfied, not until reviewers find zero issues
+- In tiered review, `critical` gates `quality`, and `quality` completes before optional `polish`
+- In fallback review, the loop continues until the user is satisfied, not until reviewers find zero issues

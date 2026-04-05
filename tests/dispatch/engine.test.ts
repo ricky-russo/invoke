@@ -17,8 +17,21 @@ vi.mock('../../src/config.js', () => ({
   loadConfig: vi.fn(),
 }))
 
+vi.mock('../../src/metrics/pricing.js', async () => {
+  const actual = await vi.importActual<typeof import('../../src/metrics/pricing.js')>(
+    '../../src/metrics/pricing.js'
+  )
+
+  return {
+    ...actual,
+    estimateCost: vi.fn(actual.estimateCost),
+  }
+})
+
 import { spawn } from 'child_process'
 import { loadConfig } from '../../src/config.js'
+import { estimateCost } from '../../src/metrics/pricing.js'
+import { composePrompt } from '../../src/dispatch/prompt-composer.js'
 
 const TEST_PROJECT_DIR = '/tmp/test-project'
 const MOCK_PROMPT = 'mocked prompt content'
@@ -87,6 +100,7 @@ function makeConfig(options: {
   subrole?: string
   prompt?: string
   providers?: ProviderEntry[]
+  strategies?: InvokeConfig['strategies']
   roleProviderMode?: 'parallel' | 'fallback' | 'single'
   defaultProviderMode?: 'parallel' | 'fallback' | 'single'
   agentTimeout?: number
@@ -110,7 +124,7 @@ function makeConfig(options: {
         },
       },
     },
-    strategies: {},
+    strategies: options.strategies ?? {},
     settings: {
       default_strategy: 'tdd',
       agent_timeout: options.agentTimeout ?? 5,
@@ -246,6 +260,37 @@ describe('DispatchEngine', () => {
     expect(claudeBuildCommand).toHaveBeenCalledTimes(1)
     expect(result.status).toBe('success')
     expect(result.provider).toBe('claude')
+  })
+
+  it('passes the configured strategy prompt to composePrompt when taskContext.strategy is set', async () => {
+    queueSpawnBehaviors({ stdout: 'Research output', exitCode: 0 })
+    const config = makeConfig({
+      strategies: {
+        tdd: {
+          prompt: '.invoke/strategies/tdd.md',
+        },
+      },
+    })
+    const { engine } = createEngine(config)
+
+    await engine.dispatch({
+      role: 'researcher',
+      subrole: 'codebase',
+      taskContext: {
+        task_description: 'Analyze',
+        strategy: 'tdd',
+      },
+    })
+
+    expect(composePrompt).toHaveBeenCalledWith({
+      projectDir: TEST_PROJECT_DIR,
+      promptPath: '.invoke/roles/researcher/codebase.md',
+      strategyPath: '.invoke/strategies/tdd.md',
+      taskContext: {
+        task_description: 'Analyze',
+        strategy: 'tdd',
+      },
+    })
   })
 
   it('dispatches to multiple providers in parallel and merges the results', async () => {
@@ -433,6 +478,13 @@ describe('DispatchEngine', () => {
     })
 
     expect(onDispatchComplete).toHaveBeenCalledTimes(2)
+    expect(estimateCost).toHaveBeenCalledTimes(2)
+    expect(vi.mocked(estimateCost).mock.calls).toEqual(
+      expect.arrayContaining([
+        ['opus-4.6', MOCK_PROMPT.length, 'Claude review'.length],
+        ['gpt-5.4', MOCK_PROMPT.length, 'Codex review'.length],
+      ])
+    )
 
     const metrics = onDispatchComplete.mock.calls.map(([metric]) => metric)
     expect(metrics.map(metric => metric.provider).sort()).toEqual(['claude', 'codex'])
@@ -447,10 +499,81 @@ describe('DispatchEngine', () => {
       model: 'opus-4.6',
       effort: 'high',
       prompt_size_chars: MOCK_PROMPT.length,
+      output_size_chars: 'Claude review'.length,
+      estimated_input_tokens: 6,
+      estimated_output_tokens: 4,
+      estimated_cost_usd: 0.00039,
       status: 'success',
     })
     expect(claudeMetric.duration_ms).toEqual(expect.any(Number))
     expect(claudeMetric.started_at).toEqual(expect.any(String))
+
+    const codexMetric = metrics.find(metric => metric.provider === 'codex')
+    expect(codexMetric).toMatchObject({
+      pipeline_id: 'pipeline-123',
+      stage: 'review',
+      role: 'reviewer',
+      subrole: 'security',
+      provider: 'codex',
+      model: 'gpt-5.4',
+      effort: 'high',
+      prompt_size_chars: MOCK_PROMPT.length,
+      output_size_chars: 'Codex review'.length,
+      estimated_input_tokens: 6,
+      estimated_output_tokens: 3,
+      estimated_cost_usd: 0.000036,
+      status: 'success',
+    })
+    expect(codexMetric.duration_ms).toEqual(expect.any(Number))
+    expect(codexMetric.started_at).toEqual(expect.any(String))
+  })
+
+  it('uses parsed raw output length for metrics and cost estimation when available', async () => {
+    queueSpawnBehaviors({ stderr: 'stderr diagnostics', exitCode: 1 })
+
+    const rawOutput = 'normalized stderr'
+    const parse = vi.fn((_: string, __: number, context: ParseContext): AgentResult => ({
+      role: context.role,
+      subrole: context.subrole,
+      provider: context.provider,
+      model: context.model,
+      status: 'error',
+      output: {
+        summary: 'parsed stderr',
+        raw: rawOutput,
+      },
+      duration: context.duration,
+    }))
+    const onDispatchComplete = vi.fn()
+    const parsers = new Map<string, Parser>([
+      ['claude', { name: 'claude', parse }],
+      ['codex', { name: 'codex', parse: vi.fn() }],
+    ])
+    const { engine } = createEngine(makeConfig(), {
+      onDispatchComplete,
+      parsers,
+    })
+
+    await engine.dispatch({
+      role: 'researcher',
+      subrole: 'codebase',
+      taskContext: { task_description: 'Analyze' },
+    })
+
+    expect(parse).toHaveBeenCalledWith(
+      '[stderr] stderr diagnostics',
+      1,
+      expect.objectContaining({
+        provider: 'claude',
+        model: 'opus-4.6',
+      })
+    )
+    expect(estimateCost).toHaveBeenCalledWith('opus-4.6', MOCK_PROMPT.length, rawOutput.length)
+    expect(onDispatchComplete).toHaveBeenCalledWith(
+      expect.objectContaining({
+        output_size_chars: rawOutput.length,
+      })
+    )
   })
 
   it('resolveProviderMode uses role config before settings default before parallel', () => {

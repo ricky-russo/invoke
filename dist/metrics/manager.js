@@ -2,6 +2,8 @@ import { existsSync } from 'fs';
 import { mkdir, readFile, rename, writeFile } from 'fs/promises';
 import path from 'path';
 import { StateManager } from '../tools/state.js';
+const COST_PRECISION = 1_000_000_000;
+const FLUSH_DEBOUNCE_MS = 100;
 export class MetricsManager {
     projectDir;
     metricsPath;
@@ -12,7 +14,9 @@ export class MetricsManager {
     loaded = false;
     loadPromise = null;
     writeChain = Promise.resolve();
+    flushTimeout = null;
     dirEnsured = false;
+    beforeExitRegistered = false;
     constructor(projectDir, sessionDir) {
         this.projectDir = projectDir;
         const metricsDir = sessionDir ?? path.join(projectDir, '.invoke');
@@ -22,10 +26,10 @@ export class MetricsManager {
         this.beforeExitHandler = () => {
             void this.flushPendingWrites();
         };
-        process.on('beforeExit', this.beforeExitHandler);
     }
     record(metric) {
         try {
+            this.ensureBeforeExitHandler();
             this.metrics.push(metric);
             this.queueFlush();
         }
@@ -53,30 +57,37 @@ export class MetricsManager {
             total_dispatches: metrics.length,
             total_prompt_chars: 0,
             total_duration_ms: 0,
+            total_estimated_cost_usd: 0,
             by_stage: {},
             by_provider_model: {},
         };
         for (const metric of metrics) {
+            const cost = normalizeCost(metric.estimated_cost_usd ?? 0);
             summary.total_prompt_chars += metric.prompt_size_chars;
             summary.total_duration_ms += metric.duration_ms;
+            summary.total_estimated_cost_usd = normalizeCost(summary.total_estimated_cost_usd + cost);
             const stageEntry = summary.by_stage[metric.stage] ?? {
                 dispatches: 0,
                 duration_ms: 0,
                 prompt_chars: 0,
+                estimated_cost_usd: 0,
             };
             stageEntry.dispatches += 1;
             stageEntry.duration_ms += metric.duration_ms;
             stageEntry.prompt_chars += metric.prompt_size_chars;
+            stageEntry.estimated_cost_usd = normalizeCost(stageEntry.estimated_cost_usd + cost);
             summary.by_stage[metric.stage] = stageEntry;
             const providerModelKey = `${metric.provider}:${metric.model}`;
             const providerEntry = summary.by_provider_model[providerModelKey] ?? {
                 dispatches: 0,
                 duration_ms: 0,
                 prompt_chars: 0,
+                estimated_cost_usd: 0,
             };
             providerEntry.dispatches += 1;
             providerEntry.duration_ms += metric.duration_ms;
             providerEntry.prompt_chars += metric.prompt_size_chars;
+            providerEntry.estimated_cost_usd = normalizeCost(providerEntry.estimated_cost_usd + cost);
             summary.by_provider_model[providerModelKey] = providerEntry;
         }
         return summary;
@@ -92,6 +103,15 @@ export class MetricsManager {
         };
     }
     queueFlush() {
+        if (this.flushTimeout) {
+            clearTimeout(this.flushTimeout);
+        }
+        this.flushTimeout = setTimeout(() => {
+            this.flushTimeout = null;
+            this.enqueueFlush();
+        }, FLUSH_DEBOUNCE_MS);
+    }
+    enqueueFlush() {
         this.writeChain = this.writeChain
             .then(async () => {
             await this.ensureLoaded();
@@ -102,6 +122,11 @@ export class MetricsManager {
         });
     }
     async flushPendingWrites() {
+        if (this.flushTimeout) {
+            clearTimeout(this.flushTimeout);
+            this.flushTimeout = null;
+            this.enqueueFlush();
+        }
         try {
             await this.writeChain;
         }
@@ -142,5 +167,15 @@ export class MetricsManager {
     logWriteError(error) {
         console.error(`Failed to write metrics: ${error instanceof Error ? error.message : String(error)}`);
     }
+    ensureBeforeExitHandler() {
+        if (this.beforeExitRegistered) {
+            return;
+        }
+        process.on('beforeExit', this.beforeExitHandler);
+        this.beforeExitRegistered = true;
+    }
+}
+function normalizeCost(value) {
+    return Math.round(value * COST_PRECISION) / COST_PRECISION;
 }
 //# sourceMappingURL=manager.js.map

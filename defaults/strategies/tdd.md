@@ -23,6 +23,16 @@ Follow the TDD cycle strictly:
 3. **Refactor** — Clean up the implementation while keeping tests green. Remove duplication, improve naming, simplify logic.
 4. **Repeat** — Move to the next acceptance criterion.
 
+## Enforcement
+
+If you write implementation code before a failing test exists, you are violating this strategy. STOP and write the test first. The cycle is RED (failing test) → GREEN (minimum code to pass) → REFACTOR → REPEAT.
+
+## Anti-Patterns
+
+- DO NOT write tests after implementation and claim TDD.
+- DO NOT write tests that verify implementation details instead of behavior.
+- DO NOT skip the refactor step.
+
 ## Rules
 
 - Never write implementation code without a failing test first.

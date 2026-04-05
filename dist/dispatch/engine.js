@@ -2,6 +2,7 @@ import { spawn } from 'child_process';
 import { composePrompt } from './prompt-composer.js';
 import { mergeFindings } from './merge-findings.js';
 import { loadConfig } from '../config.js';
+import { estimateCost } from '../metrics/pricing.js';
 export class DispatchEngine {
     providers;
     parsers;
@@ -20,9 +21,13 @@ export class DispatchEngine {
         if (!roleConfig) {
             throw new Error(`Role not found: ${request.role}.${request.subrole}`);
         }
+        const strategyPath = request.taskContext.strategy
+            ? config.strategies[request.taskContext.strategy]?.prompt
+            : undefined;
         const prompt = await composePrompt({
             projectDir: this.projectDir,
             promptPath: roleConfig.prompt,
+            strategyPath,
             taskContext: request.taskContext,
         });
         const workDir = request.workDir ?? this.projectDir;
@@ -110,6 +115,8 @@ export class DispatchEngine {
                 duration,
             });
         }
+        const outputSizeChars = result.output.raw?.length ?? stdout.length;
+        const costEstimate = estimateCost(entry.model, prompt.length, outputSizeChars);
         this.onDispatchComplete?.({
             pipeline_id: request.taskContext.pipeline_id ?? null,
             stage: request.taskContext.stage ?? 'unknown',
@@ -119,9 +126,13 @@ export class DispatchEngine {
             model: entry.model,
             effort: entry.effort,
             prompt_size_chars: prompt.length,
+            output_size_chars: outputSizeChars,
             duration_ms: duration,
             status: result.status,
             started_at: startedAt,
+            estimated_input_tokens: costEstimate?.input_tokens,
+            estimated_output_tokens: costEstimate?.output_tokens,
+            estimated_cost_usd: costEstimate?.cost_usd,
         });
         return result;
     }

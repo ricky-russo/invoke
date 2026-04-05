@@ -12,11 +12,18 @@ vi.mock('../../src/config.js', () => ({
 import { loadConfig } from '../../src/config.js'
 import { SessionManager } from '../../src/session/manager.js'
 import { registerSessionTools } from '../../src/tools/session-tools.js'
-import type { InvokeConfig, PipelineState, SessionInfo } from '../../src/types.js'
+import type {
+  DispatchMetric,
+  InvokeConfig,
+  PipelineState,
+  SessionInfo,
+  SessionMetricsSummary,
+} from '../../src/types.js'
 
 type ToolInput = {
   session_id?: string
   status_filter?: 'complete' | 'stale' | 'all'
+  withMetrics?: boolean
 }
 
 type RegisteredTool = {
@@ -85,6 +92,12 @@ describe('registerSessionTools', () => {
     await writeFile(path.join(sessionDir, 'state.json'), JSON.stringify(state, null, 2) + '\n')
   }
 
+  async function writeSessionMetrics(sessionId: string, metrics: DispatchMetric[]): Promise<void> {
+    const sessionDir = path.join(projectDir, '.invoke', 'sessions', sessionId)
+    await mkdir(sessionDir, { recursive: true })
+    await writeFile(path.join(sessionDir, 'metrics.json'), JSON.stringify(metrics, null, 2) + '\n')
+  }
+
   beforeEach(async () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2026-04-05T12:00:00.000Z'))
@@ -105,6 +118,7 @@ describe('registerSessionTools', () => {
 
   it('registers session tool schemas', () => {
     expect(getTool('invoke_list_sessions').config.inputSchema.safeParse({}).success).toBe(true)
+    expect(getTool('invoke_list_sessions').config.inputSchema.safeParse({ withMetrics: true }).success).toBe(true)
     expect(getTool('invoke_cleanup_sessions').config.inputSchema.safeParse({}).success).toBe(true)
     expect(
       getTool('invoke_cleanup_sessions').config.inputSchema.safeParse({ status_filter: 'stale' }).success
@@ -171,6 +185,102 @@ describe('registerSessionTools', () => {
         started: '2026-04-01T08:00:00.000Z',
         last_updated: '2026-04-01T11:59:59.000Z',
         status: 'stale',
+      },
+    ])
+  })
+
+  it('includes per-session metrics summaries when withMetrics is true', async () => {
+    await writeSessionState(
+      'session-a',
+      createState({
+        pipeline_id: 'pipeline-a',
+        current_stage: 'review',
+      })
+    )
+    await writeSessionState(
+      'session-b',
+      createState({
+        pipeline_id: 'pipeline-b',
+        current_stage: 'complete',
+      })
+    )
+    await writeSessionMetrics('session-a', [
+      {
+        pipeline_id: 'pipeline-a',
+        stage: 'build',
+        role: 'builder',
+        subrole: 'default',
+        provider: 'claude',
+        model: 'opus-4.6',
+        effort: 'medium',
+        prompt_size_chars: 100,
+        duration_ms: 250,
+        status: 'success',
+        started_at: '2026-04-04T12:00:00.000Z',
+        estimated_cost_usd: 0.05,
+      },
+      {
+        pipeline_id: 'pipeline-a',
+        stage: 'review',
+        role: 'reviewer',
+        subrole: 'default',
+        provider: 'codex',
+        model: 'gpt-5',
+        effort: 'high',
+        prompt_size_chars: 80,
+        duration_ms: 500,
+        status: 'success',
+        started_at: '2026-04-04T12:05:00.000Z',
+        estimated_cost_usd: 0.1,
+      },
+    ])
+    await writeSessionMetrics('session-b', [
+      {
+        pipeline_id: 'pipeline-b',
+        stage: 'build',
+        role: 'builder',
+        subrole: 'default',
+        provider: 'claude',
+        model: 'opus-4.6',
+        effort: 'medium',
+        prompt_size_chars: 60,
+        duration_ms: 120,
+        status: 'success',
+        started_at: '2026-04-04T12:10:00.000Z',
+        estimated_cost_usd: 0.02,
+      },
+    ])
+
+    const result = await getTool('invoke_list_sessions').handler({ withMetrics: true })
+    const sessions = parseResponseText<Array<SessionInfo & { metrics_summary: SessionMetricsSummary }>>(result)
+
+    expect(result.isError).toBeUndefined()
+    expect(sessions).toEqual([
+      {
+        session_id: 'session-a',
+        pipeline_id: 'pipeline-a',
+        current_stage: 'review',
+        started: '2026-04-01T08:00:00.000Z',
+        last_updated: '2026-04-05T09:00:00.000Z',
+        status: 'active',
+        metrics_summary: {
+          total_dispatches: 2,
+          total_duration_ms: 750,
+          total_estimated_cost_usd: 0.15,
+        },
+      },
+      {
+        session_id: 'session-b',
+        pipeline_id: 'pipeline-b',
+        current_stage: 'complete',
+        started: '2026-04-01T08:00:00.000Z',
+        last_updated: '2026-04-05T09:00:00.000Z',
+        status: 'complete',
+        metrics_summary: {
+          total_dispatches: 1,
+          total_duration_ms: 120,
+          total_estimated_cost_usd: 0.02,
+        },
       },
     ])
   })

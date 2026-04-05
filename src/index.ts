@@ -17,6 +17,7 @@ import { registerConfigTools } from './tools/config-tool.js'
 import { registerDispatchTools } from './tools/dispatch-tools.js'
 import { registerWorktreeTools } from './tools/worktree-tools.js'
 import { registerSessionTools } from './tools/session-tools.js'
+import { registerComparisonTools } from './tools/comparison-tools.js'
 import { registerStateTools } from './tools/state-tools.js'
 import { registerArtifactTools } from './tools/artifact-tools.js'
 import { registerConfigUpdateTools } from './tools/config-update-tools.js'
@@ -87,6 +88,7 @@ async function main() {
   }
 
   registerSessionTools(server, sessionManager, projectDir)
+  registerComparisonTools(server, projectDir, sessionManager)
   registerStateTools(server, stateManager, projectDir, sessionManager)
   registerArtifactTools(server, artifactManager)
   registerWorktreeTools(server, worktreeManager, config, projectDir)

@@ -19,6 +19,14 @@ All `invoke_get_state`, `invoke_set_state`, `invoke_get_metrics`, and `invoke_ge
 
 Call `invoke_get_state` with `session_id: <pipeline_id>` to verify we're at the build stage. Read the task breakdown from `invoke_read_artifact` with `stage: "plans"`, `filename: "tasks.json"`.
 
+If build is resuming from existing state, inspect the saved batch/task records before dispatching anything:
+- A task with `merged: true` is already finished. Never re-dispatch it.
+- A task with `status: "completed"` and `merged !== true` is ready to merge. Offer that merge instead of re-dispatching it.
+- Only re-dispatch tasks that are both unmerged and incomplete (`pending`, `dispatched`, `running`, or a failed task the user explicitly chose `Retry` for).
+
+Present resumed batch status in task buckets so the user can see what is already merged vs. still pending:
+> "Batch N: 2 merged, 1 completed awaiting merge, 1 running, 1 failed"
+
 ### 2. Create Work Branch
 
 The first time build runs for this pipeline, note the current branch. All build work happens on a temporary work branch — but since agents work in worktrees, the current branch stays clean until merge.
@@ -53,9 +61,9 @@ This guard rail is advisory. Do NOT block the build batch itself.
 
 Present available builders using `AskUserQuestion` with `multiSelect: true`, noting the batch number and task count in the question text. Each option's description includes provider(s), model(s), and effort.
 
-#### c. Dispatch Batch
+#### c. Dispatch or Resume Batch
 
-Call `invoke_dispatch_batch` with:
+For a new batch, call `invoke_dispatch_batch` with:
 - `tasks`: the batch's tasks with their task_context
 - `create_worktrees: true`
 
@@ -63,38 +71,75 @@ The response includes the **resolved provider/model/effort** for each task (read
 
 After dispatching, note that `invoke_get_metrics` can be called with `session_id: <pipeline_id>` at any time to inspect current pipeline usage and dispatch limits.
 
-#### d. Monitor Progress
+For a resumed batch:
+- Do NOT re-dispatch tasks that are already merged.
+- Do NOT re-dispatch tasks that are already completed but not yet merged.
+- Re-dispatch only the unmerged incomplete tasks.
+- Present: "Batch [N]: [M] merged, [R] completed awaiting merge, resuming [U] remaining tasks."
 
-Call `invoke_get_batch_status` with the batch ID — it will wait up to 60 seconds for a status change before returning. Keep calling until the batch completes. Do NOT use `sleep` between calls. Report progress to the user:
-> "Batch N progress: task-1 ✅, task-2 running, task-3 running"
+If there are no tasks to re-dispatch on resume, skip straight to progress/merge handling for the existing batch state.
 
-**CRITICAL: Do NOT proceed to step e while any tasks in the batch are still running.** You must wait for all tasks to complete or fail. If the batch has been running for more than 10 minutes, use `AskUserQuestion` to ask the user whether to keep waiting, cancel remaining tasks and proceed with completed ones, or abort the batch.
+#### d. Monitor Progress and Offer Immediate Merge
 
-#### e. Collect Results
+Call `invoke_get_batch_status` with the batch ID — it will wait up to 60 seconds for a status change before returning. Keep calling until every task in the batch is resolved. Do NOT use `sleep` between calls.
 
-When the batch completes, review results:
-- For successful tasks: proceed to merge
-- For failed tasks: present the error and ask: "Retry, skip, or abort batch?"
+On every poll, report progress by bucket so the user can see what is already merged vs. waiting vs. failed:
+> "Batch N progress: merged [task-1], awaiting merge [task-2], pending [task-3], failed [task-4]"
 
-#### f. Merge Worktrees
+If a task completes successfully and has a worktree, offer to merge it immediately. Do NOT wait for the rest of the batch. Use `AskUserQuestion`:
 
-For each completed task, call `invoke_merge_worktree` with the task_id. This merges the worktree branch and cleans up.
+```
+AskUserQuestion({
+  questions: [{
+    question: "[task_id] completed successfully. Merge it now?",
+    header: "Merge task",
+    multiSelect: false,
+    options: [
+      { label: "Merge now", description: "Merge this task immediately and run post-merge validation before any other merge" },
+      { label: "Wait", description: "Leave it completed for now and revisit after the next status change" }
+    ]
+  }]
+})
+```
+
+If multiple tasks become ready at the same time, keep the old batch-level user experience: present the ready tasks together if helpful, but merge them one at a time in task order with validation between merges.
+
+If the batch has been running for more than 10 minutes, use `AskUserQuestion` to ask the user whether to keep waiting, cancel remaining tasks and proceed with completed ones, or abort the batch.
+
+#### e. Recover Failed Tasks
+
+If a task returns `error` or `timeout`, present the failure and ask what to do with that task: `Retry`, `Skip`, or `Abort`.
+
+- `Retry`: re-dispatch only that failed task, then resume polling.
+- `Skip`: leave that task failed for this batch and continue merging other successful tasks.
+- `Abort`: stop the batch.
+
+Failed tasks do NOT block merging successful tasks that are already completed. Other completed tasks can still be merged while you work through failed-task recovery.
+
+#### f. Merge and Validate Sequentially
+
+When the user chooses to merge a ready task, call `invoke_merge_worktree` for that task only. This merges the worktree branch and cleans up.
 
 If a merge conflict occurs, present it to the user and help resolve it.
 
-#### g. Post-Merge Validation
+Immediately after each successful merge, call `invoke_run_post_merge` before attempting any other merge. The post-merge validation hook will then run automatically (lint, tests). If any post-merge command or validation step fails, present the failure and help fix it before continuing to the next merge.
 
-After all worktrees in a batch are merged, call `invoke_run_post_merge` to regenerate lockfiles (e.g., `composer.lock`, `package-lock.json`) before running validation. If any command fails, present the error and help the user resolve it before continuing.
+Never merge two tasks back-to-back without running `invoke_run_post_merge` and waiting for validation between them. This catches conflicts early.
 
-The post-merge validation hook will run automatically (lint, tests). If it fails, present the failure and help fix it before proceeding.
+#### g. Update State
 
-#### h. Update State
+Keep the batch state current via `invoke_set_state` with `session_id: <pipeline_id>` throughout the batch:
+- After each successful merge, update that task with `TaskState.merged: true`.
+- Use batch status `in_progress` while work is still actively running.
+- Use batch status `partial` when some tasks are already merged or skipped but the batch still has remaining unmerged work or unresolved failures.
+- Use batch status `completed` only when every successful task is merged and every failed task has been retried successfully or explicitly skipped.
+- Use batch status `error` if the user aborts or the batch cannot continue.
 
-Update the batch status in the pipeline state via `invoke_set_state` with `session_id: <pipeline_id>`.
+When resuming, rely on this saved state instead of guessing from the filesystem. Tasks already marked `merged: true` are done; tasks marked `completed` but not merged should be offered for merge; only unmerged incomplete tasks should be re-dispatched.
 
-#### i. Inter-Batch Review (optional)
+#### h. Inter-Batch Review (optional)
 
-After each batch is merged and validated, ask the user if they want to run reviewers before proceeding to the next batch. Use `AskUserQuestion`:
+After each batch is fully resolved — all successful tasks merged and validated, all failed tasks retried or explicitly skipped — ask the user if they want to run reviewers before proceeding to the next batch. Use `AskUserQuestion`:
 
 ```
 AskUserQuestion({
@@ -130,11 +175,12 @@ The review stage skill will auto-trigger from here.
 - **Agent timeout**: Present error, offer retry/skip/abort
 - **Agent error**: Present raw output, offer retry/skip/abort
 - **Merge conflict**: Present conflicts, help user resolve
-- **Validation failure**: Present test/lint output, help fix before next batch
+- **Validation failure**: Present test/lint output, help fix before merging the next task or starting the next batch
 - **User abort**: Clean up worktrees via `invoke_cleanup_worktrees`, ask if they want to keep or discard the work branch
 
 ## Key Principles
 
-- Never proceed to the next batch if the current batch has unresolved failures
-- Always merge and validate before starting the next batch
+- Never proceed to the next batch if the current batch has unresolved failures or unmerged successful tasks
+- Always merge and validate one task at a time before starting the next merge or the next batch
+- If all tasks complete at the same time, the flow is effectively the same as before: review the completed set, then merge sequentially with validation between merges
 - Keep the user informed of progress without overwhelming them

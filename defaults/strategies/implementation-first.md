@@ -21,6 +21,16 @@ You are building a feature by implementing first, then adding tests.
 3. **Refine** — Review your implementation for quality. Fix any issues found during testing.
 4. **Commit** — Commit the implementation and tests together.
 
+## Enforcement
+
+Implement first, but tests are NOT optional. You must write tests before marking the task complete.
+
+## Anti-Patterns
+
+- DO NOT skip tests entirely.
+- DO NOT leave test writing for later.
+- DO NOT write only happy-path tests.
+
 ## Rules
 
 - Implement the full feature before writing tests.

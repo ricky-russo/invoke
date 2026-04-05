@@ -1,15 +1,24 @@
 import { z } from 'zod';
 import { loadConfig } from '../config.js';
+import { MetricsManager } from '../metrics/manager.js';
 const DEFAULT_STALE_SESSION_DAYS = 7;
 export function registerSessionTools(server, sessionManager, projectDir) {
     server.registerTool('invoke_list_sessions', {
         description: 'List all pipeline sessions.',
-        inputSchema: z.object({}),
-    }, async () => {
+        inputSchema: z.object({
+            withMetrics: z
+                .boolean()
+                .optional()
+                .describe('Include dispatch count, duration, and estimated cost per session'),
+        }),
+    }, async ({ withMetrics }) => {
         try {
             const sessions = await getSessionsWithStatus(sessionManager, projectDir);
+            const responseSessions = withMetrics
+                ? await addSessionMetricsSummaries(sessions, sessionManager, projectDir)
+                : sessions;
             return {
-                content: [{ type: 'text', text: JSON.stringify(sessions, null, 2) }],
+                content: [{ type: 'text', text: JSON.stringify(responseSessions, null, 2) }],
             };
         }
         catch (err) {
@@ -61,6 +70,21 @@ export function registerSessionTools(server, sessionManager, projectDir) {
 async function getSessionsWithStatus(sessionManager, projectDir) {
     const staleSessionDays = await getStaleSessionDays(projectDir);
     return sessionManager.list(staleSessionDays);
+}
+async function addSessionMetricsSummaries(sessions, sessionManager, projectDir) {
+    return Promise.all(sessions.map(async (session) => ({
+        ...session,
+        metrics_summary: await getSessionMetricsSummary(session.session_id, sessionManager, projectDir),
+    })));
+}
+async function getSessionMetricsSummary(sessionId, sessionManager, projectDir) {
+    const metricsManager = new MetricsManager(projectDir, sessionManager.resolve(sessionId));
+    const summary = await metricsManager.getSummary();
+    return {
+        total_dispatches: summary.total_dispatches,
+        total_duration_ms: summary.total_duration_ms,
+        total_estimated_cost_usd: summary.total_estimated_cost_usd,
+    };
 }
 async function getStaleSessionDays(projectDir) {
     try {

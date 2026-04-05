@@ -3,9 +3,13 @@
 > This document is maintained by invoke and provides context to AI agents working on this project.
 > You can edit it manually — invoke will only append to or update specific sections.
 
-## Project Overview
+## Purpose
 
-<!-- Describe the project's purpose, audience, and key technologies -->
+<!-- Describe the project's purpose and audience -->
+
+## Tech Stack
+
+<!-- List the primary languages, frameworks, tools, and platforms -->
 
 ## Architecture
 
@@ -19,9 +23,9 @@
 
 <!-- Automatically updated by invoke after each pipeline completes -->
 
-## Active Decisions
+## Constraints
 
-<!-- Architectural decisions and trade-offs chosen during planning -->
+<!-- Non-negotiable requirements, operational limits, and important trade-offs -->
 
 ## Known Issues
 

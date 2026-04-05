@@ -22,6 +22,16 @@ You are fixing a bug using a test-first approach.
 4. **Verify** — Run the new test to confirm it passes. Run the full test suite to confirm no regressions.
 5. **Commit** — Commit the test and fix together.
 
+## Enforcement
+
+Write a failing test that reproduces the bug FIRST. Then fix the root cause, not the symptom.
+
+## Anti-Patterns
+
+- DO NOT fix symptoms without understanding root cause.
+- DO NOT expand scope to related improvements.
+- DO NOT modify tests to make them pass instead of fixing the code.
+
 ## Rules
 
 - Always write the failing test before attempting a fix.
