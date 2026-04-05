@@ -33,6 +33,10 @@ describe('initProject', () => {
     expect(existsSync(path.join(TEST_DIR, '.invoke', 'roles', 'researcher', 'codebase.md'))).toBe(true)
     expect(existsSync(path.join(TEST_DIR, '.invoke', 'roles', 'reviewer', 'security.md'))).toBe(true)
     expect(existsSync(path.join(TEST_DIR, '.invoke', 'roles', 'builder', 'default.md'))).toBe(true)
+    expect(existsSync(path.join(TEST_DIR, '.invoke', 'roles', 'builder', 'docs.md'))).toBe(true)
+    expect(existsSync(path.join(TEST_DIR, '.invoke', 'roles', 'builder', 'integration-test.md'))).toBe(true)
+    expect(existsSync(path.join(TEST_DIR, '.invoke', 'roles', 'builder', 'refactor.md'))).toBe(true)
+    expect(existsSync(path.join(TEST_DIR, '.invoke', 'roles', 'builder', 'migration.md'))).toBe(true)
     expect(existsSync(path.join(TEST_DIR, '.invoke', 'roles', 'planner', 'architect.md'))).toBe(true)
   })
 

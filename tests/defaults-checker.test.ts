@@ -31,6 +31,18 @@ describe('checkForNewDefaults', () => {
 
     expect(missing).toEqual(expect.arrayContaining([
       expect.objectContaining({
+        relativePath: 'roles/builder/docs.md',
+        description: 'New builder: docs',
+      }),
+      expect.objectContaining({
+        relativePath: 'roles/builder/integration-test.md',
+        description: 'New builder: integration-test',
+      }),
+      expect.objectContaining({
+        relativePath: 'roles/builder/refactor.md',
+        description: 'New builder: refactor',
+      }),
+      expect.objectContaining({
         relativePath: 'roles/builder/migration.md',
         description: 'New builder: migration',
       }),

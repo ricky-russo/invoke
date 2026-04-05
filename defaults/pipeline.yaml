@@ -64,6 +64,34 @@ roles:
           model: claude-sonnet-4-6
           effort: medium
           timeout: 300
+    docs:
+      prompt: .invoke/roles/builder/docs.md
+      providers:
+        - provider: claude
+          model: claude-sonnet-4-6
+          effort: medium
+          timeout: 300
+    integration-test:
+      prompt: .invoke/roles/builder/integration-test.md
+      providers:
+        - provider: claude
+          model: claude-sonnet-4-6
+          effort: medium
+          timeout: 300
+    refactor:
+      prompt: .invoke/roles/builder/refactor.md
+      providers:
+        - provider: claude
+          model: claude-sonnet-4-6
+          effort: medium
+          timeout: 300
+    migration:
+      prompt: .invoke/roles/builder/migration.md
+      providers:
+        - provider: claude
+          model: claude-sonnet-4-6
+          effort: medium
+          timeout: 300
 
   reviewer:
     spec-compliance:
@@ -130,5 +158,9 @@ settings:
   # post_merge_commands:
   #   - composer install
   #   - npm install
+  # review_tiers:
+  #   critical: [spec-compliance, security]
+  #   quality: [code-quality, performance]
+  #   polish: [ux, accessibility]
   # Maximum agents to run in parallel per batch (0 or omit for unlimited):
   # max_parallel_agents: 4
