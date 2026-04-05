@@ -13,6 +13,7 @@ import type {
 import { composePrompt } from './prompt-composer.js'
 import { mergeFindings } from './merge-findings.js'
 import { loadConfig } from '../config.js'
+import { estimateCost } from '../metrics/pricing.js'
 
 interface DispatchEngineOptions {
   providers: Map<string, Provider>
@@ -150,6 +151,8 @@ export class DispatchEngine {
       commandSpec.cwd
     )
     const duration = Date.now() - startTime
+    const outputSizeChars = stdout.length
+    const costEstimate = estimateCost(entry.model, prompt.length, outputSizeChars)
 
     let result: AgentResult
     if (timedOut) {
@@ -187,9 +190,13 @@ export class DispatchEngine {
       model: entry.model,
       effort: entry.effort,
       prompt_size_chars: prompt.length,
+      output_size_chars: outputSizeChars,
       duration_ms: duration,
       status: result.status,
       started_at: startedAt,
+      estimated_input_tokens: costEstimate?.input_tokens,
+      estimated_output_tokens: costEstimate?.output_tokens,
+      estimated_cost_usd: costEstimate?.cost_usd,
     })
 
     return result

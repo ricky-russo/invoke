@@ -38855,6 +38855,51 @@ function wordOverlap(textA, textB) {
 
 // src/dispatch/engine.ts
 init_config();
+
+// src/metrics/pricing.ts
+var MODEL_PRICING = {
+  "claude-opus-4-6": {
+    input: 15 / 1e6,
+    output: 75 / 1e6
+  },
+  "claude-sonnet-4-6": {
+    input: 3 / 1e6,
+    output: 15 / 1e6
+  },
+  "claude-haiku-4-5-20251001": {
+    input: 0.8 / 1e6,
+    output: 4 / 1e6
+  },
+  "gpt-5.4": {
+    input: 2 / 1e6,
+    output: 8 / 1e6
+  },
+  "o3-mini": {
+    input: 1.1 / 1e6,
+    output: 4.4 / 1e6
+  }
+};
+function charsToTokens(chars) {
+  return Math.ceil(chars / 4);
+}
+function estimateCost(model, inputChars, outputChars) {
+  const pricing = MODEL_PRICING[model];
+  if (!pricing) {
+    return null;
+  }
+  const inputTokens = charsToTokens(inputChars);
+  const outputTokens = charsToTokens(outputChars);
+  const costUsd = Number(
+    (inputTokens * pricing.input + outputTokens * pricing.output).toFixed(6)
+  );
+  return {
+    input_tokens: inputTokens,
+    output_tokens: outputTokens,
+    cost_usd: costUsd
+  };
+}
+
+// src/dispatch/engine.ts
 var DispatchEngine = class {
   providers;
   parsers;
@@ -38943,6 +38988,8 @@ var DispatchEngine = class {
       commandSpec.cwd
     );
     const duration3 = Date.now() - startTime;
+    const outputSizeChars = stdout.length;
+    const costEstimate = estimateCost(entry.model, prompt.length, outputSizeChars);
     let result;
     if (timedOut) {
       result = {
@@ -38976,9 +39023,13 @@ var DispatchEngine = class {
       model: entry.model,
       effort: entry.effort,
       prompt_size_chars: prompt.length,
+      output_size_chars: outputSizeChars,
       duration_ms: duration3,
       status: result.status,
-      started_at: startedAt
+      started_at: startedAt,
+      estimated_input_tokens: costEstimate?.input_tokens,
+      estimated_output_tokens: costEstimate?.output_tokens,
+      estimated_cost_usd: costEstimate?.cost_usd
     });
     return result;
   }

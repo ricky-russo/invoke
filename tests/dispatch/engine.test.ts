@@ -17,8 +17,20 @@ vi.mock('../../src/config.js', () => ({
   loadConfig: vi.fn(),
 }))
 
+vi.mock('../../src/metrics/pricing.js', async () => {
+  const actual = await vi.importActual<typeof import('../../src/metrics/pricing.js')>(
+    '../../src/metrics/pricing.js'
+  )
+
+  return {
+    ...actual,
+    estimateCost: vi.fn(actual.estimateCost),
+  }
+})
+
 import { spawn } from 'child_process'
 import { loadConfig } from '../../src/config.js'
+import { estimateCost } from '../../src/metrics/pricing.js'
 
 const TEST_PROJECT_DIR = '/tmp/test-project'
 const MOCK_PROMPT = 'mocked prompt content'
@@ -433,6 +445,13 @@ describe('DispatchEngine', () => {
     })
 
     expect(onDispatchComplete).toHaveBeenCalledTimes(2)
+    expect(estimateCost).toHaveBeenCalledTimes(2)
+    expect(vi.mocked(estimateCost).mock.calls).toEqual(
+      expect.arrayContaining([
+        ['opus-4.6', MOCK_PROMPT.length, 'Claude review'.length],
+        ['gpt-5.4', MOCK_PROMPT.length, 'Codex review'.length],
+      ])
+    )
 
     const metrics = onDispatchComplete.mock.calls.map(([metric]) => metric)
     expect(metrics.map(metric => metric.provider).sort()).toEqual(['claude', 'codex'])
@@ -447,10 +466,33 @@ describe('DispatchEngine', () => {
       model: 'opus-4.6',
       effort: 'high',
       prompt_size_chars: MOCK_PROMPT.length,
+      output_size_chars: 'Claude review'.length,
       status: 'success',
     })
     expect(claudeMetric.duration_ms).toEqual(expect.any(Number))
     expect(claudeMetric.started_at).toEqual(expect.any(String))
+    expect(claudeMetric.estimated_input_tokens).toBeUndefined()
+    expect(claudeMetric.estimated_output_tokens).toBeUndefined()
+    expect(claudeMetric.estimated_cost_usd).toBeUndefined()
+
+    const codexMetric = metrics.find(metric => metric.provider === 'codex')
+    expect(codexMetric).toMatchObject({
+      pipeline_id: 'pipeline-123',
+      stage: 'review',
+      role: 'reviewer',
+      subrole: 'security',
+      provider: 'codex',
+      model: 'gpt-5.4',
+      effort: 'high',
+      prompt_size_chars: MOCK_PROMPT.length,
+      output_size_chars: 'Codex review'.length,
+      estimated_input_tokens: 6,
+      estimated_output_tokens: 3,
+      estimated_cost_usd: 0.000036,
+      status: 'success',
+    })
+    expect(codexMetric.duration_ms).toEqual(expect.any(Number))
+    expect(codexMetric.started_at).toEqual(expect.any(String))
   })
 
   it('resolveProviderMode uses role config before settings default before parallel', () => {
