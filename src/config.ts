@@ -102,6 +102,8 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
+// This relies on `parse()` omitting absent YAML keys, so only explicitly provided
+// override values participate in the merge and preset defaults remain intact.
 function deepMerge(base: unknown, override: unknown): unknown {
   if (Array.isArray(base) || Array.isArray(override)) {
     return override

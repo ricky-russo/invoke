@@ -38694,7 +38694,6 @@ import { spawn } from "child_process";
 
 // src/dispatch/prompt-composer.ts
 import { readFile as readFile2 } from "fs/promises";
-import { existsSync } from "fs";
 import path3 from "path";
 var CONTEXT_MAX_LENGTH = 4e3;
 var CONTEXT_FILTER_ROLE_KEY = "__context_filter_role";
@@ -38756,14 +38755,31 @@ function buildTaskKeywordSet(taskContext) {
 function buildFilteredContext(context, sections, taskContext) {
   const role = taskContext[CONTEXT_FILTER_ROLE_KEY]?.toLowerCase() ?? "";
   const taskKeywords = buildTaskKeywordSet(taskContext);
-  const filteredSections = sections.filter(
-    (section) => shouldAlwaysIncludeSection(section.header) || shouldIncludeRoleSection(section.header, role) || hasKeywordOverlap(section.header, taskKeywords)
-  );
+  const filteredSections = [];
+  const included = [];
+  const excluded = [];
+  for (const section of sections) {
+    const shouldInclude = shouldAlwaysIncludeSection(section.header) || shouldIncludeRoleSection(section.header, role) || hasKeywordOverlap(section.header, taskKeywords);
+    if (shouldInclude) {
+      filteredSections.push(section);
+      included.push(section.header);
+      continue;
+    }
+    excluded.push(section.header);
+  }
   if (filteredSections.length === 0) {
-    return "";
+    return {
+      filtered: "",
+      included,
+      excluded
+    };
   }
   const preamble = getContextPreamble(context);
-  return [preamble, ...filteredSections.map(formatContextSection)].filter((part) => part.length > 0).join("\n\n").trim();
+  return {
+    filtered: [preamble, ...filteredSections.map(formatContextSection)].filter((part) => part.length > 0).join("\n\n").trim(),
+    included,
+    excluded
+  };
 }
 function parseContextSections(context) {
   const headingRegex = /^##\s+(.+)$/gm;
@@ -38777,18 +38793,32 @@ function parseContextSections(context) {
   });
 }
 function filterContextSections(context, taskContext, maxLength = CONTEXT_MAX_LENGTH) {
-  if (context.length <= maxLength) {
-    return context;
-  }
   const sections = parseContextSections(context);
+  if (context.length <= maxLength) {
+    return {
+      filtered: context,
+      included: sections.map((section) => section.header),
+      excluded: []
+    };
+  }
   if (sections.length === 0) {
-    return truncateContext(context, maxLength);
+    return {
+      filtered: truncateContext(context, maxLength),
+      included: [],
+      excluded: []
+    };
   }
   const filteredContext = buildFilteredContext(context, sections, taskContext);
-  if (!filteredContext) {
-    return truncateContext(context, maxLength);
+  if (!filteredContext.filtered) {
+    return {
+      ...filteredContext,
+      filtered: truncateContext(context, maxLength)
+    };
   }
-  return truncateContext(filteredContext, maxLength);
+  return {
+    ...filteredContext,
+    filtered: truncateContext(filteredContext.filtered, maxLength)
+  };
 }
 async function composePrompt(options) {
   const { projectDir, promptPath, strategyPath, taskContext } = options;
@@ -38806,12 +38836,23 @@ async function composePrompt(options) {
   }
   const contextPath = path3.join(projectDir, ".invoke", "context.md");
   let projectContext = "";
-  if (existsSync(contextPath)) {
-    projectContext = await readFile2(contextPath, "utf-8");
-    projectContext = filterContextSections(projectContext, {
+  try {
+    const rawProjectContext = await readFile2(contextPath, "utf-8");
+    const contextFilter = filterContextSections(rawProjectContext, {
       ...taskContext,
       [CONTEXT_FILTER_ROLE_KEY]: inferRoleFromPromptPath(promptPath)
     });
+    if (rawProjectContext.length > CONTEXT_MAX_LENGTH && (contextFilter.included.length > 0 || contextFilter.excluded.length > 0)) {
+      console.error("[prompt-composer] Filtered project context sections", {
+        included: contextFilter.included,
+        excluded: contextFilter.excluded
+      });
+    }
+    projectContext = contextFilter.filtered;
+  } catch (error48) {
+    if (error48.code !== "ENOENT") {
+      throw error48;
+    }
   }
   composed = composed.replaceAll("{{project_context}}", projectContext);
   composed = composed.replace(/\{\{(\w+)\}\}/g, (match, key) => taskContext[key] ?? match);
@@ -39472,7 +39513,7 @@ var BatchManager = class {
 
 // src/worktree/manager.ts
 import { execSync as execSync2 } from "child_process";
-import { existsSync as existsSync2 } from "fs";
+import { existsSync } from "fs";
 import path4 from "path";
 import os from "os";
 var WorktreeManager = class {
@@ -39525,7 +39566,7 @@ var WorktreeManager = class {
   async cleanup(taskId) {
     const info = this.worktrees.get(taskId);
     if (!info) return;
-    if (existsSync2(info.worktreePath)) {
+    if (existsSync(info.worktreePath)) {
       execSync2(
         `git worktree remove "${info.worktreePath}" --force`,
         { cwd: this.repoDir, stdio: "pipe" }
@@ -39577,13 +39618,13 @@ var WorktreeManager = class {
 };
 
 // src/metrics/manager.ts
-import { existsSync as existsSync4 } from "fs";
+import { existsSync as existsSync3 } from "fs";
 import { mkdir as mkdir2, readFile as readFile4, rename as rename2, writeFile as writeFile2 } from "fs/promises";
 import path6 from "path";
 
 // src/tools/state.ts
 import { mkdir, readFile as readFile3, writeFile, rename } from "fs/promises";
-import { existsSync as existsSync3 } from "fs";
+import { existsSync as existsSync2 } from "fs";
 import path5 from "path";
 var StateManager = class {
   statePath;
@@ -39596,7 +39637,7 @@ var StateManager = class {
     this.tmpPath = path5.join(this.storageDir, "state.json.tmp");
   }
   async get() {
-    if (!existsSync3(this.statePath)) {
+    if (!existsSync2(this.statePath)) {
       return null;
     }
     const content = await readFile3(this.statePath, "utf-8");
@@ -39673,7 +39714,7 @@ var StateManager = class {
     return state.review_cycles.length;
   }
   async reset() {
-    if (existsSync3(this.statePath)) {
+    if (existsSync2(this.statePath)) {
       const { unlink: unlink2 } = await import("fs/promises");
       await unlink2(this.statePath);
     }
@@ -39813,7 +39854,7 @@ var MetricsManager = class {
     await this.loadPromise;
   }
   async loadFromDisk() {
-    if (!existsSync4(this.metricsPath)) {
+    if (!existsSync3(this.metricsPath)) {
       this.loaded = true;
       return;
     }
@@ -39842,7 +39883,7 @@ function normalizeCost(value) {
 }
 
 // src/session/manager.ts
-import { existsSync as existsSync5 } from "fs";
+import { existsSync as existsSync4 } from "fs";
 import { mkdir as mkdir3, readFile as readFile5, readdir as readdir2, rename as rename3, rm } from "fs/promises";
 import path7 from "path";
 var MS_PER_DAY = 24 * 60 * 60 * 1e3;
@@ -39862,13 +39903,13 @@ var SessionManager = class {
   resolve(sessionId) {
     this.validateSessionId(sessionId);
     const sessionDir = this.getSessionDir(sessionId);
-    if (!existsSync5(sessionDir)) {
+    if (!existsSync4(sessionDir)) {
       throw new Error(`Session '${sessionId}' does not exist`);
     }
     return sessionDir;
   }
   async list(staleDays = 7) {
-    if (!existsSync5(this.sessionsDir)) {
+    if (!existsSync4(this.sessionsDir)) {
       return [];
     }
     const entries = await readdir2(this.sessionsDir, { withFileTypes: true });
@@ -39884,7 +39925,7 @@ var SessionManager = class {
   }
   async migrate() {
     const legacyStatePath = this.getLegacyStatePath();
-    if (!existsSync5(legacyStatePath)) {
+    if (!existsSync4(legacyStatePath)) {
       return { migrated: false };
     }
     const state = JSON.parse(await readFile5(legacyStatePath, "utf-8"));
@@ -39905,7 +39946,7 @@ var SessionManager = class {
       throw error48;
     }
     const legacyMetricsPath = this.getLegacyMetricsPath();
-    if (existsSync5(legacyMetricsPath)) {
+    if (existsSync4(legacyMetricsPath)) {
       try {
         await rename3(legacyMetricsPath, path7.join(sessionDir, "metrics.json"));
       } catch (error48) {
@@ -39922,7 +39963,7 @@ var SessionManager = class {
   }
   exists(sessionId) {
     this.validateSessionId(sessionId);
-    return existsSync5(this.getSessionDir(sessionId));
+    return existsSync4(this.getSessionDir(sessionId));
   }
   getSessionDir(sessionId) {
     return path7.join(this.sessionsDir, sessionId);
@@ -39942,7 +39983,7 @@ var SessionManager = class {
   }
   async readSessionInfo(sessionId, staleDays = 7) {
     const statePath = this.getStatePath(sessionId);
-    if (!existsSync5(statePath)) {
+    if (!existsSync4(statePath)) {
       return null;
     }
     const state = await this.readState(sessionId);
@@ -40026,7 +40067,7 @@ init_config();
 
 // src/init.ts
 import { cp, mkdir as mkdir5, readdir as readdir4 } from "fs/promises";
-import { existsSync as existsSync6 } from "fs";
+import { existsSync as existsSync5 } from "fs";
 import path9 from "path";
 import { fileURLToPath as fileURLToPath3 } from "url";
 var __dirname3 = path9.dirname(fileURLToPath3(import.meta.url));
@@ -40036,7 +40077,7 @@ async function initProject(projectDir) {
   const defaultsDir = path9.join(PACKAGE_ROOT3, "defaults");
   await mkdir5(invokeDir, { recursive: true });
   const configDest = path9.join(invokeDir, "pipeline.yaml");
-  if (!existsSync6(configDest)) {
+  if (!existsSync5(configDest)) {
     await cp(path9.join(defaultsDir, "pipeline.yaml"), configDest);
   }
   await copyDefaults(path9.join(defaultsDir, "roles"), path9.join(invokeDir, "roles"));
@@ -40046,7 +40087,7 @@ async function initProject(projectDir) {
   await mkdir5(path9.join(invokeDir, "reviews"), { recursive: true });
 }
 async function copyDefaults(srcDir, destDir) {
-  if (!existsSync6(srcDir)) return;
+  if (!existsSync5(srcDir)) return;
   await mkdir5(destDir, { recursive: true });
   const entries = await readdir4(srcDir, { withFileTypes: true });
   for (const entry of entries) {
@@ -40054,7 +40095,7 @@ async function copyDefaults(srcDir, destDir) {
     const destPath = path9.join(destDir, entry.name);
     if (entry.isDirectory()) {
       await copyDefaults(srcPath, destPath);
-    } else if (!existsSync6(destPath)) {
+    } else if (!existsSync5(destPath)) {
       await cp(srcPath, destPath);
     }
   }
@@ -40897,7 +40938,7 @@ function buildOperation(input) {
 
 // src/tools/context.ts
 import { readFile as readFile8, writeFile as writeFile5 } from "fs/promises";
-import { existsSync as existsSync7 } from "fs";
+import { existsSync as existsSync6 } from "fs";
 import path11 from "path";
 var ContextManager = class {
   constructor(projectDir) {
@@ -40907,7 +40948,7 @@ var ContextManager = class {
   projectDir;
   contextPath;
   async get(maxLength) {
-    if (!existsSync7(this.contextPath)) {
+    if (!existsSync6(this.contextPath)) {
       return null;
     }
     let content = await readFile8(this.contextPath, "utf-8");
@@ -40917,7 +40958,7 @@ var ContextManager = class {
     return content;
   }
   exists() {
-    return existsSync7(this.contextPath);
+    return existsSync6(this.contextPath);
   }
   async initialize(content) {
     await withLock(this.contextPath, async () => {
@@ -41071,7 +41112,7 @@ function registerMetricsTools(server, metricsManager, projectDir, sessionManager
 
 // src/defaults-checker.ts
 import { readdir as readdir5 } from "fs/promises";
-import { existsSync as existsSync8 } from "fs";
+import { existsSync as existsSync7 } from "fs";
 import path12 from "path";
 import { fileURLToPath as fileURLToPath4 } from "url";
 var __dirname4 = path12.dirname(fileURLToPath4(import.meta.url));
@@ -41079,7 +41120,7 @@ var PACKAGE_ROOT4 = path12.join(__dirname4, "..");
 async function checkForNewDefaults(projectDir) {
   const invokeDir = path12.join(projectDir, ".invoke");
   const defaultsDir = path12.join(PACKAGE_ROOT4, "defaults");
-  if (!existsSync8(invokeDir) || !existsSync8(defaultsDir)) {
+  if (!existsSync7(invokeDir) || !existsSync7(defaultsDir)) {
     return [];
   }
   const missing = [];
@@ -41087,7 +41128,7 @@ async function checkForNewDefaults(projectDir) {
   return missing;
 }
 async function scanDir(srcDir, destDir, relativePath, missing) {
-  if (!existsSync8(srcDir)) return;
+  if (!existsSync7(srcDir)) return;
   const entries = await readdir5(srcDir, { withFileTypes: true });
   for (const entry of entries) {
     const srcPath = path12.join(srcDir, entry.name);
@@ -41095,7 +41136,7 @@ async function scanDir(srcDir, destDir, relativePath, missing) {
     const relPath = relativePath ? `${relativePath}/${entry.name}` : entry.name;
     if (entry.isDirectory()) {
       await scanDir(srcPath, destPath, relPath, missing);
-    } else if (!existsSync8(destPath)) {
+    } else if (!existsSync7(destPath)) {
       missing.push({
         relativePath: relPath,
         description: describeDefault(relPath)

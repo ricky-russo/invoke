@@ -1,5 +1,4 @@
 import { readFile } from 'fs/promises'
-import { existsSync } from 'fs'
 import path from 'path'
 
 const CONTEXT_MAX_LENGTH = 4000
@@ -11,6 +10,12 @@ const COMPLETED_WORK_SECTION_KEYWORD = 'completed work'
 interface ContextSection {
   header: string
   content: string
+}
+
+interface FilteredContextResult {
+  filtered: string
+  included: string[]
+  excluded: string[]
 }
 
 interface ComposeOptions {
@@ -98,24 +103,44 @@ function buildFilteredContext(
   context: string,
   sections: ContextSection[],
   taskContext: Record<string, string>
-): string {
+): FilteredContextResult {
   const role = taskContext[CONTEXT_FILTER_ROLE_KEY]?.toLowerCase() ?? ''
   const taskKeywords = buildTaskKeywordSet(taskContext)
-  const filteredSections = sections.filter(section =>
-    shouldAlwaysIncludeSection(section.header) ||
-    shouldIncludeRoleSection(section.header, role) ||
-    hasKeywordOverlap(section.header, taskKeywords)
-  )
+  const filteredSections: ContextSection[] = []
+  const included: string[] = []
+  const excluded: string[] = []
+
+  for (const section of sections) {
+    const shouldInclude = shouldAlwaysIncludeSection(section.header) ||
+      shouldIncludeRoleSection(section.header, role) ||
+      hasKeywordOverlap(section.header, taskKeywords)
+
+    if (shouldInclude) {
+      filteredSections.push(section)
+      included.push(section.header)
+      continue
+    }
+
+    excluded.push(section.header)
+  }
 
   if (filteredSections.length === 0) {
-    return ''
+    return {
+      filtered: '',
+      included,
+      excluded,
+    }
   }
 
   const preamble = getContextPreamble(context)
-  return [preamble, ...filteredSections.map(formatContextSection)]
-    .filter(part => part.length > 0)
-    .join('\n\n')
-    .trim()
+  return {
+    filtered: [preamble, ...filteredSections.map(formatContextSection)]
+      .filter(part => part.length > 0)
+      .join('\n\n')
+      .trim(),
+    included,
+    excluded,
+  }
 }
 
 function parseContextSections(context: string): ContextSection[] {
@@ -136,23 +161,37 @@ function filterContextSections(
   context: string,
   taskContext: Record<string, string>,
   maxLength = CONTEXT_MAX_LENGTH
-): string {
+): FilteredContextResult {
+  const sections = parseContextSections(context)
   if (context.length <= maxLength) {
-    return context
+    return {
+      filtered: context,
+      included: sections.map(section => section.header),
+      excluded: [],
+    }
   }
 
-  const sections = parseContextSections(context)
   if (sections.length === 0) {
-    return truncateContext(context, maxLength)
+    return {
+      filtered: truncateContext(context, maxLength),
+      included: [],
+      excluded: [],
+    }
   }
 
   const filteredContext = buildFilteredContext(context, sections, taskContext)
 
-  if (!filteredContext) {
-    return truncateContext(context, maxLength)
+  if (!filteredContext.filtered) {
+    return {
+      ...filteredContext,
+      filtered: truncateContext(context, maxLength),
+    }
   }
 
-  return truncateContext(filteredContext, maxLength)
+  return {
+    ...filteredContext,
+    filtered: truncateContext(filteredContext.filtered, maxLength),
+  }
 }
 
 export async function composePrompt(options: ComposeOptions): Promise<string> {
@@ -176,12 +215,26 @@ export async function composePrompt(options: ComposeOptions): Promise<string> {
   // Inject project context if available
   const contextPath = path.join(projectDir, '.invoke', 'context.md')
   let projectContext = ''
-  if (existsSync(contextPath)) {
-    projectContext = await readFile(contextPath, 'utf-8')
-    projectContext = filterContextSections(projectContext, {
+  try {
+    const rawProjectContext = await readFile(contextPath, 'utf-8')
+    const contextFilter = filterContextSections(rawProjectContext, {
       ...taskContext,
       [CONTEXT_FILTER_ROLE_KEY]: inferRoleFromPromptPath(promptPath),
     })
+    if (
+      rawProjectContext.length > CONTEXT_MAX_LENGTH &&
+      (contextFilter.included.length > 0 || contextFilter.excluded.length > 0)
+    ) {
+      console.error('[prompt-composer] Filtered project context sections', {
+        included: contextFilter.included,
+        excluded: contextFilter.excluded,
+      })
+    }
+    projectContext = contextFilter.filtered
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+      throw error
+    }
   }
   composed = composed.replaceAll('{{project_context}}', projectContext)
 

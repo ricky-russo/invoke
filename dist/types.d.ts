@@ -162,6 +162,7 @@ export interface BatchState {
     id: number;
     status: 'pending' | 'in_progress' | 'partial' | 'completed' | 'error';
     tasks: TaskState[];
+    merged_tasks?: string[];
 }
 export interface TaskState {
     id: string;

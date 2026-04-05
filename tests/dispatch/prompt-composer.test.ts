@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { composePrompt } from '../../src/dispatch/prompt-composer.js'
 import { mkdir, writeFile, rm } from 'fs/promises'
 import path from 'path'
@@ -160,6 +160,8 @@ Review for OWASP top 10 vulnerabilities.`
   })
 
   it('filters long builder context to keep architecture and core sections', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
     await writeFile(
       path.join(TEST_DIR, '.invoke', 'roles', 'builder', 'default.md'),
       '# Builder\n\n## Context\n{{project_context}}\n'
@@ -179,20 +181,31 @@ Review for OWASP top 10 vulnerabilities.`
 
     await writeFile(path.join(TEST_DIR, '.invoke', 'context.md'), longContext)
 
-    const result = await composePrompt({
-      projectDir: TEST_DIR,
-      promptPath: '.invoke/roles/builder/default.md',
-      taskContext: { task_description: 'Implement dashboard routing' },
-    })
+    try {
+      const result = await composePrompt({
+        projectDir: TEST_DIR,
+        promptPath: '.invoke/roles/builder/default.md',
+        taskContext: { task_description: 'Implement dashboard routing' },
+      })
 
-    const context = extractContext(result)
-    expect(context).toContain('## Purpose\n\nBuild an internal API gateway.')
-    expect(context).toContain('## Tech Stack\n\nTypeScript, Node.js, Vitest.')
-    expect(context).toContain('## Conventions\n\nPrefer ESM modules and descriptive names.')
-    expect(context).toContain('## Constraints\n\nKeep the CLI interface stable.')
-    expect(context).toContain('## Architecture\n\nDispatcher, provider, and parser layers.')
-    expect(context).not.toContain('## Completed Work')
-    expect(context).not.toContain('## Known Issues')
+      const context = extractContext(result)
+      expect(context).toContain('## Purpose\n\nBuild an internal API gateway.')
+      expect(context).toContain('## Tech Stack\n\nTypeScript, Node.js, Vitest.')
+      expect(context).toContain('## Conventions\n\nPrefer ESM modules and descriptive names.')
+      expect(context).toContain('## Constraints\n\nKeep the CLI interface stable.')
+      expect(context).toContain('## Architecture\n\nDispatcher, provider, and parser layers.')
+      expect(context).not.toContain('## Completed Work')
+      expect(context).not.toContain('## Known Issues')
+      expect(errorSpy).toHaveBeenCalledWith(
+        '[prompt-composer] Filtered project context sections',
+        {
+          included: ['Purpose', 'Tech Stack', 'Conventions', 'Constraints', 'Architecture'],
+          excluded: ['Completed Work', 'Known Issues'],
+        }
+      )
+    } finally {
+      errorSpy.mockRestore()
+    }
   })
 
   it('filters long reviewer context to keep completed work and matching sections', async () => {

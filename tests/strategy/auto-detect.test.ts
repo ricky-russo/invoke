@@ -29,19 +29,29 @@ describe('autoDetectStrategy', () => {
     })
   })
 
-  it('detects implementation-first with high confidence for refactor-oriented work', () => {
-    expect(autoDetectStrategy('refactor and simplify the auth module')).toEqual({
-      strategy: 'implementation-first',
-      confidence: 'high',
-      reason: 'Task description suggests implementation-first work (matched: refactor, simplify)',
+  it('suggests tdd when the task mentions a test and test files already exist', () => {
+    expect(autoDetectStrategy('add a test for the auth module', {
+      existingFiles: ['src/auth.test.ts', 'src/auth.ts'],
+    })).toEqual({
+      strategy: 'tdd',
+      confidence: 'medium',
+      reason: 'Task mentions tests and existing test files were detected',
     })
   })
 
   it('matches keywords case-insensitively', () => {
-    expect(autoDetectStrategy('CRASH when saving profile')).toEqual({
+    expect(autoDetectStrategy('BROKEN when saving profile')).toEqual({
       strategy: 'bug-fix',
       confidence: 'medium',
-      reason: 'Task description suggests a bug fix (matched: crash)',
+      reason: 'Task description suggests a bug fix (matched: broken)',
+    })
+  })
+
+  it('does not treat refactor-oriented work as implementation-first', () => {
+    expect(autoDetectStrategy('refactor and simplify the auth module')).toEqual({
+      strategy: 'tdd',
+      confidence: 'low',
+      reason: 'Default strategy — no strong pattern detected',
     })
   })
 })
