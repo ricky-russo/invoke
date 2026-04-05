@@ -17,7 +17,7 @@ All `invoke_get_state` and `invoke_set_state` calls in this flow must include `s
 
 ### 1. Verify State
 
-Call `invoke_get_state` with `session_id: <pipeline_id>` to verify we're at the orchestrate stage. Read the plan from `invoke_read_artifact` with `stage: "plans"`, `filename: "plan.md"`.
+Call `invoke_get_state` with `session_id: <pipeline_id>` to verify we're at the orchestrate stage. Read the plan from `invoke_read_artifact` with `stage: "plans"`, using the filename from `state.plan`.
 
 If the state includes `spec`, read that artifact too (use the filename from `state.spec` with `stage: "specs"`). Use the approved spec text for strategy auto-detection. If `spec` is missing, fall back to the approved plan text.
 
@@ -56,6 +56,18 @@ For each task, define:
 - `interfaces` — type signatures, function contracts the code must conform to
 
 Use the narrowest valid dependency set. If a task only needs one earlier task, set `depends_on` to that specific `task_id` instead of treating the whole earlier batch as a blocker.
+
+### Builder Subrole Selection
+
+Match each task to the most appropriate builder subrole based on the work involved. Do not default all tasks to `"subrole": "default"`.
+
+- `default` — new code implementation, general-purpose tasks
+- `docs` — documentation, markdown content, README updates
+- `migration` — database migrations, schema changes, data transformations
+- `refactor` — restructuring existing code, moving/renaming, architecture changes
+- `integration-test` — writing integration or end-to-end tests
+
+If the plan is too vague to decompose into concrete tasks (missing file paths, unclear scope, no acceptance criteria derivable), do not guess. Ask the user to clarify the ambiguity, or suggest returning to invoke-plan to refine the plan.
 
 ### 4. Group into Batches
 
@@ -139,7 +151,7 @@ Call `invoke_set_state` with `session_id: <pipeline_id>` and:
 - `current_stage: "build"`
 - `strategy: "<chosen strategy>"`
 
-The build stage skill will auto-trigger from here.
+After updating state, invoke the build stage by calling `Skill({ skill: "invoke:invoke-build" })`.
 
 ## Task Sizing Guidelines
 
@@ -164,5 +176,6 @@ For each batch:
 1. List every file that each task will create or modify (from `relevant_files` and the task description)
 2. Check for overlaps — if two tasks touch the same file, they MUST be in different batches
 3. Also check for **implicit overlaps** — tasks that both generate config files, lockfiles, or shared resources like `composer.json`, `package.json`, `phpunit.xml`
+4. Also check for files that tasks will **CREATE** (described in `task_description`), not just files listed in `relevant_files`. A task that creates a new module and a task that creates a shared types file both touching the same directory can still conflict.
 
 If conflicts are found, move one of the conflicting tasks to a later batch. Never put conflicting tasks in the same parallel batch.
