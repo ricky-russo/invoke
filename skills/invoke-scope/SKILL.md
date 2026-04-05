@@ -70,7 +70,7 @@ Once preset handling is complete, continue to researcher selection.
 
 ### 4. Dispatch Researchers
 
-Read the pipeline config with `invoke_get_config` again if needed to see which researchers are available after preset selection.
+Re-read the pipeline config with `invoke_get_config` if a preset was selected in step 3, as the preset may affect which roles are available.
 
 Present the available researchers using `AskUserQuestion` with `multiSelect: true`. Each option's label is the subrole name, description includes provider(s), model(s), and effort level.
 
@@ -83,7 +83,7 @@ For example, if the user asks to "build an MVC framework with auth, routing, and
 - `best-practices` researcher gets: "Research PSR-compliant MVC routing patterns and middleware design"
 - A second `best-practices` dispatch gets: "Research Vue + InertiaJS adapter patterns for PHP frameworks"
 
-If the request covers more than 3 distinct topics, dispatch multiple batches of researchers rather than one overloaded batch. Each research task should be completable in under 5 minutes.
+If the request covers more than 3 distinct topics, dispatch multiple rounds of researchers rather than one overloaded round. Each research task should be completable in under 5 minutes.
 
 Wait for user selection, then dispatch the selected researchers using `invoke_dispatch_batch`:
 - `create_worktrees: false` (researchers don't modify code)
@@ -93,7 +93,7 @@ Wait for user selection, then dispatch the selected researchers using `invoke_di
 
 Call `invoke_get_batch_status` with the batch ID — it will wait up to 60 seconds for a status change before returning. Keep calling until all researchers complete. Do NOT use `sleep` between calls — the tool handles waiting internally. Let the user know agents are working.
 
-**CRITICAL: Do NOT proceed to step 4 while any dispatched agents are still running.** You must wait for all agents to complete or fail before moving on.
+**CRITICAL: Do NOT proceed to step 5 while any dispatched agents are still running.** You must wait for all agents to complete or fail before moving on.
 
 If agents have been running for more than 5 minutes, ask the user what to do using `AskUserQuestion`:
 
@@ -125,6 +125,8 @@ Using the research as context, ask clarifying questions **one at a time**:
 - Use multiple choice when possible
 - Cover: purpose, constraints, success criteria, edge cases, non-functional requirements
 
+Aim for 3–5 clarifying questions. Stop when the core decisions (purpose, constraints, success criteria) are clear. Do not exhaust every possible edge case — the spec will capture those.
+
 ### 7. Produce Spec
 
 When scope is clear, write a spec document covering:
@@ -152,12 +154,12 @@ Call `invoke_set_state` with `session_id: <pipeline_id>` and:
 
 Once approved, update state via `invoke_set_state` with `session_id: <pipeline_id>` and `current_stage: "plan"`. If the user wants changes, revise the spec and repeat.
 
-The plan stage skill will auto-trigger from here.
+After approval, update state with `current_stage: "plan"` via `invoke_set_state`, then invoke the plan stage by calling `Skill({ skill: "invoke:invoke-plan" })`.
 
 ## Error Handling
 
 - If a researcher fails or times out, present the error and ask if the user wants to retry or proceed without it
-- If the user wants to abort, call `invoke_set_state` with `session_id: <pipeline_id>` to reset the pipeline
+- If the user wants to abort: call `invoke_cleanup_worktrees` to clean up any worktrees, then call `invoke_set_state` with `session_id` and `current_stage: "scope"` to allow restarting. Inform the user the pipeline has been reset.
 
 ## Key Principle
 

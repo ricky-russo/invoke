@@ -31,6 +31,8 @@ Present resumed batch status in task buckets so the user can see what is already
 
 The first time build runs for this pipeline, note the current branch. All build work happens on a temporary work branch — but since agents work in worktrees, the current branch stays clean until merge.
 
+The `invoke_dispatch_batch` tool with `create_worktrees: true` automatically creates git worktrees for each task. Do not manually run `git checkout -b` or create branches — the dispatch tool handles this. The current branch stays clean until worktrees are merged back.
+
 ### 3. Execute Batches
 
 For each batch in order:
@@ -106,6 +108,8 @@ If multiple tasks become ready at the same time, keep the old batch-level user e
 
 If the batch has been running for more than 10 minutes, use `AskUserQuestion` to ask the user whether to keep waiting, cancel remaining tasks and proceed with completed ones, or abort the batch.
 
+> **Note:** Build tasks use a 10-minute timeout threshold (vs 5 minutes for research, planning, and review stages) because build agents perform more work: reading existing code, implementing changes, running tests, and committing. This is intentional.
+
 #### e. Recover Failed Tasks
 
 If a task returns `error` or `timeout`, present the failure and ask what to do with that task: `Retry`, `Skip`, or `Abort`.
@@ -159,7 +163,7 @@ If the user selects reviewers, present the available reviewers from `invoke_get_
 
 If step a resulted in "Skip further review", skip this prompt for the current batch and continue to the next batch after validation.
 
-**For accepted findings that need fixing: ALWAYS dispatch builder agents via `invoke_dispatch_batch` with worktrees.** Do NOT fix code directly in the session — that bypasses the pipeline (no worktrees, no state tracking, no validation). Bundle accepted findings as fix tasks, dispatch builders, merge, validate — same flow as a regular build batch.
+**For accepted findings that need fixing: ALWAYS dispatch builder agents via `invoke_dispatch_batch` with worktrees.** Do NOT fix code directly in the session — that bypasses the pipeline (no worktrees, no state tracking, no validation). Bundle accepted findings as fix tasks, dispatch builders, merge, validate — same flow as a regular build batch. Structure fix tasks the same way as invoke-review step 7 defines them: each fix task gets the finding details, the file and line reference, and the suggested fix as `task_context`. Set the builder subrole based on the nature of the fix (e.g., `docs` for documentation fixes, `default` for code fixes).
 
 When you record an inter-batch review cycle with `invoke_set_state`, include `session_id: <pipeline_id>`, `batch_id: <current batch id>`, and `scope: 'batch'`. This is especially important when accepted findings trigger fix dispatches, so later review-cycle checks stay tied to the correct batch.
 
@@ -168,7 +172,7 @@ When you record an inter-batch review cycle with `invoke_set_state`, include `se
 When all batches are done, update state via `invoke_set_state` with `session_id: <pipeline_id>`:
 - `current_stage: "review"`
 
-The review stage skill will auto-trigger from here.
+Then invoke `Skill({ skill: "invoke:invoke-review" })` to begin the review stage.
 
 ## Error Handling
 

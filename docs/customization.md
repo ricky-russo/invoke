@@ -50,7 +50,7 @@ Two variables are interpolated at dispatch time:
 - `{{model}}` — replaced with the `model` value from the role's provider entry. For example, `gemini-2.5-pro`.
 - `{{effort}}` — replaced with the `effort` value from the role's provider entry: `low`, `medium`, or `high`. Providers that have no effort concept can simply omit this variable from their args.
 
-Invoke validates at startup that each provider's `cli` binary exists on `PATH`. If the binary is missing, a warning is printed before any pipeline work begins.
+Invoke validates at startup that each provider's `cli` binary exists on `PATH`. If the binary is missing, an error is reported before any pipeline work begins.
 
 ---
 
@@ -126,12 +126,19 @@ roles:
   reviewer:
     documentation:
       prompt: .invoke/roles/reviewer/documentation.md
+      provider_mode: parallel
       providers:
         - provider: claude
           model: claude-opus-4-6
           effort: medium
           timeout: 300
+        - provider: codex
+          model: o3
+          effort: medium
+          timeout: 300
 ```
+
+`provider_mode: parallel` dispatches all listed providers concurrently and merges their findings. When two providers flag the same file and line (or flag the same file with more than 30% word overlap in the issue text), the findings are deduplicated into one entry. The merged finding includes an `agreedBy` array listing every provider that independently found it. If the providers disagree on severity, the higher severity is kept. Findings are sorted by severity first, then by how many providers agreed. (`src/dispatch/merge-findings.ts:19-44`)
 
 See `defaults/roles/reviewer/security.md` for a complete, production-ready template you can use as a starting point when writing new reviewers.
 
@@ -201,6 +208,128 @@ roles:
 ```
 
 Research agents are given longer default timeouts (600 seconds) because they read broadly across the codebase. Adjust as needed for your project size.
+
+---
+
+## Creating a builder
+
+Builder subroles let you specialize agents for different task types. Each subrole is a distinct agent persona dispatched during the build phase, with a prompt tuned for its particular kind of work.
+
+### Built-in builder subroles
+
+| Subrole | Intended use |
+|---|---|
+| `default` | General-purpose implementation tasks |
+| `docs` | Documentation updates and additions |
+| `integration-test` | Cross-module tests that verify components work together after a build has merged |
+| `refactor` | Code quality improvements without behavior changes |
+| `migration` | Breaking changes, schema migrations, and dependency upgrades |
+
+(`defaults/roles/builder/`)
+
+### Steps
+
+1. Write the prompt file at `.invoke/roles/builder/<name>.md`.
+2. Add an entry under `roles.builder` in `.invoke/pipeline.yaml`.
+
+### Example: a frontend builder
+
+**`.invoke/roles/builder/frontend.md`**
+
+```markdown
+# Frontend Builder
+
+You are implementing a UI task as part of a larger development plan.
+
+## Task
+{{task_description}}
+
+## Acceptance Criteria
+{{acceptance_criteria}}
+
+## Relevant Files
+{{relevant_files}}
+
+## Instructions
+
+Implement the changes using the project's existing component library and styling conventions.
+Follow the patterns in {{relevant_files}} for structure and naming.
+Do not introduce new dependencies without noting them explicitly.
+```
+
+**`.invoke/pipeline.yaml`** — add under `roles.builder`:
+
+```yaml
+roles:
+  builder:
+    frontend:
+      prompt: .invoke/roles/builder/frontend.md
+      providers:
+        - provider: claude
+          model: claude-opus-4-6
+          effort: high
+          timeout: 600
+```
+
+---
+
+## Creating a planner
+
+Planner subroles produce competing implementation approaches for the same task. Having multiple planners generates distinct plans that can be compared before a build strategy is chosen.
+
+### Built-in planner subroles
+
+| Subrole | Intended use |
+|---|---|
+| `architect` | Primary implementation plan with full detail |
+| `alternative` | Competing approach that explores a different design direction |
+
+(`defaults/roles/planner/`)
+
+### Steps
+
+1. Write the prompt file at `.invoke/roles/planner/<name>.md`.
+2. Add an entry under `roles.planner` in `.invoke/pipeline.yaml`.
+
+### Example: a minimal planner
+
+**`.invoke/roles/planner/conservative.md`**
+
+```markdown
+# Conservative Planner
+
+You are creating a low-risk implementation plan that minimizes surface-area changes.
+
+## Spec
+{{task_description}}
+
+## Acceptance Criteria
+{{acceptance_criteria}}
+
+## Relevant Files
+{{relevant_files}}
+
+## Instructions
+
+Produce a step-by-step plan that:
+- Touches as few files as possible
+- Reuses existing abstractions rather than creating new ones
+- Defers any non-essential cleanup to a separate task
+```
+
+**`.invoke/pipeline.yaml`** — add under `roles.planner`:
+
+```yaml
+roles:
+  planner:
+    conservative:
+      prompt: .invoke/roles/planner/conservative.md
+      providers:
+        - provider: claude
+          model: claude-opus-4-6
+          effort: medium
+          timeout: 300
+```
 
 ---
 
@@ -282,6 +411,38 @@ settings:
 
 ---
 
+## Using invoke-manage
+
+The `invoke-manage` skill in Claude Code provides an alternative to editing `pipeline.yaml` by hand. It accepts natural-language requests and translates them into structured config operations. `invoke-manage` writes the change to `pipeline.yaml` first, then reloads and validates the updated config. If validation fails, the error is surfaced but the file has already been written.
+
+### Operations
+
+| Operation | What it does |
+|---|---|
+| `add_role` | Create a new role or subrole entry under `roles.<group>` |
+| `remove_role` | Delete a subrole entry |
+| `add_strategy` | Create a new strategy entry under `strategies:` |
+| `remove_strategy` | Delete a strategy entry |
+| `update_settings` | Update one or more fields under `settings:` |
+
+Each operation reads the current `pipeline.yaml`, applies the change, and writes it back. The config is then reloaded through the normal validation path. If the reload detects an invalid configuration, the error is surfaced — but the file has already been written, so you may need to fix it manually or re-run the operation. (`src/tools/config-manager.ts:128-134`)
+
+### Example
+
+To create a new reviewer for API documentation:
+
+> Create a new reviewer for API documentation. Use claude-opus-4-6 with medium effort.
+
+Invoke-manage will prompt you for the prompt file path if not specified, write the entry under `roles.reviewer` in `pipeline.yaml`, and confirm what changed.
+
+To update the default strategy to `spike-and-stabilize`:
+
+> Set the default strategy to spike-and-stabilize.
+
+(`src/tools/config-update-tools.ts:26-67`)
+
+---
+
 ## Modifying role prompts
 
 ### Where prompts live
@@ -305,12 +466,28 @@ Each file is plain Markdown. Invoke reads it at dispatch time, substitutes templ
 | Variable | Available in | Description |
 |---|---|---|
 | `{{task_description}}` | All roles | The task or feature description passed to this agent |
+| `{{project_context}}` | All roles | Filtered contents of `.invoke/context.md` (see below) |
 | `{{diff}}` | Reviewer roles | The git diff of changes being reviewed |
-| `{{project_context}}` | All roles | Contents of `.invoke/context.md` (see project-context.md) |
+| `{{acceptance_criteria}}` | Builder, planner roles | The list of acceptance criteria from the spec |
+| `{{relevant_files}}` | Builder, planner roles | Files identified during research as relevant to this task |
+| `{{interfaces}}` | Builder, planner roles | Interfaces and type signatures the implementation must conform to |
+| `{{strategy}}` | Builder roles | The name of the selected strategy (e.g., `tdd`); the strategy prompt content is appended to the role prompt automatically |
 
-The `{{project_context}}` variable is populated automatically from `.invoke/context.md` if that file exists. It is truncated at 4000 characters if the file is large.
+(`src/dispatch/prompt-composer.ts:245`, `src/dispatch/engine.ts:47-56`)
 
-Strategy prompts also receive `{{acceptance_criteria}}`, `{{relevant_files}}`, and `{{interfaces}}` as described in the strategies section above.
+### How `{{project_context}}` is filtered
+
+`{{project_context}}` is not a raw dump of `.invoke/context.md`. When the context file exceeds 4000 characters, the prompt composer filters its `##`-headed sections before injecting them. The filtering rules are: (`src/dispatch/prompt-composer.ts:6-95`)
+
+- **Always included:** sections whose headers contain `purpose`, `tech stack`, `conventions`, or `constraints`.
+- **Included for builder and planner roles:** sections whose headers contain `architecture`.
+- **Included for reviewer roles:** sections whose headers contain `completed work`.
+- **Included for all roles:** sections whose headers share a keyword with the task context (task description, acceptance criteria, etc.).
+- **Excluded:** sections that match none of the above.
+
+If the filtered result still exceeds 4000 characters, it is truncated at that limit with a `(truncated)` marker appended. If the context file is 4000 characters or shorter, all sections are passed through without filtering.
+
+This means context sections that are not relevant to the current role or task are silently omitted. If an agent appears to be missing architectural or background information, check whether the relevant section heading matches one of the inclusion rules above.
 
 ### Tips for writing effective prompts
 

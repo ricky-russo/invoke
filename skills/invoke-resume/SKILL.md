@@ -17,7 +17,11 @@ You are resuming an in-progress invoke pipeline from a previous session.
 
 Call `invoke_list_sessions` first to discover all active sessions.
 
-Present the active sessions to the user for selection using `AskUserQuestion`. If there are no active sessions, inform the user and offer to start a new pipeline.
+If there are no active sessions, inform the user and offer to start a new pipeline.
+
+If there is only one active session, auto-select it and inform the user: "Auto-selecting [pipeline_id] (only active pipeline)." Do not present `AskUserQuestion` with a single option — per the messaging standard, skip selection UI when there is only one choice.
+
+If there are multiple active sessions, present them to the user for selection using `AskUserQuestion`.
 
 Use the chosen session's `session_id` for all subsequent state tool calls in this flow. The chosen `session_id` is the same value as the pipeline's `pipeline_id`, and the tools remain backward-compatible because `session_id` is optional.
 
@@ -51,7 +55,7 @@ For each batch, show task-level progress:
 
 ### 4. Check for Orphaned Worktrees
 
-Call `invoke_cleanup_worktrees` with `discover_only: true` (or read the worktree list) to check for worktrees that exist on disk but may be from a crashed session.
+To discover orphaned worktrees, read the pipeline state from `invoke_get_state`. For each batch, check each task's `worktree_path` field. If a `worktree_path` is set and the task is not marked `merged: true`, verify the worktree still exists on disk by running `git worktree list` via Bash and checking if the path appears. Worktrees that exist on disk but have tasks not marked completed are candidates for orphan inspection.
 
 If orphaned worktrees are found:
 
@@ -73,17 +77,24 @@ If "Inspect": check each worktree for uncommitted changes and committed changes 
 
 **Continue:**
 - Load the appropriate stage skill based on `current_stage`:
-  - `scope` — invoke-scope picks up at clarifying questions (research may already be done)
+  - `scope` — check if context.md exists via `invoke_get_context`. If not initialized, invoke-scope should resume at context initialization (step 2). If context exists, invoke-scope picks up at researcher dispatch or clarifying questions (research may already be done).
   - `plan` — invoke-plan picks up at planner dispatch or plan selection
   - `orchestrate` — invoke-orchestrate picks up at task breakdown
   - `build` — invoke-build resumes at the **next batch with unmerged work or unresolved failures**. Within a batch, never re-dispatch tasks already marked `merged: true`, and never re-dispatch tasks already `completed` but awaiting merge. Only re-dispatch tasks that are both unmerged and incomplete. Present: "Batch [N]: [M] merged, [R] completed awaiting merge, resuming [U] remaining tasks."
   - `review` — invoke-review resumes at reviewer selection
 
 **Redo:**
-- Reset state for the current stage but keep prior stage outputs
-- Re-trigger the current stage skill
+
+Reset state for the current stage but keep prior stage outputs, then re-invoke the stage skill. Per-stage operations:
+
+- **scope:** Clear `state.spec` and remove scope batch results. Keep context.md.
+- **plan:** Clear `state.plan` and `state.strategy`. Keep spec.
+- **orchestrate:** Clear `state.strategy` and clear all batches. Keep spec and plan.
+- **build:** Clear all batch task results and worktree paths. Keep spec, plan, and strategy. Call `invoke_cleanup_worktrees` to remove existing worktrees.
+- **review:** Clear `review_cycles`. Keep everything else.
+
+After clearing the appropriate fields, set `current_stage` back to the current stage and re-invoke the stage skill.
 
 **Abort:**
-- Clean up worktrees via `invoke_cleanup_worktrees`
-- Reset pipeline state
-- Inform user: "Pipeline cleaned up. Ready to start fresh."
+
+Call `invoke_cleanup_worktrees` to remove all worktrees. Then call `invoke_cleanup_sessions` with the `session_id` to remove the session entirely. Inform the user: "Pipeline cleaned up. Ready to start fresh — use invoke-scope to begin a new pipeline."

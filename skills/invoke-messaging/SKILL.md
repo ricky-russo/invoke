@@ -232,6 +232,66 @@ Present findings grouped by reviewer, sorted by severity:
 | 3 | 🟢 LOW | src/api/handler.ts | 88 | Verbose error messages |
 ```
 
+### Plan Comparison
+
+Present competing plans side-by-side after parallel planning:
+
+```
+📐 Plan Comparison — [N] plans from [M] planners
+
+### Plan A — [Planner Name] ([provider])
+[2-3 sentence summary of the overall approach and how it solves the problem.]
+
+**Key technical decisions:**
+- [Decision 1]
+- [Decision 2]
+
+**Optimization focus:** [e.g., correctness, speed, minimal surface area]
+
+---
+
+### Plan B — [Planner Name] ([provider])
+[2-3 sentence summary of the overall approach and how it solves the problem.]
+
+**Key technical decisions:**
+- [Decision 1]
+- [Decision 2]
+
+**Optimization focus:** [e.g., correctness, speed, minimal surface area]
+
+---
+
+### Comparison
+
+| | Plan A | Plan B |
+|---|--------|--------|
+| **Agree on** | [shared approach or decision] | ← same |
+| **Differ on** | [Plan A approach] | [Plan B approach] |
+| **Trade-off** | [Plan A trade-off] | [Plan B trade-off] |
+
+**Recommendation:** [Which plan (or hybrid) is recommended and why — 1-2 sentences.]
+```
+
+### Plan Selection
+
+Use `AskUserQuestion` with `multiSelect: false` after presenting the Plan Comparison:
+
+```
+AskUserQuestion({
+  questions: [{
+    question: "Which plan should the builders implement?",
+    header: "Plan Selection",
+    multiSelect: false,
+    options: [
+      { label: "Plan A ([planner name])", description: "[one-line summary of Plan A approach]" },
+      { label: "Plan B ([planner name])", description: "[one-line summary of Plan B approach]" },
+      { label: "Hybrid (combine elements)", description: "Merge the strongest elements of both plans" },
+      { label: "Re-plan with constraints", description: "Add constraints and dispatch planners again" }
+    ]
+  }]
+})
+```
+
 ### Pipeline Stage Transitions
 
 ```
@@ -252,8 +312,15 @@ Present findings grouped by reviewer, sorted by severity:
    ├─ Plan: [plan path or "not yet"]
    ├─ Strategy: [strategy or "not set"]
    ├─ Batches: [N completed] / [M total]
-   └─ Work Branch: [branch or "not created"]
+   ├─ Work Branch: [branch or "not created"]
+   └─ Tasks:
+        ├─ [task_id]: ✅ completed ([duration]s)
+        ├─ [task_id]: 🔄 running ([elapsed]s)
+        ├─ [task_id]: ❌ failed — [brief error]
+        └─ [task_id]: ⏳ pending
 ```
+
+Omit the Tasks block if no tasks have been dispatched yet. Show only the current batch's tasks when in the build stage.
 
 ## Rules
 
@@ -265,3 +332,5 @@ Present findings grouped by reviewer, sorted by severity:
 6. Use bullet lists (•) for dispatch and result lists, tree-style (├─ └─) for hierarchical status info
 7. Keep progress updates on one screen — don't flood with per-second updates
 8. Bold the provider agreement indicator (**agreed: claude, codex**) in findings
+9. **AskUserQuestion fallback:** If `AskUserQuestion` fails or is dismissed without a selection, fall back to presenting the options as a numbered text list and accept a text response. Do not block execution on a failed UI interaction.
+10. **AskUserQuestion `preview` field:** `AskUserQuestion` supports an optional `preview` field for comparing code snippets, ASCII mockups, or plan summaries side-by-side. Use it when presenting a Plan Comparison or strategy comparison so the user can evaluate options without switching contexts.

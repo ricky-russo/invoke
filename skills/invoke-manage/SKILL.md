@@ -7,6 +7,10 @@ description: "MUST USE when creating, editing, removing, or listing invoke roles
 
 You are managing invoke pipeline configuration. You help users create, edit, and remove roles, strategies, and other pipeline settings through conversation.
 
+## Messaging
+
+**BEFORE doing anything else**, invoke the `invoke-messaging` skill using the Skill tool (`Skill({ skill: "invoke:invoke-messaging" })`). This loads the messaging format standards you MUST follow for all output. Do NOT proceed with any operations until invoke-messaging is loaded. Use `AskUserQuestion` for all user decisions.
+
 ## Operations
 
 ### List
@@ -19,11 +23,38 @@ When the user wants to see what's configured:
    - Strategies
    - Current settings
 
+### List Strategies
+
+When the user wants to see all configured strategies:
+1. Call `invoke_get_config`
+2. Present a formatted table of all strategy names and their prompt file paths:
+
+```
+| Strategy | Prompt File |
+|----------|-------------|
+| [name]   | [path]      |
+```
+
 ### Create Role
 
 When the user wants to add a new role (e.g., "create a reviewer for PSR compliance"):
 
-1. **Identify role type and name**: "This sounds like a reviewer. I'll call it `psr-compliance`. Sound good?"
+1. **Identify role type and name**: Determine the role type (researcher, planner, builder, reviewer) and a proposed name (e.g., `psr-compliance`). Confirm with the user:
+
+```
+AskUserQuestion({
+  questions: [{
+    question: "I'll create a reviewer named `psr-compliance`. How would you like to proceed?",
+    header: "Create Role",
+    multiSelect: false,
+    options: [
+      { label: "Create role", description: "Proceed with reviewer/psr-compliance" },
+      { label: "Edit details", description: "Change the name, type, or other details" },
+      { label: "Cancel", description: "Do not create this role" }
+    ]
+  }]
+})
+```
 
 2. **Ask about focus**: "What should this reviewer focus on? What specific standards or rules?" Ask one question at a time to understand:
    - What to check for
@@ -42,6 +73,8 @@ When the user wants to add a new role (e.g., "create a reviewer for PSR complian
    - Write the prompt file: `invoke_save_artifact` with `stage: "roles/<type>"`, `filename: "<name>.md"`
    - Register in config: `invoke_update_config` with `operation: "add_role"`
 
+   > **Role prompt artifact paths:** Role prompt files are stored using `invoke_save_artifact` with `stage: "roles/<type>"` where `<type>` is the role type (researcher, planner, builder, reviewer). For example, a security reviewer prompt is saved with `stage: "roles/reviewer"`, `filename: "security.md"`.
+
 6. **Confirm**: "Added reviewer/psr-compliance. It'll appear in your reviewer list next review cycle."
 
 ### Edit Role
@@ -52,13 +85,28 @@ When the user wants to modify an existing role:
 2. Present the current content
 3. Discuss changes with the user
 4. Update the prompt file using `invoke_save_artifact` (overwrites existing)
-5. If providers/model/effort changed, use `invoke_update_config` with `remove_role` then `add_role`
+5. If providers/model/effort changed, use `invoke_update_config` with `remove_role` then `add_role`. After calling `invoke_update_config` with `add_role` to re-create the role, verify the role was added by re-reading the config with `invoke_get_config`. Only confirm success to the user after verification. If the re-add fails, inform the user the role was removed but could not be re-created, and offer to retry.
 
 ### Delete Role
 
 When the user wants to remove a role:
 
-1. Confirm: "Delete reviewer/[name]? This will remove the prompt file and config entry."
+1. Confirm with the user:
+
+```
+AskUserQuestion({
+  questions: [{
+    question: "Delete reviewer/[name]? This will remove the prompt file and config entry.",
+    header: "Delete Role",
+    multiSelect: false,
+    options: [
+      { label: "Delete", description: "Permanently remove this role" },
+      { label: "Cancel", description: "Keep the role" }
+    ]
+  }]
+})
+```
+
 2. Remove config entry: `invoke_update_config` with `operation: "remove_role"`
 3. Remove prompt file: `invoke_delete_artifact` with `stage: "roles/<type>"`, `filename: "<name>.md"`
 
@@ -71,11 +119,99 @@ Same flow as Create Role but for strategies:
 4. Save prompt: `invoke_save_artifact` with `stage: "strategies"`, `filename: "<name>.md"`
 5. Register: `invoke_update_config` with `operation: "add_strategy"`
 
+### Edit Strategy
+
+When the user wants to modify an existing strategy:
+
+1. Read the current strategy file using `invoke_read_artifact` with `stage: "strategies"`, `filename: "<name>.md"`
+2. Present the current content to the user
+3. Ask what they want to change:
+
+```
+AskUserQuestion({
+  questions: [{
+    question: "What would you like to change about this strategy?",
+    header: "Edit Strategy",
+    multiSelect: false,
+    options: [
+      { label: "Edit focus/instructions", description: "Change what the strategy enforces" },
+      { label: "Edit variables/template", description: "Change the template variables or structure" },
+      { label: "Replace entirely", description: "Start fresh with a new prompt" },
+      { label: "Cancel", description: "Keep the strategy as-is" }
+    ]
+  }]
+})
+```
+
+4. Apply the requested edits
+5. Preview the updated content with the user before saving
+6. Save via `invoke_save_artifact` with `stage: "strategies"`, `filename: "<name>.md"` (overwrites existing)
+7. Confirm: "Strategy [name] updated."
+
 ### Delete Strategy
 
-1. Confirm with user
+When the user wants to remove a strategy:
+
+1. Confirm with the user:
+
+```
+AskUserQuestion({
+  questions: [{
+    question: "Delete strategy/[name]? This will remove the prompt file and config entry.",
+    header: "Delete Strategy",
+    multiSelect: false,
+    options: [
+      { label: "Delete", description: "Permanently remove this strategy" },
+      { label: "Cancel", description: "Keep the strategy" }
+    ]
+  }]
+})
+```
+
 2. Remove config entry: `invoke_update_config` with `operation: "remove_strategy"`
 3. Remove prompt file: `invoke_delete_artifact` with `stage: "strategies"`, `filename: "<name>.md"`
+
+### Manage Presets
+
+Presets live in `config.presets` and are managed via `invoke_update_config`.
+
+#### List Presets
+
+1. Call `invoke_get_config`
+2. Present a formatted list of all presets from `config.presets`, showing each preset's name and key settings.
+
+#### Create Preset
+
+1. Ask the user what the preset should configure (e.g., provider selection, effort levels, reviewer set)
+2. Confirm the preset details with the user using `AskUserQuestion` before saving
+3. Save via `invoke_update_config` with `operation: "add_preset"`
+
+#### Edit Preset
+
+1. Call `invoke_get_config` to read the current preset
+2. Present the current preset details
+3. Ask what to change
+4. Apply edits via `invoke_update_config` with `operation: "update_preset"`
+
+#### Delete Preset
+
+1. Confirm with the user:
+
+```
+AskUserQuestion({
+  questions: [{
+    question: "Delete preset [name]? This cannot be undone.",
+    header: "Delete Preset",
+    multiSelect: false,
+    options: [
+      { label: "Delete", description: "Permanently remove this preset" },
+      { label: "Cancel", description: "Keep the preset" }
+    ]
+  }]
+})
+```
+
+2. Remove via `invoke_update_config` with `operation: "remove_preset"`
 
 ### Edit Settings
 
