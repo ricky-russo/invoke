@@ -38700,6 +38700,9 @@ var CONTEXT_FILTER_ROLE_KEY = "__context_filter_role";
 var ALWAYS_INCLUDED_SECTION_KEYWORDS = ["purpose", "tech stack", "conventions", "constraints"];
 var ARCHITECTURE_SECTION_KEYWORD = "architecture";
 var COMPLETED_WORK_SECTION_KEYWORD = "completed work";
+function resolvePromptPath(projectDir, promptPath) {
+  return path3.isAbsolute(promptPath) ? promptPath : path3.join(projectDir, promptPath);
+}
 function truncateContext(context, maxLength) {
   if (context.length <= maxLength) {
     return context;
@@ -38823,13 +38826,13 @@ function filterContextSections(context, taskContext, maxLength = CONTEXT_MAX_LEN
 async function composePrompt(options) {
   const { projectDir, promptPath, strategyPath, taskContext } = options;
   const rolePrompt = await readFile2(
-    path3.join(projectDir, promptPath),
+    resolvePromptPath(projectDir, promptPath),
     "utf-8"
   );
   let composed = rolePrompt;
   if (strategyPath) {
     const strategyPrompt = await readFile2(
-      path3.join(projectDir, strategyPath),
+      resolvePromptPath(projectDir, strategyPath),
       "utf-8"
     );
     composed = composed + "\n\n---\n\n" + strategyPrompt;
@@ -38941,7 +38944,9 @@ var MODEL_NAME_ALIASES = {
   "opus-4.6": "claude-opus-4-6",
   "opus-4-6": "claude-opus-4-6",
   "sonnet-4.6": "claude-sonnet-4-6",
-  "sonnet-4-6": "claude-sonnet-4-6"
+  "sonnet-4-6": "claude-sonnet-4-6",
+  "haiku-4.5": "claude-haiku-4-5-20251001",
+  "haiku-4-5": "claude-haiku-4-5-20251001"
 };
 var CHARS_PER_TOKEN = {
   prose: 4,
@@ -40941,6 +40946,7 @@ function registerStateTools(server, stateManager, projectDir, sessionManager) {
           findings: external_exports3.array(external_exports3.any()),
           batch_id: external_exports3.number().optional(),
           scope: external_exports3.enum(["batch", "final"]).optional(),
+          tier: external_exports3.string().optional(),
           triaged: external_exports3.object({
             accepted: external_exports3.array(external_exports3.any()),
             dismissed: external_exports3.array(external_exports3.any())

@@ -94,7 +94,7 @@ describe('registerStateTools', () => {
     ).toBe(true)
   })
 
-  it('accepts batch_id and scope in invoke_set_state review_cycles', async () => {
+  it('accepts batch_id, scope, and tier in invoke_set_state review_cycles', async () => {
     const createSpy = vi.spyOn(sessionManager, 'create')
     const setStateTool = getTool('invoke_set_state')
     const input = {
@@ -107,6 +107,7 @@ describe('registerStateTools', () => {
           findings: [],
           batch_id: 2,
           scope: 'batch' as const,
+          tier: 'critical',
           triaged: {
             accepted: [],
             dismissed: [],
@@ -133,6 +134,7 @@ describe('registerStateTools', () => {
         findings: [],
         batch_id: 2,
         scope: 'batch',
+        tier: 'critical',
         triaged: {
           accepted: [],
           dismissed: [],

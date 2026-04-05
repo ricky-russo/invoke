@@ -25,6 +25,10 @@ interface ComposeOptions {
   taskContext: Record<string, string>
 }
 
+function resolvePromptPath(projectDir: string, promptPath: string): string {
+  return path.isAbsolute(promptPath) ? promptPath : path.join(projectDir, promptPath)
+}
+
 function truncateContext(context: string, maxLength: number): string {
   if (context.length <= maxLength) {
     return context
@@ -198,7 +202,7 @@ export async function composePrompt(options: ComposeOptions): Promise<string> {
   const { projectDir, promptPath, strategyPath, taskContext } = options
 
   const rolePrompt = await readFile(
-    path.join(projectDir, promptPath),
+    resolvePromptPath(projectDir, promptPath),
     'utf-8'
   )
 
@@ -206,7 +210,7 @@ export async function composePrompt(options: ComposeOptions): Promise<string> {
 
   if (strategyPath) {
     const strategyPrompt = await readFile(
-      path.join(projectDir, strategyPath),
+      resolvePromptPath(projectDir, strategyPath),
       'utf-8'
     )
     composed = composed + '\n\n---\n\n' + strategyPrompt

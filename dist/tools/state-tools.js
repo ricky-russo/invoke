@@ -76,6 +76,7 @@ export function registerStateTools(server, stateManager, projectDir, sessionMana
                 findings: z.array(z.any()),
                 batch_id: z.number().optional(),
                 scope: z.enum(['batch', 'final']).optional(),
+                tier: z.string().optional(),
                 triaged: z.object({
                     accepted: z.array(z.any()),
                     dismissed: z.array(z.any()),

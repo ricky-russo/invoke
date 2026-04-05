@@ -50,6 +50,8 @@ describe('pricing helpers', () => {
   it('normalizes shorthand model names to their canonical names', () => {
     expect(normalizeModelName('opus-4.6')).toBe('claude-opus-4-6')
     expect(normalizeModelName('sonnet-4.6')).toBe('claude-sonnet-4-6')
+    expect(normalizeModelName('haiku-4.5')).toBe('claude-haiku-4-5-20251001')
+    expect(normalizeModelName('haiku-4-5')).toBe('claude-haiku-4-5-20251001')
     expect(normalizeModelName('gpt-4.1')).toBe('gpt-4.1')
   })
 

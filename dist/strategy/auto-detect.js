@@ -6,7 +6,6 @@ function createKeywordPattern(keyword) {
 }
 const STRATEGY_PATTERNS = [
     {
-        keywords: ['fix', 'bug', 'regression', 'broken'],
         strategy: 'bug-fix',
         description: 'Task description suggests a bug fix',
         matchers: ['fix', 'bug', 'regression', 'broken'].map(keyword => ({
@@ -15,7 +14,6 @@ const STRATEGY_PATTERNS = [
         })),
     },
     {
-        keywords: ['prototype', 'spike', 'mvp', 'quickly', 'urgent'],
         strategy: 'prototype',
         description: 'Task description suggests a prototype',
         matchers: ['prototype', 'spike', 'mvp', 'quickly', 'urgent'].map(keyword => ({

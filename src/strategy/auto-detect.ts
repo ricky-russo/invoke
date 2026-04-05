@@ -1,7 +1,6 @@
 import type { StrategyDetection } from '../types.js'
 
 interface StrategyPattern {
-  keywords: string[]
   strategy: StrategyDetection['strategy']
   description: string
   matchers: Array<{ keyword: string; pattern: RegExp }>
@@ -21,7 +20,6 @@ function createKeywordPattern(keyword: string): RegExp {
 
 const STRATEGY_PATTERNS: StrategyPattern[] = [
   {
-    keywords: ['fix', 'bug', 'regression', 'broken'],
     strategy: 'bug-fix',
     description: 'Task description suggests a bug fix',
     matchers: ['fix', 'bug', 'regression', 'broken'].map(keyword => ({
@@ -30,7 +28,6 @@ const STRATEGY_PATTERNS: StrategyPattern[] = [
     })),
   },
   {
-    keywords: ['prototype', 'spike', 'mvp', 'quickly', 'urgent'],
     strategy: 'prototype',
     description: 'Task description suggests a prototype',
     matchers: ['prototype', 'spike', 'mvp', 'quickly', 'urgent'].map(keyword => ({

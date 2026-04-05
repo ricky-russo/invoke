@@ -5,6 +5,9 @@ const CONTEXT_FILTER_ROLE_KEY = '__context_filter_role';
 const ALWAYS_INCLUDED_SECTION_KEYWORDS = ['purpose', 'tech stack', 'conventions', 'constraints'];
 const ARCHITECTURE_SECTION_KEYWORD = 'architecture';
 const COMPLETED_WORK_SECTION_KEYWORD = 'completed work';
+function resolvePromptPath(projectDir, promptPath) {
+    return path.isAbsolute(promptPath) ? promptPath : path.join(projectDir, promptPath);
+}
 function truncateContext(context, maxLength) {
     if (context.length <= maxLength) {
         return context;
@@ -136,10 +139,10 @@ function filterContextSections(context, taskContext, maxLength = CONTEXT_MAX_LEN
 }
 export async function composePrompt(options) {
     const { projectDir, promptPath, strategyPath, taskContext } = options;
-    const rolePrompt = await readFile(path.join(projectDir, promptPath), 'utf-8');
+    const rolePrompt = await readFile(resolvePromptPath(projectDir, promptPath), 'utf-8');
     let composed = rolePrompt;
     if (strategyPath) {
-        const strategyPrompt = await readFile(path.join(projectDir, strategyPath), 'utf-8');
+        const strategyPrompt = await readFile(resolvePromptPath(projectDir, strategyPath), 'utf-8');
         composed = composed + '\n\n---\n\n' + strategyPrompt;
     }
     // Inject project context if available

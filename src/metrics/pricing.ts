@@ -32,6 +32,8 @@ const MODEL_NAME_ALIASES: Record<string, string> = {
   'opus-4-6': 'claude-opus-4-6',
   'sonnet-4.6': 'claude-sonnet-4-6',
   'sonnet-4-6': 'claude-sonnet-4-6',
+  'haiku-4.5': 'claude-haiku-4-5-20251001',
+  'haiku-4-5': 'claude-haiku-4-5-20251001',
 }
 
 const CHARS_PER_TOKEN: Record<ContentType, number> = {

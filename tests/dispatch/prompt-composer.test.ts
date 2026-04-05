@@ -97,6 +97,26 @@ Review for OWASP top 10 vulnerabilities.`
     expect(result).toContain('Write a failing test first')
   })
 
+  it('reads absolute prompt and strategy paths without joining them to projectDir', async () => {
+    const rolePath = path.join(TEST_DIR, '.invoke', 'roles', 'reviewer', 'absolute.md')
+    const strategyPath = path.join(TEST_DIR, '.invoke', 'strategies', 'absolute.md')
+
+    await writeFile(rolePath, '# Absolute Role\n\n{{task_description}}\n')
+    await writeFile(strategyPath, '# Absolute Strategy\n\nUse a focused plan.\n')
+
+    const result = await composePrompt({
+      projectDir: TEST_DIR,
+      promptPath: rolePath,
+      strategyPath,
+      taskContext: {
+        task_description: 'Handle an absolute prompt path',
+      },
+    })
+
+    expect(result).toContain('Handle an absolute prompt path')
+    expect(result).toContain('Use a focused plan.')
+  })
+
   it('leaves unmatched variables as-is', async () => {
     await writeFile(
       path.join(TEST_DIR, '.invoke', 'roles', 'reviewer', 'security.md'),
