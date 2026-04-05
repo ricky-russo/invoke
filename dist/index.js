@@ -39631,6 +39631,7 @@ var StateManager = class {
   tmpPath;
   storageDir;
   dirEnsured = false;
+  writeQueue = Promise.resolve();
   constructor(projectDir, sessionDir) {
     this.storageDir = sessionDir ?? path5.join(projectDir, ".invoke");
     this.statePath = path5.join(this.storageDir, "state.json");
@@ -39644,66 +39645,80 @@ var StateManager = class {
     return JSON.parse(content);
   }
   async initialize(pipelineId) {
-    const now = (/* @__PURE__ */ new Date()).toISOString();
-    const state = {
-      pipeline_id: pipelineId,
-      started: now,
-      last_updated: now,
-      current_stage: "scope",
-      batches: [],
-      review_cycles: []
-    };
-    await this.writeAtomic(state);
-    return state;
+    return this.enqueueWrite(async () => {
+      const now = (/* @__PURE__ */ new Date()).toISOString();
+      const state = {
+        pipeline_id: pipelineId,
+        started: now,
+        last_updated: now,
+        current_stage: "scope",
+        batches: [],
+        review_cycles: []
+      };
+      await this.writeAtomic(state);
+      return state;
+    });
   }
   async update(updates) {
-    const current = await this.get();
-    if (!current) {
-      throw new Error("No active pipeline. Call initialize() first.");
-    }
-    const updated = { ...current, ...updates, last_updated: (/* @__PURE__ */ new Date()).toISOString() };
-    await this.writeAtomic(updated);
-    return updated;
+    return this.enqueueWrite(async () => {
+      const current = await this.get();
+      if (!current) {
+        throw new Error("No active pipeline. Call initialize() first.");
+      }
+      const updated = { ...current, ...updates, last_updated: (/* @__PURE__ */ new Date()).toISOString() };
+      await this.writeAtomic(updated);
+      return updated;
+    });
   }
   async addBatch(batch) {
-    const current = await this.get();
-    if (!current) {
-      throw new Error("No active pipeline. Call initialize() first.");
-    }
-    current.batches.push(batch);
-    current.last_updated = (/* @__PURE__ */ new Date()).toISOString();
-    await this.writeAtomic(current);
-    return current;
+    return this.enqueueWrite(async () => {
+      const current = await this.get();
+      if (!current) {
+        throw new Error("No active pipeline. Call initialize() first.");
+      }
+      current.batches.push(batch);
+      current.last_updated = (/* @__PURE__ */ new Date()).toISOString();
+      await this.writeAtomic(current);
+      return current;
+    });
   }
   async updateBatch(batchIndex, updates) {
-    const current = await this.get();
-    if (!current) {
-      throw new Error("No active pipeline. Call initialize() first.");
-    }
-    if (batchIndex >= current.batches.length) {
-      throw new Error(`Batch index ${batchIndex} out of range (${current.batches.length} batches)`);
-    }
-    current.batches[batchIndex] = { ...current.batches[batchIndex], ...updates };
-    current.last_updated = (/* @__PURE__ */ new Date()).toISOString();
-    await this.writeAtomic(current);
-    return current;
+    return this.enqueueWrite(async () => {
+      const current = await this.get();
+      if (!current) {
+        throw new Error("No active pipeline. Call initialize() first.");
+      }
+      if (batchIndex >= current.batches.length) {
+        throw new Error(
+          `Batch index ${batchIndex} out of range (${current.batches.length} batches)`
+        );
+      }
+      current.batches[batchIndex] = { ...current.batches[batchIndex], ...updates };
+      current.last_updated = (/* @__PURE__ */ new Date()).toISOString();
+      await this.writeAtomic(current);
+      return current;
+    });
   }
   async updateTask(batchIndex, taskId, updates) {
-    const current = await this.get();
-    if (!current) {
-      throw new Error("No active pipeline. Call initialize() first.");
-    }
-    if (batchIndex >= current.batches.length) {
-      throw new Error(`Batch index ${batchIndex} out of range (${current.batches.length} batches)`);
-    }
-    const task = current.batches[batchIndex].tasks.find((t) => t.id === taskId);
-    if (!task) {
-      throw new Error(`Task '${taskId}' not found in batch ${batchIndex}`);
-    }
-    Object.assign(task, updates);
-    current.last_updated = (/* @__PURE__ */ new Date()).toISOString();
-    await this.writeAtomic(current);
-    return current;
+    return this.enqueueWrite(async () => {
+      const current = await this.get();
+      if (!current) {
+        throw new Error("No active pipeline. Call initialize() first.");
+      }
+      if (batchIndex >= current.batches.length) {
+        throw new Error(
+          `Batch index ${batchIndex} out of range (${current.batches.length} batches)`
+        );
+      }
+      const task = current.batches[batchIndex].tasks.find((t) => t.id === taskId);
+      if (!task) {
+        throw new Error(`Task '${taskId}' not found in batch ${batchIndex}`);
+      }
+      Object.assign(task, updates);
+      current.last_updated = (/* @__PURE__ */ new Date()).toISOString();
+      await this.writeAtomic(current);
+      return current;
+    });
   }
   async getReviewCycleCount(batchId) {
     const state = await this.get();
@@ -39714,10 +39729,20 @@ var StateManager = class {
     return state.review_cycles.length;
   }
   async reset() {
-    if (existsSync2(this.statePath)) {
-      const { unlink: unlink2 } = await import("fs/promises");
-      await unlink2(this.statePath);
-    }
+    await this.enqueueWrite(async () => {
+      if (existsSync2(this.statePath)) {
+        const { unlink: unlink2 } = await import("fs/promises");
+        await unlink2(this.statePath);
+      }
+    });
+  }
+  enqueueWrite(operation) {
+    const queuedOperation = this.writeQueue.then(operation);
+    this.writeQueue = queuedOperation.then(
+      () => void 0,
+      () => void 0
+    );
+    return queuedOperation;
   }
   async writeAtomic(state) {
     if (!this.dirEnsured) {
@@ -39732,6 +39757,7 @@ var StateManager = class {
 
 // src/metrics/manager.ts
 var COST_PRECISION = 1e9;
+var FLUSH_DEBOUNCE_MS = 100;
 var MetricsManager = class {
   constructor(projectDir, sessionDir) {
     this.projectDir = projectDir;
@@ -39753,6 +39779,7 @@ var MetricsManager = class {
   loaded = false;
   loadPromise = null;
   writeChain = Promise.resolve();
+  flushTimeout = null;
   dirEnsured = false;
   record(metric) {
     try {
@@ -39828,6 +39855,15 @@ var MetricsManager = class {
     };
   }
   queueFlush() {
+    if (this.flushTimeout) {
+      clearTimeout(this.flushTimeout);
+    }
+    this.flushTimeout = setTimeout(() => {
+      this.flushTimeout = null;
+      this.enqueueFlush();
+    }, FLUSH_DEBOUNCE_MS);
+  }
+  enqueueFlush() {
     this.writeChain = this.writeChain.then(async () => {
       await this.ensureLoaded();
       await this.writeAtomic(this.metrics);
@@ -39836,6 +39872,11 @@ var MetricsManager = class {
     });
   }
   async flushPendingWrites() {
+    if (this.flushTimeout) {
+      clearTimeout(this.flushTimeout);
+      this.flushTimeout = null;
+      this.enqueueFlush();
+    }
     try {
       await this.writeChain;
     } catch (error48) {

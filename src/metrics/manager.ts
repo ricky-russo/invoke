@@ -5,6 +5,7 @@ import type { DispatchMetric, InvokeConfig, MetricsSummary } from '../types.js'
 import { StateManager } from '../tools/state.js'
 
 const COST_PRECISION = 1_000_000_000
+const FLUSH_DEBOUNCE_MS = 100
 
 export class MetricsManager {
   private readonly metricsPath: string
@@ -15,6 +16,7 @@ export class MetricsManager {
   private loaded = false
   private loadPromise: Promise<void> | null = null
   private writeChain: Promise<void> = Promise.resolve()
+  private flushTimeout: ReturnType<typeof setTimeout> | null = null
   private dirEnsured = false
 
   constructor(private readonly projectDir: string, sessionDir?: string) {
@@ -120,6 +122,17 @@ export class MetricsManager {
   }
 
   private queueFlush(): void {
+    if (this.flushTimeout) {
+      clearTimeout(this.flushTimeout)
+    }
+
+    this.flushTimeout = setTimeout(() => {
+      this.flushTimeout = null
+      this.enqueueFlush()
+    }, FLUSH_DEBOUNCE_MS)
+  }
+
+  private enqueueFlush(): void {
     this.writeChain = this.writeChain
       .then(async () => {
         await this.ensureLoaded()
@@ -131,6 +144,12 @@ export class MetricsManager {
   }
 
   private async flushPendingWrites(): Promise<void> {
+    if (this.flushTimeout) {
+      clearTimeout(this.flushTimeout)
+      this.flushTimeout = null
+      this.enqueueFlush()
+    }
+
     try {
       await this.writeChain
     } catch (error) {

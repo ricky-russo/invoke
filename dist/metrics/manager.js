@@ -3,6 +3,7 @@ import { mkdir, readFile, rename, writeFile } from 'fs/promises';
 import path from 'path';
 import { StateManager } from '../tools/state.js';
 const COST_PRECISION = 1_000_000_000;
+const FLUSH_DEBOUNCE_MS = 100;
 export class MetricsManager {
     projectDir;
     metricsPath;
@@ -13,6 +14,7 @@ export class MetricsManager {
     loaded = false;
     loadPromise = null;
     writeChain = Promise.resolve();
+    flushTimeout = null;
     dirEnsured = false;
     constructor(projectDir, sessionDir) {
         this.projectDir = projectDir;
@@ -100,6 +102,15 @@ export class MetricsManager {
         };
     }
     queueFlush() {
+        if (this.flushTimeout) {
+            clearTimeout(this.flushTimeout);
+        }
+        this.flushTimeout = setTimeout(() => {
+            this.flushTimeout = null;
+            this.enqueueFlush();
+        }, FLUSH_DEBOUNCE_MS);
+    }
+    enqueueFlush() {
         this.writeChain = this.writeChain
             .then(async () => {
             await this.ensureLoaded();
@@ -110,6 +121,11 @@ export class MetricsManager {
         });
     }
     async flushPendingWrites() {
+        if (this.flushTimeout) {
+            clearTimeout(this.flushTimeout);
+            this.flushTimeout = null;
+            this.enqueueFlush();
+        }
         try {
             await this.writeChain;
         }

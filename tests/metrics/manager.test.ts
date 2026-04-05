@@ -55,6 +55,7 @@ describe('MetricsManager', () => {
   })
 
   afterEach(async () => {
+    vi.useRealTimers()
     vi.restoreAllMocks()
 
     for (const listener of process.listeners('beforeExit')) {
@@ -249,6 +250,27 @@ describe('MetricsManager', () => {
 
     const files = await readdir(path.join(testDir, '.invoke'))
     expect(files.filter(file => file.endsWith('.tmp'))).toHaveLength(0)
+  })
+
+  it('debounces flushes for 100ms and coalesces rapid record calls into one write', async () => {
+    vi.useFakeTimers()
+
+    const manager = new MetricsManager(testDir)
+    const writeAtomicSpy = vi.spyOn(manager as any, 'writeAtomic')
+
+    manager.record(createMetric({ started_at: '2026-04-04T12:00:00.000Z' }))
+    await vi.advanceTimersByTimeAsync(99)
+    expect(writeAtomicSpy).not.toHaveBeenCalled()
+
+    manager.record(createMetric({ started_at: '2026-04-04T12:01:00.000Z' }))
+    await vi.advanceTimersByTimeAsync(99)
+    expect(writeAtomicSpy).not.toHaveBeenCalled()
+
+    await vi.advanceTimersByTimeAsync(1)
+    await (manager as any).flushPendingWrites()
+
+    expect(writeAtomicSpy).toHaveBeenCalledTimes(1)
+    expect(JSON.parse(await readFile(metricsPath, 'utf-8'))).toHaveLength(2)
   })
 
   it('only ensures the metrics directory on the first write', async () => {

@@ -9,6 +9,7 @@ export declare class MetricsManager {
     private loaded;
     private loadPromise;
     private writeChain;
+    private flushTimeout;
     private dirEnsured;
     constructor(projectDir: string, sessionDir?: string);
     record(metric: DispatchMetric): void;
@@ -24,6 +25,7 @@ export declare class MetricsManager {
         at_limit: boolean;
     }>;
     private queueFlush;
+    private enqueueFlush;
     private flushPendingWrites;
     private ensureLoaded;
     private loadFromDisk;
