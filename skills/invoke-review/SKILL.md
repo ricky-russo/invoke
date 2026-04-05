@@ -48,11 +48,15 @@ If `review_tiers` is configured, do NOT ask for arbitrary reviewer selection. Us
 
 Skip any named tier that is not configured. `polish` is optional even when configured: once `critical` and `quality` are complete, ask the user whether to run the configured polish tier or skip it.
 
+Before dispatching reviewers, call `invoke_get_review_cycle_count` with the `session_id`. If the count meets or exceeds the configured `max_review_cycles`, inform the user: "Review cycle limit reached ([count]/[max]). Findings from this point will be advisory only — no further fix cycles will be dispatched." This is the same guard rail used in invoke-build for inter-batch review.
+
 ### 4. Dispatch Reviewers
 
 Dispatch either the selected reviewers from the fallback flow or the reviewers from the current tier using `invoke_dispatch_batch`:
 - `create_worktrees: false` (reviewers don't modify code)
 - `task_context: { task_description: "<what was built — summary from plan>", diff: "<git diff of all changes>" }`
+
+Get the diff using `git diff main...HEAD` (or `git diff $(git merge-base HEAD main)...HEAD` if the base branch is not main). This shows all changes on the work branch relative to the base.
 
 Check the batch response before moving on. It includes `dispatch_estimate`, and may include `warning` when the projected usage is approaching or exceeding `max_dispatches`. Surface that warning to the user as an advisory notice before the dispatch summary and status polling.
 
@@ -71,6 +75,8 @@ Call `invoke_get_batch_status` with the batch ID — it will wait up to 60 secon
 >
 > **Code Quality Review** (1 finding)
 > 1. [MEDIUM] Duplicated validation logic in src/api/users.ts:30 and src/api/posts.ts:25 — Extract shared validator
+
+When using tiered review, prefix the reviewer heading with the tier name: `### Critical Tier — [Reviewer Name] ([provider])`. For non-tiered review, use the standard format: `### [Reviewer Name] ([provider])`.
 
 In tiered review, include the tier name in the heading so the user can see which gate is being evaluated, for example:
 > **Critical Tier — Security Review** (3 findings)
@@ -98,6 +104,35 @@ If the user chooses **Triage individually**, present findings grouped by reviewe
 
 After triage, record the review cycle with `invoke_set_state` using `session_id: <pipeline_id>` under `review_cycles`. Save the reviewers, findings, and triage result (`accepted` / `dismissed`). For tiered review cycles, include `tier: "<tier name>"` on the `ReviewCycle`. In fallback mode, leave `tier` unset. For final review cycles in this stage, include `scope: 'final'`.
 
+Each entry in `review_cycles` follows this schema:
+
+```json
+{
+  "id": "<cycle-id>",
+  "reviewers": ["<subrole>"],
+  "scope": "final",
+  "batch_id": "<batch-id>",
+  "tier": "critical",
+  "findings": [
+    {
+      "reviewer": "<subrole>",
+      "severity": "HIGH",
+      "file": "src/auth/token.ts",
+      "line": 42,
+      "issue": "SQL injection",
+      "suggestion": "Use parameterized queries",
+      "agreed_by": ["claude", "codex"]
+    }
+  ],
+  "triaged": {
+    "accepted": ["<finding-id>"],
+    "dismissed": ["<finding-id>"]
+  }
+}
+```
+
+`scope` is only set on final review cycles. `tier` is omitted in fallback mode. `agreed_by` is omitted when there is only one reviewer.
+
 ### 7. Auto-Fix Accepted Findings
 
 **ALWAYS dispatch builder agents for fixes — NEVER fix code directly in the session.** Fixing directly bypasses the pipeline (no worktrees, no state tracking, no validation).
@@ -116,6 +151,8 @@ In tiered review, when accepted findings came from a tier, re-review that same t
 ### 8. Next Cycle
 
 If `review_tiers` is configured, run staged tiered review:
+
+A finding is **unresolved** if it has been accepted (triaged into the accepted list) but not yet fixed by a builder. A finding is **resolved** if it has been fixed or dismissed. Do not count dismissed findings when checking whether a tier has unresolved critical/high findings.
 
 1. `critical` tier: dispatch only the configured critical-tier reviewers first (for example, `spec-compliance` and `security` when those reviewers are configured). Present findings, let the user triage them, record the cycle with `tier: "critical"`, and fix any accepted findings by dispatching builders. After fixes merge and validate, re-review the `critical` tier only. Do NOT start the `quality` tier until the latest critical-tier cycle has no unresolved `critical` or `high` findings after triage and any accepted fixes have been re-reviewed.
 2. `quality` tier: once the critical tier clears, dispatch only the configured quality-tier reviewers (for example, `code-quality` and `performance`). Use the same triage -> fix -> same-tier re-review loop. Do NOT proceed past quality until the current quality-tier cycle has no unresolved accepted findings remaining.
@@ -171,17 +208,11 @@ Get this data from `invoke_get_metrics`: use `summary.total_dispatches`, `summar
 
 ### 10. Commit Strategy
 
-Ask the user how to commit the final result:
-> "Pipeline complete. How should I commit?"
-> 1. One commit (squash all)
-> 2. Per batch (N commits) — [preview commit messages]
-> 3. Per task (N commits) — [preview commit messages]
-> 4. Custom grouping
+Present the commit strategy using `AskUserQuestion` as defined in the invoke-messaging standard (Commit Strategy pattern). Use `multiSelect: false` with options: Per batch (Recommended), One commit, Per task, Custom.
 
 Execute the chosen commit strategy. Clean up the work branch after squash merge.
 
-Update state via `invoke_set_state` with `session_id: <pipeline_id>`:
-- `current_stage: "complete"`
+After all review cycles complete and the user approves the final result, update state with `current_stage: "complete"` via `invoke_set_state` with `session_id: <pipeline_id>`.
 
 ## Error Handling
 
