@@ -48,7 +48,6 @@ roles:
           model: claude-opus-4-6
           effort: high
           timeout: 600
-      provider_mode: fallback
     alternative:
       prompt: .invoke/roles/planner/alternative.md
       providers:
@@ -74,7 +73,6 @@ roles:
           model: claude-opus-4-6
           effort: high
           timeout: 300
-      provider_mode: fallback
     security:
       prompt: .invoke/roles/reviewer/security.md
       providers:
@@ -82,7 +80,6 @@ roles:
           model: claude-sonnet-4-6
           effort: high
           timeout: 300
-      provider_mode: fallback
     code-quality:
       prompt: .invoke/roles/reviewer/code-quality.md
       providers:
@@ -90,7 +87,6 @@ roles:
           model: claude-sonnet-4-6
           effort: medium
           timeout: 300
-      provider_mode: fallback
     performance:
       prompt: .invoke/roles/reviewer/performance.md
       providers:
@@ -98,7 +94,6 @@ roles:
           model: claude-sonnet-4-6
           effort: medium
           timeout: 300
-      provider_mode: fallback
     ux:
       prompt: .invoke/roles/reviewer/ux.md
       providers:
