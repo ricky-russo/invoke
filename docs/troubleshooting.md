@@ -20,15 +20,49 @@ Example warning:
 [WARNING] roles.reviewer.security.providers[0].model: Model 'opus-4.6' is not a recognized claude model format. Did you mean 'claude-opus-4-6'?
 ```
 
-Claude model names follow the pattern `claude-<family>-<version>`, using hyphens throughout. Common mistakes:
+Claude model names follow the pattern `claude-<family>-<version>`, using hyphens throughout. Short aliases `opus`, `sonnet`, and `haiku` are also accepted. Common mistakes:
 
 | Incorrect | Correct |
 |---|---|
-| `opus-4.6` | `claude-opus-4-6` |
-| `sonnet-4.6` | `claude-sonnet-4-6` |
-| `haiku-4.5` | `claude-haiku-4-5-20251001` |
+| `opus-4.6` | `claude-opus-4-6` or `opus` |
+| `sonnet-4.6` | `claude-sonnet-4-6` or `sonnet` |
+| `haiku-4.5` | `claude-haiku-4-5-20251001` or `haiku` |
 
-Codex model names follow the pattern `o<number>` or `gpt-<version>`. The validator will suggest corrections where it recognizes the mistake.
+Codex model names follow the pattern `o<digit>` (e.g., `o3`, `o4-mini`) or `gpt-<version>` (e.g., `gpt-4o`). The validator will suggest corrections where it recognizes the mistake.
+
+### Provider mode warnings
+
+When a role entry lists more than one provider but does not set `provider_mode`, invoke issues a warning because the behavior — fanning out to all providers simultaneously — may be unintentional.
+
+Example warning:
+
+```
+[WARNING] roles.reviewer.security.provider_mode: Role 'reviewer.security' has multiple providers and no explicit provider_mode.
+Set provider_mode to 'parallel', 'fallback', or 'single' to avoid implicit parallel fan-out.
+```
+
+Fix by adding `provider_mode` to the role entry in `pipeline.yaml`:
+
+```yaml
+roles:
+  reviewer:
+    security:
+      prompt: .invoke/roles/reviewer/security.md
+      provider_mode: parallel   # or: fallback, single
+      providers:
+        - provider: claude
+          model: claude-opus-4-6
+        - provider: codex
+          model: o3
+```
+
+The three modes:
+
+- `parallel` — all providers run at the same time; results are collected from whichever finish.
+- `fallback` — providers are tried in order; the next is used only if the previous one errors.
+- `single` — only the first provider entry is used; the rest are ignored.
+
+If no `provider_mode` is set, invoke defaults to `parallel`.
 
 ### Missing CLIs
 
@@ -115,13 +149,29 @@ Invoke uses squash merge when merging worktrees into the work branch. This keeps
 
 ### How state is persisted
 
-Invoke writes all pipeline progress to `.invoke/state.json` after every state change. This file records the pipeline ID, current stage, spec and plan filenames, and the status of every batch and individual task.
+Invoke writes all pipeline progress to `.invoke/sessions/{session_id}/state.json` after every state change. This file records the pipeline ID, current stage, spec and plan filenames, and the status of every batch and individual task. Each session has its own directory under `.invoke/sessions/`.
 
 If a session is interrupted — the terminal closes, the machine sleeps, or an agent crashes — no work is lost. The state file reflects exactly where the pipeline stopped.
 
+Projects that were created before per-session directories were introduced have a legacy `.invoke/state.json`. On first access, invoke automatically migrates this file into the sessions directory structure.
+
+### Listing and selecting sessions
+
+Call `invoke_list_sessions` to see all sessions for the current project. Each entry shows the session ID, pipeline ID, current stage, and a status:
+
+- `active` — the pipeline is in progress and was updated recently.
+- `complete` — the pipeline finished successfully.
+- `stale` — the pipeline has not been updated in more than `stale_session_days` days (default: 7). Stale sessions are likely abandoned.
+
+When multiple sessions exist, invoke prompts you to select which one to resume.
+
+To remove sessions that are no longer needed, call `invoke_cleanup_sessions`. You can target completed sessions, stale sessions, or a specific session ID.
+
+The staleness threshold is controlled by `settings.stale_session_days` in `pipeline.yaml` (default: 7 days).
+
 ### Resuming a pipeline
 
-When you open a new Claude Code session in a project with an active pipeline, the session-start hook detects `.invoke/state.json` and surfaces a notice. The `invoke-resume` skill then takes over.
+When you open a new Claude Code session in a project with an active pipeline, the session-start hook detects the sessions directory and surfaces a notice. The `invoke-resume` skill then takes over.
 
 On resume, invoke presents the current state:
 
@@ -144,6 +194,32 @@ git worktree list
 ```
 
 Any worktree with a path under your `work_branch_prefix` (default: `invoke/work`) that is not currently running is a candidate for cleanup.
+
+---
+
+## Metrics and cost tracking
+
+### Where metrics are stored
+
+Invoke records a metric entry for each agent dispatch. These are written to `.invoke/sessions/{session_id}/metrics.json` — one file per session, updated after each dispatch.
+
+### Viewing metrics
+
+Call `invoke_get_metrics` to get a summary of the current session's dispatches. The summary includes:
+
+- `total_dispatches` — number of agents invoked.
+- `total_duration_ms` — cumulative wall-clock time across all dispatches.
+- `total_estimated_cost_usd` — estimated spend for the session.
+- `by_stage` — breakdown of the above fields per pipeline stage.
+- `by_provider_model` — breakdown per provider/model pair (e.g., `claude:claude-opus-4-6`).
+
+### Cost estimates
+
+Cost figures are approximations. Invoke estimates token counts from character counts using a fixed ratio: 4 characters per token for prose content, 3 characters per token for code. Actual billing depends on the provider's tokenizer and may differ.
+
+### Comparing sessions
+
+Call `invoke_compare_sessions` to place two sessions side by side. The output is a table of dispatches, success rate, duration, prompt size, and estimated cost, with a delta row showing the difference between sessions. This is useful for comparing the cost or speed of different model configurations against the same task.
 
 ---
 
