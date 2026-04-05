@@ -76,7 +76,7 @@ Open Claude Code in your project and ask it to build something. Invoke's scope s
 
 **Plan** -- Dispatches planner agents that propose competing architectural approaches. You review and select the approach, or ask for revisions. [Details](docs/pipeline-stages.md)
 
-**Orchestrate** -- Breaks the selected plan into ordered batches of parallel tasks. Within each batch, tasks can declare dependencies via `depends_on`; `buildExecutionLayers()` applies a topological sort to schedule them into execution layers so dependents start as soon as their prerequisites finish. Invoke also scans the plan text for keywords and auto-detects a suggested build strategy before asking you to confirm. [Details](docs/pipeline-stages.md)
+**Orchestrate** -- Breaks the selected plan into ordered batches of parallel tasks. Within each batch, tasks can declare dependencies via `depends_on`; `buildExecutionLayers()` applies a topological sort so tasks are organized into execution layers — all tasks within a layer run in parallel, and layers execute sequentially. Invoke also scans the plan text for keywords and auto-detects a suggested build strategy before asking you to confirm. [Details](docs/pipeline-stages.md)
 
 **Build** -- Dispatches builder agents into isolated git worktrees so they can work in parallel without conflicts. Tasks are offered for merge individually as they complete — you do not have to wait for the full batch. Partial batch state tracks which tasks have been merged so resume correctly skips already-merged work. After all tasks in a batch are merged, post-merge commands run (lockfile regeneration, etc.) and validation checks execute. You can optionally run reviewers between batches. [Details](docs/pipeline-stages.md)
 

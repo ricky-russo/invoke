@@ -372,13 +372,15 @@ Global cap on the total number of agent dispatches across the entire pipeline ru
 
 Type: `number` (nonnegative), optional
 
-Maximum number of review iterations invoke will run per batch. Set to `0` to skip review entirely. When omitted, review cycles continue until reviewers find no new issues or the orchestrator decides the work is complete.
+Advisory limit on review iterations per batch during the build phase. The build skill checks this count before offering inter-batch review. Set to `0` to skip inter-batch review. The final review stage at the end of the pipeline is not affected by this setting.
 
 ### `review_tiers`
 
 Type: array of `{ name: string, reviewers: string[] }` or dict, optional
 
 Groups reviewer subroles into named tiers. Invoke runs tiers sequentially, so a lighter first tier can gate access to a more expensive second tier.
+
+The review skill recognizes three tier names: `critical`, `quality`, and `polish`. Other tier names are stored in config but skipped during review.
 
 Two formats are accepted:
 
@@ -392,7 +394,9 @@ settings:
       reviewers: [code-quality, performance]
     - name: polish
       reviewers: [ux, accessibility]
+```
 
+```yaml
 # Dict format (order not guaranteed):
 settings:
   review_tiers:
