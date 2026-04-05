@@ -50,7 +50,7 @@ Two variables are interpolated at dispatch time:
 - `{{model}}` — replaced with the `model` value from the role's provider entry. For example, `gemini-2.5-pro`.
 - `{{effort}}` — replaced with the `effort` value from the role's provider entry: `low`, `medium`, or `high`. Providers that have no effort concept can simply omit this variable from their args.
 
-Invoke validates at startup that each provider's `cli` binary exists on `PATH`. If the binary is missing, a warning is printed before any pipeline work begins.
+Invoke validates at startup that each provider's `cli` binary exists on `PATH`. If the binary is missing, an error is reported before any pipeline work begins.
 
 ---
 
@@ -425,7 +425,7 @@ The `invoke-manage` skill in Claude Code provides an alternative to editing `pip
 | `remove_strategy` | Delete a strategy entry |
 | `update_settings` | Update one or more fields under `settings:` |
 
-Each operation reads the current `pipeline.yaml`, applies the change, writes it back, and then reloads the config through the normal validation path. If the result is invalid, the operation fails and the file is not modified. (`src/tools/config-manager.ts:128-134`)
+Each operation reads the current `pipeline.yaml`, applies the change, and writes it back. The config is then reloaded through the normal validation path. If the reload detects an invalid configuration, the error is surfaced — but the file has already been written, so you may need to fix it manually or re-run the operation. (`src/tools/config-manager.ts:128-134`)
 
 ### Example
 
