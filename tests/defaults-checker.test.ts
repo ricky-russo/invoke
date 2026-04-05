@@ -26,23 +26,23 @@ describe('checkForNewDefaults', () => {
     ]))
   })
 
+  it('ignores future role files that do not exist in defaults yet', async () => {
+    const missing = await checkForNewDefaults(TEST_DIR)
+    const futureRoleFiles = ['docs.md', 'integration-test.md', 'migration.md']
+
+    expect(
+      missing.some(entry => futureRoleFiles.some(fileName => entry.relativePath.endsWith(fileName))),
+    ).toBe(false)
+  })
+
   it('reports new builder role files that now exist in defaults', async () => {
     const missing = await checkForNewDefaults(TEST_DIR)
 
     expect(missing).toEqual(expect.arrayContaining([
       expect.objectContaining({
-        relativePath: 'roles/builder/integration-test.md',
-        description: 'New builder: integration-test',
+        relativePath: 'roles/builder/refactor.md',
+        description: 'New builder: refactor',
       }),
     ]))
-  })
-
-  it('ignores future role files that do not exist in defaults yet', async () => {
-    const missing = await checkForNewDefaults(TEST_DIR)
-    const futureRoleFiles = ['docs.md', 'refactor.md', 'migration.md']
-
-    expect(
-      missing.some(entry => futureRoleFiles.some(fileName => entry.relativePath.endsWith(fileName))),
-    ).toBe(false)
   })
 })
