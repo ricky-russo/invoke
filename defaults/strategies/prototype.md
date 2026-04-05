@@ -20,6 +20,16 @@ You are building a quick prototype. Speed over quality.
 2. **Make it work** — Focus on the happy path. Get the core functionality demonstrable.
 3. **Commit** — Commit with a clear "prototype" or "spike" label.
 
+## Enforcement
+
+Speed over quality. Hardcode values, skip error handling, focus on the happy path. Mark everything as prototype/spike.
+
+## Anti-Patterns
+
+- DO NOT optimize prematurely.
+- DO NOT add configuration for hypothetical future needs.
+- DO NOT write tests (this is a spike).
+
 ## Rules
 
 - No tests required. This is a spike.
