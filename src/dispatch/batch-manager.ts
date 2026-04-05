@@ -1,5 +1,6 @@
 import { randomUUID } from 'crypto'
 import type { DispatchEngine } from './engine.js'
+import { buildExecutionLayers } from './dag-scheduler.js'
 import type { WorktreeManager } from '../worktree/manager.js'
 import type { StateManager } from '../tools/state.js'
 import type { BatchRequest, BatchTask, BatchStatus, AgentStatus, AgentResult } from '../types.js'
@@ -8,6 +9,11 @@ interface BatchRecord {
   status: BatchStatus
   abortController: AbortController
   batchIndex: number
+}
+
+interface ScheduledBatchTask extends BatchTask {
+  id: string
+  index: number
 }
 
 export class BatchManager {
@@ -39,7 +45,7 @@ export class BatchManager {
     this.batches.set(batchId, record)
 
     // Fire and forget — dispatch all tasks in parallel
-    this.runBatch(batchId, request, abortController.signal, currentBatchIndex)
+    void this.runBatch(batchId, request, abortController.signal, currentBatchIndex)
 
     return batchId
   }
@@ -59,7 +65,7 @@ export class BatchManager {
     if (!record) return null
 
     // If already done, return immediately
-    if (record.status.status !== 'running') return record.status
+    if (this.isTerminalBatchStatus(record.status.status)) return record.status
 
     // Snapshot current agent statuses to detect changes
     const snapshot = record.status.agents.map(a => a.status).join(',')
@@ -69,7 +75,7 @@ export class BatchManager {
       await new Promise(resolve => setTimeout(resolve, 1000))
 
       // Batch finished
-      if (record.status.status !== 'running') return record.status
+      if (this.isTerminalBatchStatus(record.status.status)) return record.status
 
       // An agent's status changed (e.g. one completed while others still run)
       const current = record.status.agents.map(a => a.status).join(',')
@@ -93,6 +99,54 @@ export class BatchManager {
     }
   }
 
+  private isTerminalBatchStatus(status: BatchStatus['status']): boolean {
+    return status === 'completed' || status === 'error' || status === 'cancelled'
+  }
+
+  private isTerminalAgentStatus(status: AgentStatus['status']): boolean {
+    return status === 'completed' || status === 'error' || status === 'timeout'
+  }
+
+  private computeBatchStatus(agents: AgentStatus[]): BatchStatus['status'] {
+    const allFinished = agents.every(agent => this.isTerminalAgentStatus(agent.status))
+    if (allFinished) {
+      const anyError = agents.some(agent => agent.status === 'error' || agent.status === 'timeout')
+      return anyError ? 'error' : 'completed'
+    }
+
+    const anyCompleted = agents.some(agent => agent.status === 'completed')
+    return anyCompleted ? 'partial' : 'running'
+  }
+
+  private async persistBatchStatus(
+    batchIndex: number,
+    status: BatchStatus['status']
+  ): Promise<void> {
+    if (!this.stateManager || status === 'cancelled') return
+
+    const persistedStatus = status === 'running'
+      ? 'in_progress'
+      : status
+
+    try {
+      await this.stateManager.updateBatch(batchIndex, {
+        status: persistedStatus,
+      })
+    } catch {
+      // Non-critical — don't fail dispatch if state persistence fails
+    }
+  }
+
+  private async updateBatchStatus(record: BatchRecord): Promise<void> {
+    if (record.status.status === 'cancelled') return
+
+    const nextStatus = this.computeBatchStatus(record.status.agents)
+    if (record.status.status === nextStatus) return
+
+    record.status.status = nextStatus
+    await this.persistBatchStatus(record.batchIndex, nextStatus)
+  }
+
   private async persistTaskStatus(
     batchIndex: number,
     taskId: string,
@@ -111,6 +165,91 @@ export class BatchManager {
     }
   }
 
+  private getTaskDependencies(task: BatchTask): string[] | undefined {
+    if (task.depends_on && task.depends_on.length > 0) {
+      return task.depends_on
+    }
+
+    const rawDependencies = (task.taskContext as Record<string, unknown>).depends_on
+    if (Array.isArray(rawDependencies)) {
+      const dependencies = rawDependencies.filter(
+        (dependency): dependency is string => typeof dependency === 'string'
+      )
+      return dependencies.length > 0 ? dependencies : undefined
+    }
+
+    if (typeof rawDependencies !== 'string') {
+      return undefined
+    }
+
+    const trimmed = rawDependencies.trim()
+    if (!trimmed) {
+      return undefined
+    }
+
+    if (trimmed.startsWith('[')) {
+      try {
+        const parsed = JSON.parse(trimmed)
+        if (Array.isArray(parsed)) {
+          const dependencies = parsed.filter(
+            (dependency): dependency is string => typeof dependency === 'string'
+          )
+          return dependencies.length > 0 ? dependencies : undefined
+        }
+      } catch {
+        // Fall through to comma-separated parsing.
+      }
+    }
+
+    const dependencies = trimmed
+      .split(',')
+      .map(dependency => dependency.trim())
+      .filter(Boolean)
+
+    return dependencies.length > 0 ? dependencies : undefined
+  }
+
+  private async runLayer<T>(
+    tasks: T[],
+    maxParallel: number,
+    signal: AbortSignal,
+    runTask: (task: T) => Promise<void>
+  ): Promise<void> {
+    if (tasks.length === 0) return
+
+    if (maxParallel > 0 && tasks.length > maxParallel) {
+      let active = 0
+      let nextIndex = 0
+
+      await new Promise<void>((resolveAll) => {
+        const tryNext = () => {
+          while (active < maxParallel && nextIndex < tasks.length && !signal.aborted) {
+            const task = tasks[nextIndex++]
+            active++
+            runTask(task).finally(() => {
+              active--
+              if ((signal.aborted && active === 0) || (nextIndex >= tasks.length && active === 0)) {
+                resolveAll()
+                return
+              }
+              tryNext()
+            })
+          }
+
+          if (tasks.length === 0 || (signal.aborted && active === 0) || (nextIndex >= tasks.length && active === 0)) {
+            resolveAll()
+          }
+        }
+
+        tryNext()
+      })
+
+      return
+    }
+
+    await Promise.allSettled(tasks.map(task => runTask(task)))
+  }
+
   private async runBatch(
     batchId: string,
     request: BatchRequest,
@@ -120,10 +259,17 @@ export class BatchManager {
     const record = this.batches.get(batchId)!
     const maxParallel = request.maxParallel ?? 0 // 0 = unlimited
 
-    const runTask = async (task: BatchTask, index: number) => {
+    const scheduledTasks: ScheduledBatchTask[] = request.tasks.map((task, index) => ({
+      ...task,
+      id: task.taskId,
+      index,
+      depends_on: this.getTaskDependencies(task),
+    }))
+
+    const runTask = async (task: ScheduledBatchTask) => {
       if (signal.aborted) return
 
-      const agentStatus = record.status.agents[index]
+      const agentStatus = record.status.agents[task.index]
 
       try {
         let workDir: string | undefined
@@ -131,7 +277,12 @@ export class BatchManager {
         if (request.createWorktrees) {
           agentStatus.status = 'dispatched'
           await this.persistTaskStatus(batchIndex, task.taskId, 'dispatched')
+
+          if (signal.aborted) return
+
           const wt = await this.worktreeManager.create(task.taskId)
+          if (signal.aborted) return
+
           workDir = wt.worktreePath
           if (this.stateManager) {
             try {
@@ -145,6 +296,8 @@ export class BatchManager {
           }
         }
 
+        if (signal.aborted) return
+
         agentStatus.status = 'running'
         await this.persistTaskStatus(batchIndex, task.taskId, 'running')
 
@@ -157,9 +310,12 @@ export class BatchManager {
           workDir,
         })
 
+        if (signal.aborted) return
+
         agentStatus.status = 'completed'
         agentStatus.result = result
         await this.persistTaskStatus(batchIndex, task.taskId, 'completed', result)
+        await this.updateBatchStatus(record)
       } catch (err) {
         const errorResult: AgentResult = {
           role: task.role,
@@ -176,60 +332,30 @@ export class BatchManager {
         agentStatus.status = 'error'
         agentStatus.result = errorResult
         await this.persistTaskStatus(batchIndex, task.taskId, 'error', errorResult)
+        await this.updateBatchStatus(record)
       }
     }
 
-    if (maxParallel > 0 && request.tasks.length > maxParallel) {
-      // Concurrency pool
-      let active = 0
-      let nextIndex = 0
+    try {
+      const hasDependencies = scheduledTasks.some(task => (task.depends_on?.length ?? 0) > 0)
 
-      await new Promise<void>((resolveAll) => {
-        const tryNext = () => {
-          while (active < maxParallel && nextIndex < request.tasks.length && !signal.aborted) {
-            const idx = nextIndex++
-            active++
-            runTask(request.tasks[idx], idx).finally(() => {
-              active--
-              if (nextIndex >= request.tasks.length && active === 0) {
-                resolveAll()
-              } else {
-                tryNext()
-              }
-            })
-          }
-          if (request.tasks.length === 0 || (nextIndex >= request.tasks.length && active === 0)) {
-            resolveAll()
-          }
+      if (hasDependencies) {
+        const executionLayers = buildExecutionLayers(scheduledTasks)
+        for (const layer of executionLayers) {
+          if (signal.aborted) break
+          await this.runLayer(layer, maxParallel, signal, runTask)
         }
-        tryNext()
-      })
-    } else {
-      // Unlimited — current behavior
-      const promises = request.tasks.map((task, index) => runTask(task, index))
-      await Promise.allSettled(promises)
-    }
+      } else {
+        await this.runLayer(scheduledTasks, maxParallel, signal, runTask)
+      }
 
-    if (!signal.aborted) {
-      const allDone = record.status.agents.every(
-        a => a.status === 'completed' || a.status === 'error' || a.status === 'timeout'
-      )
-      const anyError = record.status.agents.some(a => a.status === 'error' || a.status === 'timeout')
-
-      record.status.status = allDone
-        ? (anyError ? 'error' : 'completed')
-        : 'running'
-
-      if (this.stateManager) {
-        try {
-          await this.stateManager.updateBatch(batchIndex, {
-            status: record.status.status === 'completed' ? 'completed'
-              : record.status.status === 'error' ? 'error'
-              : 'in_progress',
-          })
-        } catch {
-          // Non-critical
-        }
+      if (!signal.aborted) {
+        await this.updateBatchStatus(record)
+      }
+    } catch {
+      if (record.status.status !== 'cancelled') {
+        record.status.status = 'error'
+        await this.persistBatchStatus(batchIndex, 'error')
       }
     }
   }

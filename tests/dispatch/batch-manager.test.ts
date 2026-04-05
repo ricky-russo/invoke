@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { BatchManager } from '../../src/dispatch/batch-manager.js'
+import * as dagScheduler from '../../src/dispatch/dag-scheduler.js'
 import type { DispatchEngine } from '../../src/dispatch/engine.js'
 import type { WorktreeManager } from '../../src/worktree/manager.js'
 import type { AgentResult, PipelineState } from '../../src/types.js'
@@ -27,6 +28,17 @@ const mockWorktreeManager = {
   }),
   cleanup: vi.fn(),
 } as unknown as WorktreeManager
+
+function createDeferred<T>() {
+  let resolve!: (value: T) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res
+    reject = rej
+  })
+
+  return { promise, resolve, reject }
+}
 
 describe('BatchManager', () => {
   let manager: BatchManager
@@ -156,7 +168,7 @@ describe('BatchManager', () => {
       const status = await manager.waitForStatus(batchId, 10)
 
       // Should return once task-1 completes (status change detected)
-      expect(status!.status).toBe('running')
+      expect(status!.status).toBe('partial')
       expect(status!.agents[0].status).toBe('completed')
     })
 
@@ -259,6 +271,197 @@ describe('max_parallel_agents', () => {
 
     expect(maxConcurrent).toBe(3) // all ran simultaneously
   })
+
+  it('runs dependency layers sequentially and parallelizes tasks within each layer', async () => {
+    const buildLayersSpy = vi.spyOn(dagScheduler, 'buildExecutionLayers')
+    const started: string[] = []
+    const deferreds = new Map([
+      ['A', createDeferred<AgentResult>()],
+      ['B', createDeferred<AgentResult>()],
+      ['C', createDeferred<AgentResult>()],
+      ['D', createDeferred<AgentResult>()],
+    ])
+    let currentConcurrent = 0
+    let maxConcurrent = 0
+
+    vi.mocked(mockEngine.dispatch).mockImplementation(async (request: any) => {
+      const taskName = request.taskContext.task_description
+      started.push(taskName)
+      currentConcurrent++
+      maxConcurrent = Math.max(maxConcurrent, currentConcurrent)
+
+      try {
+        return await deferreds.get(taskName)!.promise
+      } finally {
+        currentConcurrent--
+      }
+    })
+
+    const batchId = await manager.dispatchBatch({
+      tasks: [
+        { taskId: 'A', role: 'builder', subrole: 'default', taskContext: { task_description: 'A' } },
+        { taskId: 'B', role: 'builder', subrole: 'default', taskContext: { task_description: 'B' }, depends_on: ['A'] },
+        { taskId: 'C', role: 'builder', subrole: 'default', taskContext: { task_description: 'C' }, depends_on: ['A'] },
+        { taskId: 'D', role: 'builder', subrole: 'default', taskContext: { task_description: 'D' }, depends_on: ['B', 'C'] },
+      ],
+      createWorktrees: false,
+      maxParallel: 2,
+    })
+
+    await vi.waitFor(() => {
+      expect(started).toEqual(['A'])
+    }, { timeout: 2000 })
+
+    expect(buildLayersSpy).toHaveBeenCalledTimes(1)
+
+    deferreds.get('A')!.resolve(mockResult)
+
+    await vi.waitFor(() => {
+      expect(started).toEqual(['A', 'B', 'C'])
+    }, { timeout: 2000 })
+
+    deferreds.get('B')!.resolve(mockResult)
+    await new Promise(resolve => setTimeout(resolve, 25))
+    expect(started).toEqual(['A', 'B', 'C'])
+
+    deferreds.get('C')!.resolve(mockResult)
+
+    await vi.waitFor(() => {
+      expect(started).toEqual(['A', 'B', 'C', 'D'])
+    }, { timeout: 2000 })
+
+    deferreds.get('D')!.resolve(mockResult)
+
+    await vi.waitFor(() => {
+      expect(manager.getStatus(batchId)!.status).toBe('completed')
+    }, { timeout: 5000 })
+
+    expect(maxConcurrent).toBeLessThanOrEqual(2)
+    expect(maxConcurrent).toBe(2)
+
+    buildLayersSpy.mockRestore()
+  })
+
+  it('skips the DAG scheduler when no task declares dependencies', async () => {
+    const buildLayersSpy = vi.spyOn(dagScheduler, 'buildExecutionLayers')
+
+    const batchId = await manager.dispatchBatch({
+      tasks: [
+        { taskId: 'task-1', role: 'builder', subrole: 'default', taskContext: {} },
+        { taskId: 'task-2', role: 'builder', subrole: 'default', taskContext: {} },
+      ],
+      createWorktrees: false,
+      maxParallel: 2,
+    })
+
+    await vi.waitFor(() => {
+      expect(manager.getStatus(batchId)!.status).toBe('completed')
+    }, { timeout: 5000 })
+
+    expect(buildLayersSpy).not.toHaveBeenCalled()
+
+    buildLayersSpy.mockRestore()
+  })
+
+  it('detects dependencies declared in taskContext', async () => {
+    const buildLayersSpy = vi.spyOn(dagScheduler, 'buildExecutionLayers')
+
+    const batchId = await manager.dispatchBatch({
+      tasks: [
+        { taskId: 'task-1', role: 'builder', subrole: 'default', taskContext: {} },
+        {
+          taskId: 'task-2',
+          role: 'builder',
+          subrole: 'default',
+          taskContext: { depends_on: 'task-1' },
+        },
+      ],
+      createWorktrees: false,
+    })
+
+    await vi.waitFor(() => {
+      expect(manager.getStatus(batchId)!.status).toBe('completed')
+    }, { timeout: 5000 })
+
+    expect(buildLayersSpy).toHaveBeenCalledTimes(1)
+
+    buildLayersSpy.mockRestore()
+  })
+
+  it('marks the batch as partial when some tasks complete before the batch finishes', async () => {
+    const deferreds = new Map([
+      ['task-1', createDeferred<AgentResult>()],
+      ['task-2', createDeferred<AgentResult>()],
+    ])
+
+    vi.mocked(mockEngine.dispatch).mockImplementation((request: any) => {
+      return deferreds.get(request.taskContext.task_description)!.promise
+    })
+
+    const batchId = await manager.dispatchBatch({
+      tasks: [
+        { taskId: 'task-1', role: 'builder', subrole: 'default', taskContext: { task_description: 'task-1' } },
+        { taskId: 'task-2', role: 'builder', subrole: 'default', taskContext: { task_description: 'task-2' } },
+      ],
+      createWorktrees: true,
+    })
+
+    deferreds.get('task-1')!.resolve(mockResult)
+
+    await vi.waitFor(() => {
+      const status = manager.getStatus(batchId)
+      expect(status!.status).toBe('partial')
+      expect(status!.agents[0].status).toBe('completed')
+      expect(status!.agents[1].status).toBe('running')
+    }, { timeout: 2000 })
+
+    deferreds.get('task-2')!.resolve(mockResult)
+
+    await vi.waitFor(() => {
+      expect(manager.getStatus(batchId)!.status).toBe('completed')
+    }, { timeout: 5000 })
+  })
+
+  it('does not schedule later DAG layers after cancellation', async () => {
+    const deferred = createDeferred<AgentResult>()
+    const started: string[] = []
+
+    vi.mocked(mockEngine.dispatch).mockImplementation(async (request: any) => {
+      started.push(request.taskContext.task_description)
+      return deferred.promise
+    })
+
+    const batchId = await manager.dispatchBatch({
+      tasks: [
+        { taskId: 'task-1', role: 'builder', subrole: 'default', taskContext: { task_description: 'A' } },
+        {
+          taskId: 'task-2',
+          role: 'builder',
+          subrole: 'default',
+          taskContext: { task_description: 'B' },
+          depends_on: ['task-1'],
+        },
+      ],
+      createWorktrees: false,
+      maxParallel: 1,
+    })
+
+    await vi.waitFor(() => {
+      expect(started).toEqual(['A'])
+    }, { timeout: 2000 })
+
+    manager.cancel(batchId)
+    deferred.resolve(mockResult)
+
+    await vi.waitFor(() => {
+      expect(manager.getStatus(batchId)!.status).toBe('cancelled')
+    }, { timeout: 2000 })
+
+    await new Promise(resolve => setTimeout(resolve, 25))
+
+    expect(started).toEqual(['A'])
+    expect(vi.mocked(mockEngine.dispatch)).toHaveBeenCalledTimes(1)
+  })
 })
 
 describe('BatchManager with state persistence', () => {
@@ -352,6 +555,37 @@ describe('BatchManager with state persistence', () => {
       ],
       createWorktrees: false,
     })
+
+    await vi.waitFor(() => {
+      expect(updateBatch).toHaveBeenCalledWith(2, { status: 'completed' })
+    }, { timeout: 3000 })
+  })
+
+  it('persists partial batch status while work remains', async () => {
+    const firstTask = createDeferred<AgentResult>()
+    const secondTask = createDeferred<AgentResult>()
+
+    vi.mocked(mockEngine.dispatch).mockImplementation((request: any) => {
+      return request.taskContext.task_description === 'task-2'
+        ? firstTask.promise
+        : secondTask.promise
+    })
+
+    await statefulManager.dispatchBatch({
+      tasks: [
+        { taskId: 'task-2', role: 'builder', subrole: 'default', taskContext: { task_description: 'task-2' } },
+        { taskId: 'task-3', role: 'builder', subrole: 'default', taskContext: { task_description: 'task-3' } },
+      ],
+      createWorktrees: false,
+    })
+
+    firstTask.resolve(mockResult)
+
+    await vi.waitFor(() => {
+      expect(updateBatch).toHaveBeenCalledWith(2, { status: 'partial' })
+    }, { timeout: 3000 })
+
+    secondTask.resolve(mockResult)
 
     await vi.waitFor(() => {
       expect(updateBatch).toHaveBeenCalledWith(2, { status: 'completed' })

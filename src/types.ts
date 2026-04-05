@@ -152,11 +152,12 @@ export interface BatchTask {
   role: string
   subrole: string
   taskContext: Record<string, string>
+  depends_on?: string[]
 }
 
 export interface BatchStatus {
   batchId: string
-  status: 'running' | 'completed' | 'error' | 'cancelled'
+  status: 'running' | 'partial' | 'completed' | 'error' | 'cancelled'
   agents: AgentStatus[]
 }
 

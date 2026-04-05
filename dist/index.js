@@ -39112,6 +39112,52 @@ ${r.output.raw}`).join("\n\n")
 
 // src/dispatch/batch-manager.ts
 import { randomUUID } from "crypto";
+
+// src/dispatch/dag-scheduler.ts
+function buildExecutionLayers(tasks) {
+  if (tasks.length === 0) return [];
+  const taskMap = /* @__PURE__ */ new Map();
+  const inDegree = /* @__PURE__ */ new Map();
+  const dependents = /* @__PURE__ */ new Map();
+  for (const task of tasks) {
+    taskMap.set(task.id, task);
+    inDegree.set(task.id, 0);
+    dependents.set(task.id, []);
+  }
+  for (const task of tasks) {
+    for (const dependencyId of task.depends_on ?? []) {
+      if (!taskMap.has(dependencyId)) {
+        throw new Error(`Task ${task.id} depends on unknown task ${dependencyId}`);
+      }
+      inDegree.set(task.id, inDegree.get(task.id) + 1);
+      dependents.get(dependencyId).push(task.id);
+    }
+  }
+  const layers = [];
+  let currentLayer = tasks.filter((task) => inDegree.get(task.id) === 0);
+  let scheduledCount = 0;
+  while (currentLayer.length > 0) {
+    layers.push(currentLayer);
+    scheduledCount += currentLayer.length;
+    const nextLayer = [];
+    for (const task of currentLayer) {
+      for (const dependentId of dependents.get(task.id) ?? []) {
+        const nextInDegree = inDegree.get(dependentId) - 1;
+        inDegree.set(dependentId, nextInDegree);
+        if (nextInDegree === 0) {
+          nextLayer.push(taskMap.get(dependentId));
+        }
+      }
+    }
+    currentLayer = nextLayer;
+  }
+  if (scheduledCount < tasks.length) {
+    throw new Error("Circular dependency detected in task graph");
+  }
+  return layers;
+}
+
+// src/dispatch/batch-manager.ts
 var BatchManager = class {
   constructor(engine, worktreeManager, stateManager) {
     this.engine = engine;
@@ -39136,7 +39182,7 @@ var BatchManager = class {
       batchIndex: currentBatchIndex
     };
     this.batches.set(batchId, record2);
-    this.runBatch(batchId, request, abortController.signal, currentBatchIndex);
+    void this.runBatch(batchId, request, abortController.signal, currentBatchIndex);
     return batchId;
   }
   async getPersistedBatchIndex() {
@@ -39150,12 +39196,12 @@ var BatchManager = class {
   async waitForStatus(batchId, waitSeconds) {
     const record2 = this.batches.get(batchId);
     if (!record2) return null;
-    if (record2.status.status !== "running") return record2.status;
+    if (this.isTerminalBatchStatus(record2.status.status)) return record2.status;
     const snapshot = record2.status.agents.map((a) => a.status).join(",");
     const deadline = Date.now() + waitSeconds * 1e3;
     while (Date.now() < deadline) {
       await new Promise((resolve) => setTimeout(resolve, 1e3));
-      if (record2.status.status !== "running") return record2.status;
+      if (this.isTerminalBatchStatus(record2.status.status)) return record2.status;
       const current = record2.status.agents.map((a) => a.status).join(",");
       if (current !== snapshot) return record2.status;
     }
@@ -39172,6 +39218,38 @@ var BatchManager = class {
       }
     }
   }
+  isTerminalBatchStatus(status) {
+    return status === "completed" || status === "error" || status === "cancelled";
+  }
+  isTerminalAgentStatus(status) {
+    return status === "completed" || status === "error" || status === "timeout";
+  }
+  computeBatchStatus(agents) {
+    const allFinished = agents.every((agent) => this.isTerminalAgentStatus(agent.status));
+    if (allFinished) {
+      const anyError = agents.some((agent) => agent.status === "error" || agent.status === "timeout");
+      return anyError ? "error" : "completed";
+    }
+    const anyCompleted = agents.some((agent) => agent.status === "completed");
+    return anyCompleted ? "partial" : "running";
+  }
+  async persistBatchStatus(batchIndex, status) {
+    if (!this.stateManager || status === "cancelled") return;
+    const persistedStatus = status === "running" ? "in_progress" : status;
+    try {
+      await this.stateManager.updateBatch(batchIndex, {
+        status: persistedStatus
+      });
+    } catch {
+    }
+  }
+  async updateBatchStatus(record2) {
+    if (record2.status.status === "cancelled") return;
+    const nextStatus = this.computeBatchStatus(record2.status.agents);
+    if (record2.status.status === nextStatus) return;
+    record2.status.status = nextStatus;
+    await this.persistBatchStatus(record2.batchIndex, nextStatus);
+  }
   async persistTaskStatus(batchIndex, taskId, status, result) {
     if (!this.stateManager) return;
     try {
@@ -39183,18 +39261,88 @@ var BatchManager = class {
     } catch {
     }
   }
+  getTaskDependencies(task) {
+    if (task.depends_on && task.depends_on.length > 0) {
+      return task.depends_on;
+    }
+    const rawDependencies = task.taskContext.depends_on;
+    if (Array.isArray(rawDependencies)) {
+      const dependencies2 = rawDependencies.filter(
+        (dependency) => typeof dependency === "string"
+      );
+      return dependencies2.length > 0 ? dependencies2 : void 0;
+    }
+    if (typeof rawDependencies !== "string") {
+      return void 0;
+    }
+    const trimmed = rawDependencies.trim();
+    if (!trimmed) {
+      return void 0;
+    }
+    if (trimmed.startsWith("[")) {
+      try {
+        const parsed = JSON.parse(trimmed);
+        if (Array.isArray(parsed)) {
+          const dependencies2 = parsed.filter(
+            (dependency) => typeof dependency === "string"
+          );
+          return dependencies2.length > 0 ? dependencies2 : void 0;
+        }
+      } catch {
+      }
+    }
+    const dependencies = trimmed.split(",").map((dependency) => dependency.trim()).filter(Boolean);
+    return dependencies.length > 0 ? dependencies : void 0;
+  }
+  async runLayer(tasks, maxParallel, signal, runTask) {
+    if (tasks.length === 0) return;
+    if (maxParallel > 0 && tasks.length > maxParallel) {
+      let active = 0;
+      let nextIndex = 0;
+      await new Promise((resolveAll) => {
+        const tryNext = () => {
+          while (active < maxParallel && nextIndex < tasks.length && !signal.aborted) {
+            const task = tasks[nextIndex++];
+            active++;
+            runTask(task).finally(() => {
+              active--;
+              if (signal.aborted && active === 0 || nextIndex >= tasks.length && active === 0) {
+                resolveAll();
+                return;
+              }
+              tryNext();
+            });
+          }
+          if (tasks.length === 0 || signal.aborted && active === 0 || nextIndex >= tasks.length && active === 0) {
+            resolveAll();
+          }
+        };
+        tryNext();
+      });
+      return;
+    }
+    await Promise.allSettled(tasks.map((task) => runTask(task)));
+  }
   async runBatch(batchId, request, signal, batchIndex) {
     const record2 = this.batches.get(batchId);
     const maxParallel = request.maxParallel ?? 0;
-    const runTask = async (task, index) => {
+    const scheduledTasks = request.tasks.map((task, index) => ({
+      ...task,
+      id: task.taskId,
+      index,
+      depends_on: this.getTaskDependencies(task)
+    }));
+    const runTask = async (task) => {
       if (signal.aborted) return;
-      const agentStatus = record2.status.agents[index];
+      const agentStatus = record2.status.agents[task.index];
       try {
         let workDir;
         if (request.createWorktrees) {
           agentStatus.status = "dispatched";
           await this.persistTaskStatus(batchIndex, task.taskId, "dispatched");
+          if (signal.aborted) return;
           const wt = await this.worktreeManager.create(task.taskId);
+          if (signal.aborted) return;
           workDir = wt.worktreePath;
           if (this.stateManager) {
             try {
@@ -39206,6 +39354,7 @@ var BatchManager = class {
             }
           }
         }
+        if (signal.aborted) return;
         agentStatus.status = "running";
         await this.persistTaskStatus(batchIndex, task.taskId, "running");
         if (signal.aborted) return;
@@ -39215,9 +39364,11 @@ var BatchManager = class {
           taskContext: task.taskContext,
           workDir
         });
+        if (signal.aborted) return;
         agentStatus.status = "completed";
         agentStatus.result = result;
         await this.persistTaskStatus(batchIndex, task.taskId, "completed", result);
+        await this.updateBatchStatus(record2);
       } catch (err) {
         const errorResult = {
           role: task.role,
@@ -39234,48 +39385,27 @@ var BatchManager = class {
         agentStatus.status = "error";
         agentStatus.result = errorResult;
         await this.persistTaskStatus(batchIndex, task.taskId, "error", errorResult);
+        await this.updateBatchStatus(record2);
       }
     };
-    if (maxParallel > 0 && request.tasks.length > maxParallel) {
-      let active = 0;
-      let nextIndex = 0;
-      await new Promise((resolveAll) => {
-        const tryNext = () => {
-          while (active < maxParallel && nextIndex < request.tasks.length && !signal.aborted) {
-            const idx = nextIndex++;
-            active++;
-            runTask(request.tasks[idx], idx).finally(() => {
-              active--;
-              if (nextIndex >= request.tasks.length && active === 0) {
-                resolveAll();
-              } else {
-                tryNext();
-              }
-            });
-          }
-          if (request.tasks.length === 0 || nextIndex >= request.tasks.length && active === 0) {
-            resolveAll();
-          }
-        };
-        tryNext();
-      });
-    } else {
-      const promises = request.tasks.map((task, index) => runTask(task, index));
-      await Promise.allSettled(promises);
-    }
-    if (!signal.aborted) {
-      const allDone = record2.status.agents.every(
-        (a) => a.status === "completed" || a.status === "error" || a.status === "timeout"
-      );
-      const anyError = record2.status.agents.some((a) => a.status === "error" || a.status === "timeout");
-      record2.status.status = allDone ? anyError ? "error" : "completed" : "running";
-      if (this.stateManager) {
-        try {
-          await this.stateManager.updateBatch(batchIndex, {
-            status: record2.status.status === "completed" ? "completed" : record2.status.status === "error" ? "error" : "in_progress"
-          });
-        } catch {
+    try {
+      const hasDependencies = scheduledTasks.some((task) => (task.depends_on?.length ?? 0) > 0);
+      if (hasDependencies) {
+        const executionLayers = buildExecutionLayers(scheduledTasks);
+        for (const layer of executionLayers) {
+          if (signal.aborted) break;
+          await this.runLayer(layer, maxParallel, signal, runTask);
         }
+      } else {
+        await this.runLayer(scheduledTasks, maxParallel, signal, runTask);
+      }
+      if (!signal.aborted) {
+        await this.updateBatchStatus(record2);
+      }
+    } catch {
+      if (record2.status.status !== "cancelled") {
+        record2.status.status = "error";
+        await this.persistBatchStatus(batchIndex, "error");
       }
     }
   }

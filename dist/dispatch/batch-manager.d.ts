@@ -13,7 +13,14 @@ export declare class BatchManager {
     getStatus(batchId: string): BatchStatus | null;
     waitForStatus(batchId: string, waitSeconds: number): Promise<BatchStatus | null>;
     cancel(batchId: string): void;
+    private isTerminalBatchStatus;
+    private isTerminalAgentStatus;
+    private computeBatchStatus;
+    private persistBatchStatus;
+    private updateBatchStatus;
     private persistTaskStatus;
+    private getTaskDependencies;
+    private runLayer;
     private runBatch;
 }
 //# sourceMappingURL=batch-manager.d.ts.map
