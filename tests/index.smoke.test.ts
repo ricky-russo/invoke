@@ -139,6 +139,7 @@ describe.sequential('index bootstrap smoke', () => {
       'invoke_cancel_batch',
       'invoke_cleanup_sessions',
       'invoke_cleanup_worktrees',
+      'invoke_compare_sessions',
       'invoke_create_worktree',
       'invoke_delete_artifact',
       'invoke_dispatch',
@@ -163,11 +164,18 @@ describe.sequential('index bootstrap smoke', () => {
     ])
 
     const listSessions = server.tools.get('invoke_list_sessions')
+    const compareSessions = server.tools.get('invoke_compare_sessions')
     const getConfig = server.tools.get('invoke_get_config')
 
     expect(listSessions).toBeTruthy()
+    expect(compareSessions).toBeTruthy()
     expect(getConfig).toBeTruthy()
     expect(listSessions!.config.inputSchema.safeParse({}).success).toBe(true)
+    expect(
+      compareSessions!.config.inputSchema.safeParse({
+        session_ids: ['legacy-pipeline', 'another-session'],
+      }).success
+    ).toBe(true)
     expect(getConfig!.config.inputSchema.safeParse({}).success).toBe(true)
 
     const sessionsResult = await listSessions!.handler({})

@@ -15,6 +15,7 @@ const mocks = vi.hoisted(() => ({
   registerContextTools: vi.fn(),
   registerMetricsTools: vi.fn(),
   registerSessionTools: vi.fn(),
+  registerComparisonTools: vi.fn(),
   checkForNewDefaults: vi.fn(),
   writeFile: vi.fn(),
   serverInstances: [] as any[],
@@ -193,6 +194,10 @@ vi.mock('../src/tools/session-tools.js', () => ({
   registerSessionTools: mocks.registerSessionTools,
 }))
 
+vi.mock('../src/tools/comparison-tools.js', () => ({
+  registerComparisonTools: mocks.registerComparisonTools,
+}))
+
 vi.mock('../src/defaults-checker.js', () => ({
   checkForNewDefaults: mocks.checkForNewDefaults,
 }))
@@ -264,6 +269,7 @@ describe('index bootstrap', () => {
 
     await vi.waitFor(() => {
       expect(mocks.registerSessionTools).toHaveBeenCalledTimes(1)
+      expect(mocks.registerComparisonTools).toHaveBeenCalledTimes(1)
       expect(mocks.registerStateTools).toHaveBeenCalledTimes(1)
     })
 
@@ -275,6 +281,7 @@ describe('index bootstrap', () => {
     expect(sessionManager.projectDir).toBe(process.cwd())
     expect(sessionManager.migrate).toHaveBeenCalledTimes(1)
     expect(mocks.registerSessionTools).toHaveBeenCalledWith(server, sessionManager, process.cwd())
+    expect(mocks.registerComparisonTools).toHaveBeenCalledWith(server, process.cwd(), sessionManager)
     expect(mocks.registerSessionTools.mock.invocationCallOrder[0])
       .toBeLessThan(mocks.registerStateTools.mock.invocationCallOrder[0])
     expect(sessionManager.migrate.mock.invocationCallOrder[0])
@@ -342,6 +349,7 @@ describe('index bootstrap', () => {
 
     await vi.waitFor(() => {
       expect(mocks.registerMetricsTools).toHaveBeenCalledTimes(1)
+      expect(mocks.registerComparisonTools).toHaveBeenCalledTimes(1)
     })
 
     expect(mocks.registerDispatchTools).not.toHaveBeenCalled()

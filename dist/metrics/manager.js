@@ -16,6 +16,7 @@ export class MetricsManager {
     writeChain = Promise.resolve();
     flushTimeout = null;
     dirEnsured = false;
+    beforeExitRegistered = false;
     constructor(projectDir, sessionDir) {
         this.projectDir = projectDir;
         const metricsDir = sessionDir ?? path.join(projectDir, '.invoke');
@@ -25,10 +26,10 @@ export class MetricsManager {
         this.beforeExitHandler = () => {
             void this.flushPendingWrites();
         };
-        process.on('beforeExit', this.beforeExitHandler);
     }
     record(metric) {
         try {
+            this.ensureBeforeExitHandler();
             this.metrics.push(metric);
             this.queueFlush();
         }
@@ -165,6 +166,13 @@ export class MetricsManager {
     }
     logWriteError(error) {
         console.error(`Failed to write metrics: ${error instanceof Error ? error.message : String(error)}`);
+    }
+    ensureBeforeExitHandler() {
+        if (this.beforeExitRegistered) {
+            return;
+        }
+        process.on('beforeExit', this.beforeExitHandler);
+        this.beforeExitRegistered = true;
     }
 }
 function normalizeCost(value) {

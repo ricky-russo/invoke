@@ -11,6 +11,7 @@ export declare class MetricsManager {
     private writeChain;
     private flushTimeout;
     private dirEnsured;
+    private beforeExitRegistered;
     constructor(projectDir: string, sessionDir?: string);
     record(metric: DispatchMetric): void;
     getCurrentPipelineMetrics(opts?: {
@@ -31,5 +32,6 @@ export declare class MetricsManager {
     private loadFromDisk;
     private writeAtomic;
     private logWriteError;
+    private ensureBeforeExitHandler;
 }
 //# sourceMappingURL=manager.d.ts.map

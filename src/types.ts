@@ -221,6 +221,13 @@ export interface SessionInfo {
   started: string
   last_updated: string
   status: 'active' | 'complete' | 'stale'
+  metrics_summary?: SessionMetricsSummary
+}
+
+export interface SessionMetricsSummary {
+  total_dispatches: number
+  total_duration_ms: number
+  total_estimated_cost_usd: number
 }
 
 export interface SessionStageComparison {

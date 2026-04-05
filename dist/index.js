@@ -39788,7 +39788,6 @@ var MetricsManager = class {
     this.beforeExitHandler = () => {
       void this.flushPendingWrites();
     };
-    process.on("beforeExit", this.beforeExitHandler);
   }
   projectDir;
   metricsPath;
@@ -39801,8 +39800,10 @@ var MetricsManager = class {
   writeChain = Promise.resolve();
   flushTimeout = null;
   dirEnsured = false;
+  beforeExitRegistered = false;
   record(metric) {
     try {
+      this.ensureBeforeExitHandler();
       this.metrics.push(metric);
       this.queueFlush();
     } catch (error48) {
@@ -39937,6 +39938,13 @@ var MetricsManager = class {
     console.error(
       `Failed to write metrics: ${error48 instanceof Error ? error48.message : String(error48)}`
     );
+  }
+  ensureBeforeExitHandler() {
+    if (this.beforeExitRegistered) {
+      return;
+    }
+    process.on("beforeExit", this.beforeExitHandler);
+    this.beforeExitRegistered = true;
   }
 };
 function normalizeCost(value) {
@@ -40518,13 +40526,16 @@ function registerSessionTools(server, sessionManager, projectDir) {
     "invoke_list_sessions",
     {
       description: "List all pipeline sessions.",
-      inputSchema: external_exports3.object({})
+      inputSchema: external_exports3.object({
+        withMetrics: external_exports3.boolean().optional().describe("Include dispatch count, duration, and estimated cost per session")
+      })
     },
-    async () => {
+    async ({ withMetrics }) => {
       try {
         const sessions = await getSessionsWithStatus(sessionManager, projectDir);
+        const responseSessions = withMetrics ? await addSessionMetricsSummaries(sessions, sessionManager, projectDir) : sessions;
         return {
-          content: [{ type: "text", text: JSON.stringify(sessions, null, 2) }]
+          content: [{ type: "text", text: JSON.stringify(responseSessions, null, 2) }]
         };
       } catch (err) {
         return {
@@ -40580,6 +40591,23 @@ async function getSessionsWithStatus(sessionManager, projectDir) {
   const staleSessionDays = await getStaleSessionDays(projectDir);
   return sessionManager.list(staleSessionDays);
 }
+async function addSessionMetricsSummaries(sessions, sessionManager, projectDir) {
+  return Promise.all(
+    sessions.map(async (session) => ({
+      ...session,
+      metrics_summary: await getSessionMetricsSummary(session.session_id, sessionManager, projectDir)
+    }))
+  );
+}
+async function getSessionMetricsSummary(sessionId, sessionManager, projectDir) {
+  const metricsManager = new MetricsManager(projectDir, sessionManager.resolve(sessionId));
+  const summary = await metricsManager.getSummary();
+  return {
+    total_dispatches: summary.total_dispatches,
+    total_duration_ms: summary.total_duration_ms,
+    total_estimated_cost_usd: summary.total_estimated_cost_usd
+  };
+}
 async function getStaleSessionDays(projectDir) {
   try {
     const config2 = await loadConfig(projectDir);
@@ -40597,6 +40625,174 @@ function matchesCleanupFilter(session, filter) {
     case "all":
       return session.status !== "active";
   }
+}
+
+// src/tools/comparison-tools.ts
+init_zod();
+
+// src/metrics/comparison.ts
+var COST_PRECISION2 = 1e9;
+function compareSessions(sessionMetrics) {
+  const sessions = Array.from(
+    sessionMetrics.entries(),
+    ([sessionId, metrics]) => summarizeSession(sessionId, metrics)
+  );
+  return {
+    sessions,
+    delta: sessions.length === 2 ? createDelta(sessions[0], sessions[1]) : null
+  };
+}
+function formatComparisonTable(comparison) {
+  const lines = [
+    "| Session | Dispatches | Duration | Prompt Chars | Est. Cost |",
+    "| --- | ---: | ---: | ---: | ---: |",
+    ...comparison.sessions.map(
+      (session) => formatRow(
+        session.session_id,
+        session.total_dispatches,
+        session.total_duration_ms,
+        session.total_prompt_chars,
+        session.total_estimated_cost_usd
+      )
+    )
+  ];
+  if (comparison.delta) {
+    lines.push(
+      formatRow(
+        "Delta",
+        comparison.delta.dispatches,
+        comparison.delta.duration_ms,
+        comparison.delta.prompt_chars,
+        comparison.delta.estimated_cost_usd
+      )
+    );
+  }
+  return lines.join("\n");
+}
+function summarizeSession(sessionId, metrics) {
+  let successfulDispatches = 0;
+  const summary = {
+    session_id: sessionId,
+    total_dispatches: metrics.length,
+    success_rate: 0,
+    total_duration_ms: 0,
+    total_prompt_chars: 0,
+    total_estimated_cost_usd: 0,
+    by_stage: {},
+    by_provider_model: {}
+  };
+  for (const metric of metrics) {
+    const cost = normalizeCost2(metric.estimated_cost_usd ?? 0);
+    if (metric.status === "success") {
+      successfulDispatches += 1;
+    }
+    summary.total_duration_ms += metric.duration_ms;
+    summary.total_prompt_chars += metric.prompt_size_chars;
+    summary.total_estimated_cost_usd = normalizeCost2(summary.total_estimated_cost_usd + cost);
+    const stageSummary = summary.by_stage[metric.stage] ?? {
+      dispatches: 0,
+      duration_ms: 0,
+      prompt_chars: 0,
+      estimated_cost_usd: 0
+    };
+    stageSummary.dispatches += 1;
+    stageSummary.duration_ms += metric.duration_ms;
+    stageSummary.prompt_chars += metric.prompt_size_chars;
+    stageSummary.estimated_cost_usd = normalizeCost2(stageSummary.estimated_cost_usd + cost);
+    summary.by_stage[metric.stage] = stageSummary;
+    const providerModelKey = `${metric.provider}:${metric.model}`;
+    const providerModelSummary = summary.by_provider_model[providerModelKey] ?? {
+      dispatches: 0,
+      duration_ms: 0,
+      prompt_chars: 0,
+      estimated_cost_usd: 0
+    };
+    providerModelSummary.dispatches += 1;
+    providerModelSummary.duration_ms += metric.duration_ms;
+    providerModelSummary.prompt_chars += metric.prompt_size_chars;
+    providerModelSummary.estimated_cost_usd = normalizeCost2(
+      providerModelSummary.estimated_cost_usd + cost
+    );
+    summary.by_provider_model[providerModelKey] = providerModelSummary;
+  }
+  summary.success_rate = summary.total_dispatches === 0 ? 0 : successfulDispatches / summary.total_dispatches;
+  return summary;
+}
+function createDelta(sessionA, sessionB) {
+  return {
+    dispatches: sessionB.total_dispatches - sessionA.total_dispatches,
+    dispatches_percentage: formatPercentageChange(
+      sessionA.total_dispatches,
+      sessionB.total_dispatches
+    ),
+    duration_ms: sessionB.total_duration_ms - sessionA.total_duration_ms,
+    duration_ms_percentage: formatPercentageChange(
+      sessionA.total_duration_ms,
+      sessionB.total_duration_ms
+    ),
+    prompt_chars: sessionB.total_prompt_chars - sessionA.total_prompt_chars,
+    prompt_chars_percentage: formatPercentageChange(
+      sessionA.total_prompt_chars,
+      sessionB.total_prompt_chars
+    ),
+    estimated_cost_usd: normalizeCost2(
+      sessionB.total_estimated_cost_usd - sessionA.total_estimated_cost_usd
+    ),
+    estimated_cost_usd_percentage: formatPercentageChange(
+      sessionA.total_estimated_cost_usd,
+      sessionB.total_estimated_cost_usd
+    )
+  };
+}
+function formatRow(label, dispatches, durationMs, promptChars, estimatedCostUsd) {
+  return `| ${escapeTableCell(label)} | ${dispatches} | ${durationMs} | ${promptChars} | ${formatCost(estimatedCostUsd)} |`;
+}
+function escapeTableCell(value) {
+  return value.replaceAll("|", "\\|");
+}
+function formatCost(value) {
+  const normalized = normalizeCost2(value);
+  if (Number.isInteger(normalized)) {
+    return normalized.toString();
+  }
+  return normalized.toFixed(4).replace(/0+$/, "").replace(/\.$/, "");
+}
+function normalizeCost2(value) {
+  return Math.round(value * COST_PRECISION2) / COST_PRECISION2;
+}
+function formatPercentageChange(a, b) {
+  return `${((b - a) / a * 100).toFixed(1)}%`;
+}
+
+// src/tools/comparison-tools.ts
+function registerComparisonTools(server, projectDir, sessionManager) {
+  server.registerTool(
+    "invoke_compare_sessions",
+    {
+      description: "Compare dispatch metrics across two or more pipeline sessions.",
+      inputSchema: external_exports3.object({
+        session_ids: external_exports3.array(external_exports3.string()).min(2).describe("Two or more session IDs to compare")
+      })
+    },
+    async ({ session_ids }) => {
+      try {
+        const sessionMetrics = /* @__PURE__ */ new Map();
+        for (const sessionId of session_ids) {
+          const sessionDir = sessionManager.resolve(sessionId);
+          const metricsManager = new MetricsManager(projectDir, sessionDir);
+          sessionMetrics.set(sessionId, await metricsManager.getCurrentPipelineMetrics());
+        }
+        return {
+          content: [{ type: "text", text: formatComparisonTable(compareSessions(sessionMetrics)) }]
+        };
+      } catch (err) {
+        return {
+          content: [{ type: "text", text: `Comparison error: ${err instanceof Error ? err.message : String(err)}` }],
+          isError: true
+        };
+      }
+    }
+  );
 }
 
 // src/tools/state-tools.ts
@@ -41267,6 +41463,7 @@ async function main() {
     console.error(`Migrated legacy state to session: ${migration.sessionId}`);
   }
   registerSessionTools(server, sessionManager, projectDir);
+  registerComparisonTools(server, projectDir, sessionManager);
   registerStateTools(server, stateManager, projectDir, sessionManager);
   registerArtifactTools(server, artifactManager);
   registerWorktreeTools(server, worktreeManager, config2, projectDir);
