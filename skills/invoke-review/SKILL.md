@@ -48,7 +48,7 @@ If `review_tiers` is configured, do NOT ask for arbitrary reviewer selection. Us
 
 Skip any named tier that is not configured. `polish` is optional even when configured: once `critical` and `quality` are complete, ask the user whether to run the configured polish tier or skip it.
 
-Before dispatching reviewers, call `invoke_get_review_cycle_count` with the `session_id`. If the count meets or exceeds the configured `max_review_cycles`, inform the user: "Review cycle limit reached ([count]/[max]). Findings from this point will be advisory only — no further fix cycles will be dispatched." This is the same guard rail used in invoke-build for inter-batch review.
+Before dispatching reviewers, call `invoke_get_review_cycle_count` with the `session_id`. If the count meets or exceeds the configured `max_review_cycles`, inform the user: "Review cycle limit reached ([count]/[max]). Findings from this point will be advisory only — no further fix cycles will be dispatched." This is the same guard rail used in invoke-build for inter-batch review. When the limit is reached, findings are advisory only. Do NOT dispatch builder fix agents or re-review loops. Present the findings to the user but skip steps 7 (Auto-Fix) and 8 (Next Cycle fix loops). The user can still read and act on findings manually.
 
 ### 4. Dispatch Reviewers
 
@@ -108,7 +108,7 @@ Each entry in `review_cycles` follows this schema:
 
 ```json
 {
-  "id": "<cycle-id>",
+  "id": 1,
   "reviewers": ["<subrole>"],
   "scope": "final",
   "batch_id": "<batch-id>",
