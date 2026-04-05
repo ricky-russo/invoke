@@ -39,13 +39,17 @@ A draft `context.md` is generated from your answers, reviewed, and saved.
 
 ---
 
-## The six sections
+## The seven sections
 
-The context document has six sections. All sections accept free-form Markdown.
+The context document has seven sections. All sections accept free-form Markdown.
 
-### Project Overview
+### Purpose
 
-A short description of the project's purpose, its intended audience, and the key technologies it uses. This is the first thing agents read — keep it accurate and concise.
+A short description of the project's purpose and its intended audience. This is the first thing agents read — keep it accurate and concise.
+
+### Tech Stack
+
+The primary languages, frameworks, tools, and platforms the project uses. Kept separate from Purpose so agents can quickly locate technology details without reading narrative prose.
 
 ### Architecture
 
@@ -59,9 +63,9 @@ Coding standards, naming patterns, and project-specific rules that agents must f
 
 A log of features and changes that have been delivered through invoke. This section is append-only: invoke adds a timestamped entry after each pipeline completes. You can read it to see what was done, but you do not need to maintain it manually.
 
-### Active Decisions
+### Constraints
 
-Architectural decisions and trade-offs that are currently in effect. These are decisions that were made during planning and that future work should be aware of. Update this section manually when significant decisions are made outside of an invoke pipeline.
+Non-negotiable requirements, operational limits, and important trade-offs that are currently in effect. Update this section manually when significant constraints are established or change outside of an invoke pipeline.
 
 ### Known Issues
 
@@ -77,17 +81,30 @@ Invoke updates `context.md` in three ways after a pipeline completes:
 - **Architecture** — the Architecture section is replaced if the pipeline introduced structural changes (new modules, changed directory layout, new entry points). The replacement content is generated from the build output.
 - **Known Issues** — findings that were accepted but not fixed (deferred) are appended here with their severity, file, and a brief description. Dismissed findings (false positives) are not recorded.
 
-All other sections — Project Overview, Conventions, Active Decisions — are never modified by invoke. Your edits to these sections are always preserved.
+All other sections — Purpose, Tech Stack, Conventions, Constraints — are never modified by invoke. Your edits to these sections are always preserved.
 
 ---
 
 ## Prompt injection
 
-Every role prompt can receive the contents of `context.md` through the `{{project_context}}` template variable.
+Every role prompt can receive relevant sections of `context.md` through the `{{project_context}}` template variable.
 
-When invoke composes a prompt for an agent, it checks whether `.invoke/context.md` exists. If it does, the file contents are read and substituted into any occurrence of `{{project_context}}` in the prompt. If the file does not exist, the variable resolves to an empty string.
+When invoke composes a prompt for an agent, it does not inject the full file verbatim. The prompt composer reads `.invoke/context.md`, parses it into sections, and selects which sections to include based on the agent's role and task. If the file does not exist, the variable resolves to an empty string.
 
-The content is truncated at 4000 characters if the file has grown large. A `(truncated)` marker is appended when truncation occurs so the agent is aware the context is partial.
+### Section selection
+
+Sections are filtered using the following rules (`src/dispatch/prompt-composer.ts:77-120`):
+
+- **Always included** — Purpose, Tech Stack, Conventions, Constraints. These are included for every role regardless of the task.
+- **Builder and Planner roles** — Architecture is also included.
+- **Reviewer roles** — Completed Work is also included.
+- **Keyword overlap** — any remaining section whose heading words overlap with words in the task description is also included.
+
+If the total context length is at or under 4000 characters, all sections are passed through without filtering (`src/dispatch/prompt-composer.ts:170-176`).
+
+### Length limit
+
+The selected context is truncated at 4000 characters. A `(truncated)` marker is appended when truncation occurs so the agent is aware the context is partial (`src/dispatch/prompt-composer.ts:32-38`).
 
 To use this variable in a role prompt:
 
@@ -108,11 +125,12 @@ Invoke's write behavior by section:
 
 | Section | Invoke behavior |
 |---|---|
-| Project Overview | Never modified |
+| Purpose | Never modified |
+| Tech Stack | Never modified |
 | Architecture | Replaced after structural changes |
 | Conventions | Never modified |
 | Completed Work | Append-only |
-| Active Decisions | Never modified |
+| Constraints | Never modified |
 | Known Issues | Append-only |
 
 Because Completed Work and Known Issues are append-only, manual entries you add there will be preserved — invoke only adds to the end of the section, it does not rewrite existing content.
