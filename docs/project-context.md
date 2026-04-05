@@ -69,7 +69,7 @@ Non-negotiable requirements, operational limits, and important trade-offs that a
 
 ### Known Issues
 
-Deferred findings, acknowledged technical debt, and known limitations. Invoke appends to this section when a review cycle produces findings that were dismissed rather than fixed — so the information is not lost, just deferred.
+Deferred findings, acknowledged technical debt, and known limitations. Invoke appends to this section when a review cycle produces findings that were accepted but not fixed (deferred) — so the information is not lost, just deferred.
 
 ---
 
@@ -93,7 +93,7 @@ When invoke composes a prompt for an agent, it does not inject the full file ver
 
 ### Section selection
 
-Sections are filtered using the following rules (`src/dispatch/prompt-composer.ts:77-120`):
+Sections are filtered using the following rules (`src/dispatch/prompt-composer.ts:77-129`):
 
 - **Always included** — Purpose, Tech Stack, Conventions, Constraints. These are included for every role regardless of the task.
 - **Builder and Planner roles** — Architecture is also included.
