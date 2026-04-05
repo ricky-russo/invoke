@@ -214,21 +214,30 @@ export interface SessionInfo {
   status: 'active' | 'complete' | 'stale'
 }
 
+export interface SessionStageComparison {
+  dispatches: number
+  duration_ms: number
+  prompt_chars: number
+  estimated_cost_usd: number
+}
+
 export interface SessionComparisonEntry {
   session_id: string
-  pipeline_id: string
-  stage: string
   total_dispatches: number
   total_duration_ms: number
+  total_prompt_chars: number
   total_estimated_cost_usd: number
-  started: string
+  by_stage: Record<string, SessionStageComparison>
+}
+
+export interface SessionComparisonDelta {
+  dispatches: number
+  duration_ms: number
+  prompt_chars: number
+  estimated_cost_usd: number
 }
 
 export interface SessionComparison {
   sessions: SessionComparisonEntry[]
-  delta?: {
-    duration_ms: number
-    dispatches: number
-    estimated_cost_usd: number
-  }
+  delta: SessionComparisonDelta | null
 }
