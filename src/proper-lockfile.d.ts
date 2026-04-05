@@ -8,6 +8,7 @@ declare module 'proper-lockfile' {
   export interface LockOptions {
     stale?: number
     retries?: number | LockRetryOptions
+    realpath?: boolean
   }
 
   export type Release = () => Promise<void>

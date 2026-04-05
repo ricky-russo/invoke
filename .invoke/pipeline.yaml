@@ -9,131 +9,143 @@
 #   Single-provider is cheaper than dual-provider — reserve dual for critical reviews.
 
 providers:
-  claude:
-    cli: claude
-    args: ["--print", "--model", "{{model}}", "--dangerously-skip-permissions"]
-  codex:
-    cli: codex
-    args: ["exec", "--model", "{{model}}", "--full-auto", "-c", "reasoning_effort={{effort}}"]
+    claude:
+        cli: claude
+        args: ["--print", "--model", "{{model}}", "--dangerously-skip-permissions"]
+    codex:
+        cli: codex
+        args: ["exec", "--model", "{{model}}", "--full-auto", "-c", "reasoning_effort={{effort}}"]
 
 roles:
-  researcher:
-    codebase:
-      prompt: .invoke/roles/researcher/codebase.md
-      providers:
-        - provider: claude
-          model: claude-sonnet-4-6
-          effort: medium
-          timeout: 600
-    best-practices:
-      prompt: .invoke/roles/researcher/best-practices.md
-      providers:
-        - provider: claude
-          model: claude-sonnet-4-6
-          effort: medium
-          timeout: 600
-    dependencies:
-      prompt: .invoke/roles/researcher/dependencies.md
-      providers:
-        - provider: claude
-          model: claude-sonnet-4-6
-          effort: medium
-          timeout: 600
+    researcher:
+        codebase:
+            prompt: .invoke/roles/researcher/codebase.md
+            providers:
+                - provider: claude
+                  model: claude-sonnet-4-6
+                  effort: medium
+                  timeout: 600
+        best-practices:
+            prompt: .invoke/roles/researcher/best-practices.md
+            providers:
+                - provider: claude
+                  model: claude-sonnet-4-6
+                  effort: medium
+                  timeout: 600
+        dependencies:
+            prompt: .invoke/roles/researcher/dependencies.md
+            providers:
+                - provider: claude
+                  model: claude-sonnet-4-6
+                  effort: medium
+                  timeout: 600
 
-  planner:
-    architect:
-      prompt: .invoke/roles/planner/architect.md
-      providers:
-        - provider: claude
-          model: claude-opus-4-6
-          effort: high
-          timeout: 600
-      provider_mode: fallback
-    alternative:
-      prompt: .invoke/roles/planner/alternative.md
-      providers:
-        - provider: claude
-          model: claude-opus-4-6
-          effort: high
-          timeout: 600
+    planner:
+        architect:
+            prompt: .invoke/roles/planner/architect.md
+            providers:
+                - provider: claude
+                  model: claude-opus-4-6
+                  effort: high
+                  timeout: 900
+            provider_mode: fallback
+        alternative:
+            prompt: .invoke/roles/planner/alternative.md
+            providers:
+                - provider: claude
+                  model: claude-opus-4-6
+                  effort: high
+                  timeout: 900
 
-  builder:
-    default:
-      prompt: .invoke/roles/builder/default.md
-      providers:
-        - provider: claude
-          model: claude-sonnet-4-6
-          effort: medium
-          timeout: 300
+    builder:
+        default:
+            prompt: .invoke/roles/builder/default.md
+            providers:
+                - provider: codex
+                  model: gpt-5.4
+                  effort: high
+                  timeout: 900
 
-  reviewer:
-    spec-compliance:
-      prompt: .invoke/roles/reviewer/spec-compliance.md
-      providers:
-        - provider: claude
-          model: claude-opus-4-6
-          effort: high
-          timeout: 300
-      provider_mode: fallback
-    security:
-      prompt: .invoke/roles/reviewer/security.md
-      providers:
-        - provider: claude
-          model: claude-sonnet-4-6
-          effort: high
-          timeout: 300
-      provider_mode: fallback
-    code-quality:
-      prompt: .invoke/roles/reviewer/code-quality.md
-      providers:
-        - provider: claude
-          model: claude-sonnet-4-6
-          effort: medium
-          timeout: 300
-      provider_mode: fallback
-    performance:
-      prompt: .invoke/roles/reviewer/performance.md
-      providers:
-        - provider: claude
-          model: claude-sonnet-4-6
-          effort: medium
-          timeout: 300
-      provider_mode: fallback
-    ux:
-      prompt: .invoke/roles/reviewer/ux.md
-      providers:
-        - provider: claude
-          model: claude-sonnet-4-6
-          effort: medium
-          timeout: 300
-    accessibility:
-      prompt: .invoke/roles/reviewer/accessibility.md
-      providers:
-        - provider: claude
-          model: claude-sonnet-4-6
-          effort: medium
-          timeout: 300
+    reviewer:
+        spec-compliance:
+            prompt: .invoke/roles/reviewer/spec-compliance.md
+            providers:
+                - provider: claude
+                  model: claude-opus-4-6
+                  effort: high
+                  timeout: 900
+                - provider: codex
+                  model: gpt-5.4
+                  effort: high
+                  timeout: 900
+        security:
+            prompt: .invoke/roles/reviewer/security.md
+            providers:
+                - provider: claude
+                  model: claude-opus-4-6
+                  effort: high
+                  timeout: 900
+                - provider: codex
+                  model: gpt-5.4
+                  effort: high
+                  timeout: 900
+        code-quality:
+            prompt: .invoke/roles/reviewer/code-quality.md
+            providers:
+                - provider: claude
+                  model: claude-opus-4-6
+                  effort: high
+                  timeout: 900
+                - provider: codex
+                  model: gpt-5.4
+                  effort: high
+                  timeout: 900
+        performance:
+            prompt: .invoke/roles/reviewer/performance.md
+            providers:
+                - provider: claude
+                  model: claude-opus-4-6
+                  effort: high
+                  timeout: 900
+                - provider: codex
+                  model: gpt-5.4
+                  effort: high
+                  timeout: 900
+        ux:
+            prompt: .invoke/roles/reviewer/ux.md
+            providers:
+                - provider: claude
+                  model: claude-sonnet-4-6
+                  effort: medium
+                  timeout: 300
+        accessibility:
+            prompt: .invoke/roles/reviewer/accessibility.md
+            providers:
+                - provider: claude
+                  model: claude-sonnet-4-6
+                  effort: medium
+                  timeout: 300
 
 strategies:
-  tdd:
-    prompt: .invoke/strategies/tdd.md
-  implementation-first:
-    prompt: .invoke/strategies/implementation-first.md
-  prototype:
-    prompt: .invoke/strategies/prototype.md
-  bug-fix:
-    prompt: .invoke/strategies/bug-fix.md
+    tdd:
+        prompt: .invoke/strategies/tdd.md
+    implementation-first:
+        prompt: .invoke/strategies/implementation-first.md
+    prototype:
+        prompt: .invoke/strategies/prototype.md
+    bug-fix:
+        prompt: .invoke/strategies/bug-fix.md
 
 settings:
-  default_strategy: tdd
-  agent_timeout: 300
-  commit_style: per-batch
-  work_branch_prefix: invoke/work
-  default_provider_mode: parallel
-  max_review_cycles: 3
-  # Commands to run after merging worktrees (e.g., regenerate lockfiles):
-  # post_merge_commands:
-  #   - composer install
-  #   - npm install
-  # Maximum agents to run in parallel per batch (0 or omit for unlimited):
-  # max_parallel_agents: 4
+    default_strategy: tdd
+    agent_timeout: 300
+    commit_style: per-batch
+    work_branch_prefix: invoke/work
+    default_provider_mode: parallel
+    max_review_cycles: 3
+    # Commands to run after merging worktrees (e.g., regenerate lockfiles):
+    # post_merge_commands:
+    #   - composer install
+    #   - npm install
+    # Maximum agents to run in parallel per batch (0 or omit for unlimited):
+    # max_parallel_agents: 4
