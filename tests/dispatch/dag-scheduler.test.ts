@@ -53,4 +53,13 @@ describe('buildExecutionLayers', () => {
       ])
     ).toThrowError('Task A depends on unknown task B')
   })
+
+  it('throws for duplicate task IDs', () => {
+    expect(() =>
+      buildExecutionLayers([
+        { id: 'A' },
+        { id: 'A' },
+      ])
+    ).toThrowError('Duplicate task ID detected: A')
+  })
 })

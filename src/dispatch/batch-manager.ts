@@ -3,7 +3,24 @@ import type { DispatchEngine } from './engine.js'
 import { buildExecutionLayers } from './dag-scheduler.js'
 import type { WorktreeManager } from '../worktree/manager.js'
 import type { StateManager } from '../tools/state.js'
-import type { BatchRequest, BatchTask, BatchStatus, AgentStatus, AgentResult } from '../types.js'
+import type {
+  BatchRequest,
+  BatchTask,
+  BatchStatus,
+  BatchState,
+  AgentStatus,
+  AgentResult,
+  TaskState,
+} from '../types.js'
+
+type PersistableBatchStatus = Exclude<BatchStatus['status'], 'cancelled'>
+
+const persistedBatchStatusMap: Record<PersistableBatchStatus, BatchState['status']> = {
+  running: 'in_progress',
+  partial: 'partial',
+  completed: 'completed',
+  error: 'error',
+}
 
 interface BatchRecord {
   status: BatchStatus
@@ -42,6 +59,7 @@ export class BatchManager {
       batchIndex: currentBatchIndex,
     }
 
+    await this.addPersistedBatch(currentBatchIndex, request)
     this.batches.set(batchId, record)
 
     // Fire and forget — dispatch all tasks in parallel
@@ -114,8 +132,43 @@ export class BatchManager {
       return anyError ? 'error' : 'completed'
     }
 
-    const anyCompleted = agents.some(agent => agent.status === 'completed')
-    return anyCompleted ? 'partial' : 'running'
+    const anyFinished = agents.some(agent => this.isTerminalAgentStatus(agent.status))
+    return anyFinished ? 'partial' : 'running'
+  }
+
+  private toPersistedBatchStatus(status: PersistableBatchStatus): BatchState['status'] {
+    return persistedBatchStatusMap[status]
+  }
+
+  private async addPersistedBatch(batchIndex: number, request: BatchRequest): Promise<void> {
+    if (!this.stateManager) return
+
+    await this.stateManager.addBatch({
+      id: batchIndex,
+      status: this.toPersistedBatchStatus('running'),
+      tasks: request.tasks.map(task => {
+        const dependsOn = this.getTaskDependencies(task)
+        return {
+          id: task.taskId,
+          status: 'pending',
+          ...(dependsOn ? { depends_on: dependsOn } : {}),
+        }
+      }),
+    })
+  }
+
+  private async persistTaskUpdate(
+    batchIndex: number,
+    taskId: string,
+    updates: Partial<TaskState>
+  ): Promise<void> {
+    if (!this.stateManager) return
+
+    try {
+      await this.stateManager.updateTask(batchIndex, taskId, updates)
+    } catch {
+      // Non-critical — don't fail dispatch if state persistence fails
+    }
   }
 
   private async persistBatchStatus(
@@ -124,13 +177,9 @@ export class BatchManager {
   ): Promise<void> {
     if (!this.stateManager || status === 'cancelled') return
 
-    const persistedStatus = status === 'running'
-      ? 'in_progress'
-      : status
-
     try {
       await this.stateManager.updateBatch(batchIndex, {
-        status: persistedStatus,
+        status: this.toPersistedBatchStatus(status),
       })
     } catch {
       // Non-critical — don't fail dispatch if state persistence fails
@@ -150,19 +199,14 @@ export class BatchManager {
   private async persistTaskStatus(
     batchIndex: number,
     taskId: string,
-    status: string,
+    status: TaskState['status'],
     result?: AgentResult
   ): Promise<void> {
-    if (!this.stateManager) return
-    try {
-      await this.stateManager.updateTask(batchIndex, taskId, {
-        status: status as any,
-        result_summary: result?.output.summary,
-        result_status: result?.status,
-      })
-    } catch {
-      // Non-critical — don't fail dispatch if state persistence fails
-    }
+    await this.persistTaskUpdate(batchIndex, taskId, {
+      status,
+      result_summary: result?.output.summary,
+      result_status: result?.status,
+    })
   }
 
   private getTaskDependencies(task: BatchTask): string[] | undefined {
@@ -170,14 +214,7 @@ export class BatchManager {
       return task.depends_on
     }
 
-    const rawDependencies = (task.taskContext as Record<string, unknown>).depends_on
-    if (Array.isArray(rawDependencies)) {
-      const dependencies = rawDependencies.filter(
-        (dependency): dependency is string => typeof dependency === 'string'
-      )
-      return dependencies.length > 0 ? dependencies : undefined
-    }
-
+    const rawDependencies = task.taskContext.depends_on
     if (typeof rawDependencies !== 'string') {
       return undefined
     }
@@ -207,6 +244,11 @@ export class BatchManager {
       .filter(Boolean)
 
     return dependencies.length > 0 ? dependencies : undefined
+  }
+
+  private async mergeTaskWorktree(batchIndex: number, taskId: string): Promise<void> {
+    await this.worktreeManager.merge(taskId)
+    await this.persistTaskUpdate(batchIndex, taskId, { merged: true })
   }
 
   private async runLayer<T>(
@@ -284,16 +326,10 @@ export class BatchManager {
           if (signal.aborted) return
 
           workDir = wt.worktreePath
-          if (this.stateManager) {
-            try {
-              await this.stateManager.updateTask(batchIndex, task.taskId, {
-                worktree_path: wt.worktreePath,
-                worktree_branch: wt.branch,
-              })
-            } catch {
-              // Non-critical
-            }
-          }
+          await this.persistTaskUpdate(batchIndex, task.taskId, {
+            worktree_path: wt.worktreePath,
+            worktree_branch: wt.branch,
+          })
         }
 
         if (signal.aborted) return
@@ -315,6 +351,9 @@ export class BatchManager {
         agentStatus.status = 'completed'
         agentStatus.result = result
         await this.persistTaskStatus(batchIndex, task.taskId, 'completed', result)
+        if (request.createWorktrees) {
+          await this.mergeTaskWorktree(batchIndex, task.taskId)
+        }
         await this.updateBatchStatus(record)
       } catch (err) {
         const errorResult: AgentResult = {
@@ -341,6 +380,8 @@ export class BatchManager {
 
       if (hasDependencies) {
         const executionLayers = buildExecutionLayers(scheduledTasks)
+        // Tasks still run with layer barriers. Completed tasks can merge immediately
+        // within a layer, but unblocking downstream layers per-task is future work.
         for (const layer of executionLayers) {
           if (signal.aborted) break
           await this.runLayer(layer, maxParallel, signal, runTask)

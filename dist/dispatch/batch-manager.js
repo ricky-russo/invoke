@@ -1,5 +1,11 @@
 import { randomUUID } from 'crypto';
 import { buildExecutionLayers } from './dag-scheduler.js';
+const persistedBatchStatusMap = {
+    running: 'in_progress',
+    partial: 'partial',
+    completed: 'completed',
+    error: 'error',
+};
 export class BatchManager {
     engine;
     worktreeManager;
@@ -25,6 +31,7 @@ export class BatchManager {
             abortController,
             batchIndex: currentBatchIndex,
         };
+        await this.addPersistedBatch(currentBatchIndex, request);
         this.batches.set(batchId, record);
         // Fire and forget — dispatch all tasks in parallel
         void this.runBatch(batchId, request, abortController.signal, currentBatchIndex);
@@ -85,18 +92,44 @@ export class BatchManager {
             const anyError = agents.some(agent => agent.status === 'error' || agent.status === 'timeout');
             return anyError ? 'error' : 'completed';
         }
-        const anyCompleted = agents.some(agent => agent.status === 'completed');
-        return anyCompleted ? 'partial' : 'running';
+        const anyFinished = agents.some(agent => this.isTerminalAgentStatus(agent.status));
+        return anyFinished ? 'partial' : 'running';
+    }
+    toPersistedBatchStatus(status) {
+        return persistedBatchStatusMap[status];
+    }
+    async addPersistedBatch(batchIndex, request) {
+        if (!this.stateManager)
+            return;
+        await this.stateManager.addBatch({
+            id: batchIndex,
+            status: this.toPersistedBatchStatus('running'),
+            tasks: request.tasks.map(task => {
+                const dependsOn = this.getTaskDependencies(task);
+                return {
+                    id: task.taskId,
+                    status: 'pending',
+                    ...(dependsOn ? { depends_on: dependsOn } : {}),
+                };
+            }),
+        });
+    }
+    async persistTaskUpdate(batchIndex, taskId, updates) {
+        if (!this.stateManager)
+            return;
+        try {
+            await this.stateManager.updateTask(batchIndex, taskId, updates);
+        }
+        catch {
+            // Non-critical — don't fail dispatch if state persistence fails
+        }
     }
     async persistBatchStatus(batchIndex, status) {
         if (!this.stateManager || status === 'cancelled')
             return;
-        const persistedStatus = status === 'running'
-            ? 'in_progress'
-            : status;
         try {
             await this.stateManager.updateBatch(batchIndex, {
-                status: persistedStatus,
+                status: this.toPersistedBatchStatus(status),
             });
         }
         catch {
@@ -113,28 +146,17 @@ export class BatchManager {
         await this.persistBatchStatus(record.batchIndex, nextStatus);
     }
     async persistTaskStatus(batchIndex, taskId, status, result) {
-        if (!this.stateManager)
-            return;
-        try {
-            await this.stateManager.updateTask(batchIndex, taskId, {
-                status: status,
-                result_summary: result?.output.summary,
-                result_status: result?.status,
-            });
-        }
-        catch {
-            // Non-critical — don't fail dispatch if state persistence fails
-        }
+        await this.persistTaskUpdate(batchIndex, taskId, {
+            status,
+            result_summary: result?.output.summary,
+            result_status: result?.status,
+        });
     }
     getTaskDependencies(task) {
         if (task.depends_on && task.depends_on.length > 0) {
             return task.depends_on;
         }
         const rawDependencies = task.taskContext.depends_on;
-        if (Array.isArray(rawDependencies)) {
-            const dependencies = rawDependencies.filter((dependency) => typeof dependency === 'string');
-            return dependencies.length > 0 ? dependencies : undefined;
-        }
         if (typeof rawDependencies !== 'string') {
             return undefined;
         }
@@ -159,6 +181,10 @@ export class BatchManager {
             .map(dependency => dependency.trim())
             .filter(Boolean);
         return dependencies.length > 0 ? dependencies : undefined;
+    }
+    async mergeTaskWorktree(batchIndex, taskId) {
+        await this.worktreeManager.merge(taskId);
+        await this.persistTaskUpdate(batchIndex, taskId, { merged: true });
     }
     async runLayer(tasks, maxParallel, signal, runTask) {
         if (tasks.length === 0)
@@ -214,17 +240,10 @@ export class BatchManager {
                     if (signal.aborted)
                         return;
                     workDir = wt.worktreePath;
-                    if (this.stateManager) {
-                        try {
-                            await this.stateManager.updateTask(batchIndex, task.taskId, {
-                                worktree_path: wt.worktreePath,
-                                worktree_branch: wt.branch,
-                            });
-                        }
-                        catch {
-                            // Non-critical
-                        }
-                    }
+                    await this.persistTaskUpdate(batchIndex, task.taskId, {
+                        worktree_path: wt.worktreePath,
+                        worktree_branch: wt.branch,
+                    });
                 }
                 if (signal.aborted)
                     return;
@@ -243,6 +262,9 @@ export class BatchManager {
                 agentStatus.status = 'completed';
                 agentStatus.result = result;
                 await this.persistTaskStatus(batchIndex, task.taskId, 'completed', result);
+                if (request.createWorktrees) {
+                    await this.mergeTaskWorktree(batchIndex, task.taskId);
+                }
                 await this.updateBatchStatus(record);
             }
             catch (err) {
@@ -268,6 +290,8 @@ export class BatchManager {
             const hasDependencies = scheduledTasks.some(task => (task.depends_on?.length ?? 0) > 0);
             if (hasDependencies) {
                 const executionLayers = buildExecutionLayers(scheduledTasks);
+                // Tasks still run with layer barriers. Completed tasks can merge immediately
+                // within a layer, but unblocking downstream layers per-task is future work.
                 for (const layer of executionLayers) {
                     if (signal.aborted)
                         break;

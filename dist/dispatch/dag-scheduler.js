@@ -5,6 +5,9 @@ export function buildExecutionLayers(tasks) {
     const inDegree = new Map();
     const dependents = new Map();
     for (const task of tasks) {
+        if (taskMap.has(task.id)) {
+            throw new Error(`Duplicate task ID detected: ${task.id}`);
+        }
         taskMap.set(task.id, task);
         inDegree.set(task.id, 0);
         dependents.set(task.id, []);

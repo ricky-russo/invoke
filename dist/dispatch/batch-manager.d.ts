@@ -16,10 +16,14 @@ export declare class BatchManager {
     private isTerminalBatchStatus;
     private isTerminalAgentStatus;
     private computeBatchStatus;
+    private toPersistedBatchStatus;
+    private addPersistedBatch;
+    private persistTaskUpdate;
     private persistBatchStatus;
     private updateBatchStatus;
     private persistTaskStatus;
     private getTaskDependencies;
+    private mergeTaskWorktree;
     private runLayer;
     private runBatch;
 }
