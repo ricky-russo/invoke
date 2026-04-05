@@ -4,6 +4,8 @@ settings:
   default_strategy: implementation-first
   max_review_cycles: 1
   max_parallel_agents: 2
+researcher_selection:
+  - codebase
 reviewer_selection:
   - spec-compliance
   - security

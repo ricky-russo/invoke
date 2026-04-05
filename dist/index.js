@@ -28513,7 +28513,7 @@ async function loadConfig(projectDir) {
   const raw = RawInvokeConfigSchema.parse((0, import_yaml.parse)(content));
   let mergedConfig = raw;
   if (raw.settings.preset) {
-    const preset = await loadPresetConfig(projectDir, raw.settings.preset);
+    const preset = raw.presets?.[raw.settings.preset] ?? await loadPresetConfig(projectDir, raw.settings.preset);
     mergedConfig = deepMerge(
       {
         settings: preset.settings ?? {},
@@ -28525,7 +28525,7 @@ async function loadConfig(projectDir) {
   const validated = InvokeConfigSchema.parse(mergedConfig);
   return normalizeConfig(validated);
 }
-var import_yaml, __dirname, PACKAGE_ROOT, ProviderConfigSchema, ProviderEntrySchema, ProviderModeSchema, ReviewTierSchema, RawRoleConfigSchema, StrategyConfigSchema, SettingsSchema, PresetConfigSchema, RawInvokeConfigSchema, InvokeConfigSchema;
+var import_yaml, __dirname, PACKAGE_ROOT, ProviderConfigSchema, ProviderEntrySchema, ProviderModeSchema, ReviewTierSchema, ReviewTiersSchema, RawRoleConfigSchema, StrategyConfigSchema, SettingsSchema, PresetConfigSchema, RawInvokeConfigSchema, InvokeConfigSchema;
 var init_config = __esm({
   "src/config.ts"() {
     "use strict";
@@ -28547,6 +28547,18 @@ var init_config = __esm({
     ReviewTierSchema = external_exports3.object({
       name: external_exports3.string(),
       reviewers: external_exports3.array(external_exports3.string())
+    });
+    ReviewTiersSchema = external_exports3.union([
+      external_exports3.array(ReviewTierSchema),
+      external_exports3.record(external_exports3.string(), external_exports3.array(external_exports3.string()))
+    ]).transform((reviewTiers) => {
+      if (Array.isArray(reviewTiers)) {
+        return reviewTiers;
+      }
+      return Object.entries(reviewTiers).map(([name, reviewers]) => ({
+        name,
+        reviewers
+      }));
     });
     RawRoleConfigSchema = external_exports3.object({
       prompt: external_exports3.string(),
@@ -28572,13 +28584,14 @@ var init_config = __esm({
       max_parallel_agents: external_exports3.number().positive().optional(),
       default_provider_mode: ProviderModeSchema.optional(),
       max_dispatches: external_exports3.number().positive().optional(),
-      max_review_cycles: external_exports3.number().positive().optional(),
-      review_tiers: external_exports3.array(ReviewTierSchema).optional()
+      max_review_cycles: external_exports3.number().nonnegative().optional(),
+      review_tiers: ReviewTiersSchema.optional()
     });
     PresetConfigSchema = external_exports3.object({
       name: external_exports3.string().optional(),
       description: external_exports3.string().optional(),
       settings: SettingsSchema.partial().optional(),
+      researcher_selection: external_exports3.array(external_exports3.string()).optional(),
       reviewer_selection: external_exports3.array(external_exports3.string()).optional(),
       strategy_selection: external_exports3.array(external_exports3.string()).optional()
     });
@@ -38349,6 +38362,19 @@ async function listAvailablePresets(projectDir) {
   }
   return [...presetNames].sort();
 }
+async function presetFileExists(projectDir, presetName) {
+  const presetFileName = toPresetFileName(presetName);
+  const presetPaths = [
+    path2.join(DEFAULT_PRESETS_DIR, presetFileName),
+    path2.join(projectDir, ".invoke", "presets", presetFileName)
+  ];
+  for (const presetPath of presetPaths) {
+    if (await pathExists(presetPath)) {
+      return true;
+    }
+  }
+  return false;
+}
 async function validateConfig(config2, projectDir) {
   const warnings = [];
   const reviewerSubroles = new Set(Object.keys(config2.roles.reviewer ?? {}));
@@ -38373,11 +38399,11 @@ async function validateConfig(config2, projectDir) {
       suggestion: `Available strategies: ${available}`
     });
   }
-  if (config2.settings.max_review_cycles !== void 0 && config2.settings.max_review_cycles < 1) {
+  if (config2.settings.max_review_cycles !== void 0 && config2.settings.max_review_cycles < 0) {
     warnings.push({
       level: "error",
       path: "settings.max_review_cycles",
-      message: "max_review_cycles must be greater than or equal to 1."
+      message: "max_review_cycles must be greater than or equal to 0."
     });
   }
   if (config2.settings.max_dispatches !== void 0 && config2.settings.max_dispatches < 1) {
@@ -38450,27 +38476,14 @@ async function validateConfig(config2, projectDir) {
       });
     }
   }
-  for (const presetName of Object.keys(config2.presets ?? {})) {
-    const presetFileName = toPresetFileName(presetName);
-    const presetPaths = [
-      path2.join(DEFAULT_PRESETS_DIR, presetFileName),
-      path2.join(projectDir, ".invoke", "presets", presetFileName)
-    ];
-    let presetExists = false;
-    for (const presetPath of presetPaths) {
-      if (await pathExists(presetPath)) {
-        presetExists = true;
-        break;
-      }
-    }
-    if (presetExists) {
-      continue;
-    }
+  const activePreset = config2.settings.preset;
+  if (activePreset && !config2.presets?.[activePreset] && !await presetFileExists(projectDir, activePreset)) {
+    const presetFileName = toPresetFileName(activePreset);
     warnings.push({
       level: "warning",
-      path: `presets.${presetName}`,
-      message: `Preset '${presetName}' does not have a matching file in defaults/presets or .invoke/presets.`,
-      suggestion: availablePresetNames.length > 0 ? `Create '.invoke/presets/${presetFileName}' or rename the preset reference to one of: ${availablePresetNames.join(", ")}.` : `Create '.invoke/presets/${presetFileName}' or add the preset file to defaults/presets.`
+      path: "settings.preset",
+      message: `Preset '${activePreset}' does not have a matching inline preset or file in defaults/presets or .invoke/presets.`,
+      suggestion: availablePresetNames.length > 0 ? `Define presets.${activePreset} inline, create '.invoke/presets/${presetFileName}', or rename settings.preset to one of: ${availablePresetNames.join(", ")}.` : `Define presets.${activePreset} inline, create '.invoke/presets/${presetFileName}', or add the preset file to defaults/presets.`
     });
   }
   const valid = !warnings.some((w) => w.level === "error");
@@ -40745,7 +40758,7 @@ var SettingsUpdateSchema = external_exports3.object({
   max_parallel_agents: external_exports3.number().positive().optional(),
   default_provider_mode: ProviderModeSchema2.optional(),
   max_dispatches: external_exports3.number().positive().optional(),
-  max_review_cycles: external_exports3.number().positive().optional()
+  max_review_cycles: external_exports3.number().nonnegative().optional()
 }).catchall(external_exports3.unknown());
 function registerConfigUpdateTools(server, projectDir) {
   const configManager = new ConfigManager(projectDir);

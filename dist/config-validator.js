@@ -98,6 +98,19 @@ async function listAvailablePresets(projectDir) {
     }
     return [...presetNames].sort();
 }
+async function presetFileExists(projectDir, presetName) {
+    const presetFileName = toPresetFileName(presetName);
+    const presetPaths = [
+        path.join(DEFAULT_PRESETS_DIR, presetFileName),
+        path.join(projectDir, '.invoke', 'presets', presetFileName),
+    ];
+    for (const presetPath of presetPaths) {
+        if (await pathExists(presetPath)) {
+            return true;
+        }
+    }
+    return false;
+}
 // ---------------------------------------------------------------------------
 // validateConfig
 // ---------------------------------------------------------------------------
@@ -128,11 +141,11 @@ export async function validateConfig(config, projectDir) {
         });
     }
     // 3. Settings limits are sane when present
-    if (config.settings.max_review_cycles !== undefined && config.settings.max_review_cycles < 1) {
+    if (config.settings.max_review_cycles !== undefined && config.settings.max_review_cycles < 0) {
         warnings.push({
             level: 'error',
             path: 'settings.max_review_cycles',
-            message: 'max_review_cycles must be greater than or equal to 1.',
+            message: 'max_review_cycles must be greater than or equal to 0.',
         });
     }
     if (config.settings.max_dispatches !== undefined && config.settings.max_dispatches < 1) {
@@ -215,30 +228,19 @@ export async function validateConfig(config, projectDir) {
             });
         }
     }
-    // 9. Preset references resolve to preset files
-    for (const presetName of Object.keys(config.presets ?? {})) {
-        const presetFileName = toPresetFileName(presetName);
-        const presetPaths = [
-            path.join(DEFAULT_PRESETS_DIR, presetFileName),
-            path.join(projectDir, '.invoke', 'presets', presetFileName),
-        ];
-        let presetExists = false;
-        for (const presetPath of presetPaths) {
-            if (await pathExists(presetPath)) {
-                presetExists = true;
-                break;
-            }
-        }
-        if (presetExists) {
-            continue;
-        }
+    // 9. Active preset references resolve to an inline preset or a preset file
+    const activePreset = config.settings.preset;
+    if (activePreset
+        && !config.presets?.[activePreset]
+        && !await presetFileExists(projectDir, activePreset)) {
+        const presetFileName = toPresetFileName(activePreset);
         warnings.push({
             level: 'warning',
-            path: `presets.${presetName}`,
-            message: `Preset '${presetName}' does not have a matching file in defaults/presets or .invoke/presets.`,
+            path: 'settings.preset',
+            message: `Preset '${activePreset}' does not have a matching inline preset or file in defaults/presets or .invoke/presets.`,
             suggestion: availablePresetNames.length > 0
-                ? `Create '.invoke/presets/${presetFileName}' or rename the preset reference to one of: ${availablePresetNames.join(', ')}.`
-                : `Create '.invoke/presets/${presetFileName}' or add the preset file to defaults/presets.`,
+                ? `Define presets.${activePreset} inline, create '.invoke/presets/${presetFileName}', or rename settings.preset to one of: ${availablePresetNames.join(', ')}.`
+                : `Define presets.${activePreset} inline, create '.invoke/presets/${presetFileName}', or add the preset file to defaults/presets.`,
         });
     }
     const valid = !warnings.some(w => w.level === 'error');

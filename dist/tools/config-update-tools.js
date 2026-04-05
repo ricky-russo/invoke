@@ -15,7 +15,7 @@ const SettingsUpdateSchema = z.object({
     max_parallel_agents: z.number().positive().optional(),
     default_provider_mode: ProviderModeSchema.optional(),
     max_dispatches: z.number().positive().optional(),
-    max_review_cycles: z.number().positive().optional(),
+    max_review_cycles: z.number().nonnegative().optional(),
 }).catchall(z.unknown());
 export function registerConfigUpdateTools(server, projectDir) {
     const configManager = new ConfigManager(projectDir);

@@ -48,6 +48,7 @@ export interface PresetConfig {
   name?: string
   description?: string
   settings?: Partial<Settings>
+  researcher_selection?: string[]
   reviewer_selection?: string[]
   strategy_selection?: string[]
 }

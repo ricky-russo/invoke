@@ -158,10 +158,10 @@ settings:
   commit_style: per-batch
   work_branch_prefix: invoke/work
   review_tiers:
-    - name: final
-      reviewers:
-        - security
-        - spec-compliance
+    critical:
+      - security
+    quality:
+      - spec-compliance
 
 presets:
   quick:
@@ -169,6 +169,8 @@ presets:
     description: Fast path
     settings:
       max_review_cycles: 1
+    researcher_selection:
+      - codebase
     reviewer_selection:
       - security
     strategy_selection:
@@ -180,8 +182,12 @@ presets:
 
     expect(config.settings.review_tiers).toEqual([
       {
-        name: 'final',
-        reviewers: ['security', 'spec-compliance'],
+        name: 'critical',
+        reviewers: ['security'],
+      },
+      {
+        name: 'quality',
+        reviewers: ['spec-compliance'],
       },
     ])
     expect(config.presets).toEqual({
@@ -191,6 +197,7 @@ presets:
         settings: {
           max_review_cycles: 1,
         },
+        researcher_selection: ['codebase'],
         reviewer_selection: ['security'],
         strategy_selection: ['tdd'],
       },
@@ -242,8 +249,71 @@ settings:
         max_review_cycles: 1,
         max_parallel_agents: 2,
       },
+      researcher_selection: ['codebase'],
       reviewer_selection: ['spec-compliance', 'security'],
       strategy_selection: ['implementation-first', 'bug-fix'],
+    })
+  })
+
+  it('prefers an inline preset over preset files when settings.preset is set', async () => {
+    await mkdir(path.join(TEST_DIR, '.invoke', 'presets'), { recursive: true })
+
+    const presetYaml = `
+name: quick
+description: File preset
+settings:
+  default_strategy: implementation-first
+  max_parallel_agents: 1
+`
+    await writeFile(path.join(TEST_DIR, '.invoke', 'presets', 'quick.yaml'), presetYaml)
+
+    const yaml = `
+providers:
+  claude:
+    cli: claude
+    args: ["--print", "--model", "{{model}}"]
+
+roles:
+  reviewer:
+    security:
+      prompt: .invoke/roles/reviewer/security.md
+      provider: claude
+      model: opus-4.6
+      effort: high
+
+strategies:
+  tdd:
+    prompt: .invoke/strategies/tdd.md
+  implementation-first:
+    prompt: .invoke/strategies/implementation-first.md
+
+settings:
+  preset: quick
+  agent_timeout: 300000
+  commit_style: per-batch
+  work_branch_prefix: invoke/work
+
+presets:
+  quick:
+    name: quick
+    description: Inline preset
+    settings:
+      default_strategy: tdd
+      max_parallel_agents: 4
+`
+    await writeFile(path.join(TEST_DIR, '.invoke', 'pipeline.yaml'), yaml)
+
+    const config = await loadConfig(TEST_DIR)
+
+    expect(config.settings.default_strategy).toBe('tdd')
+    expect(config.settings.max_parallel_agents).toBe(4)
+    expect(config.presets?.quick).toEqual({
+      name: 'quick',
+      description: 'Inline preset',
+      settings: {
+        default_strategy: 'tdd',
+        max_parallel_agents: 4,
+      },
     })
   })
 
@@ -311,6 +381,40 @@ settings:
         reviewers: ['spec-compliance', 'security'],
       },
     ])
+  })
+
+  it('loads the prototype preset with max_review_cycles set to 0', async () => {
+    const yaml = `
+providers:
+  claude:
+    cli: claude
+    args: ["--print", "--model", "{{model}}"]
+
+roles:
+  reviewer:
+    security:
+      prompt: .invoke/roles/reviewer/security.md
+      provider: claude
+      model: opus-4.6
+      effort: high
+
+strategies:
+  prototype:
+    prompt: .invoke/strategies/prototype.md
+
+settings:
+  preset: prototype
+  agent_timeout: 300000
+  commit_style: per-batch
+  work_branch_prefix: invoke/work
+`
+    await writeFile(path.join(TEST_DIR, '.invoke', 'pipeline.yaml'), yaml)
+
+    const config = await loadConfig(TEST_DIR)
+
+    expect(config.settings.preset).toBe('prototype')
+    expect(config.settings.default_strategy).toBe('prototype')
+    expect(config.settings.max_review_cycles).toBe(0)
   })
 
   it('leaves provider_mode undefined when it is omitted', async () => {

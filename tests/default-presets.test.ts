@@ -15,12 +15,13 @@ const expectedPresets = {
       max_review_cycles: 1,
       max_parallel_agents: 2,
     },
+    researcher_selection: ['codebase'],
     reviewer_selection: ['spec-compliance', 'security'],
     strategy_selection: ['implementation-first', 'bug-fix'],
   },
   thorough: {
     name: 'thorough',
-    description: 'Full pipeline preset with maximum review and strategy coverage.',
+    description: 'Full pipeline preset with maximum review and strategy coverage. Configure per-role effort in pipeline.yaml; presets only control settings, reviewer selection, and strategy selection.',
     settings: {
       default_strategy: 'tdd',
       max_review_cycles: 5,

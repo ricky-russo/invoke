@@ -127,4 +127,23 @@ describe('registerConfigUpdateTools', () => {
     expect(raw).toContain('max_dispatches: 8')
     expect(raw).toContain('max_review_cycles: 3')
   })
+
+  it('accepts max_review_cycles set to 0 in update_settings', async () => {
+    const tool = getTool('invoke_update_config')
+    const input = tool.config.inputSchema.parse({
+      operation: 'update_settings',
+      settings: {
+        max_review_cycles: 0,
+      },
+    })
+
+    const result = await tool.handler(input)
+
+    expect(result.isError).toBeUndefined()
+    const payload = JSON.parse(result.content[0].text)
+    expect(payload.settings.max_review_cycles).toBe(0)
+
+    const raw = await readFile(path.join(TEST_DIR, '.invoke', 'pipeline.yaml'), 'utf-8')
+    expect(raw).toContain('max_review_cycles: 0')
+  })
 })

@@ -205,40 +205,47 @@ describe('validateConfig', () => {
     expect(reviewTierWarnings).toHaveLength(0)
   })
 
-  it('warns when a preset reference does not match a preset file', async () => {
+  it('does not warn when a preset key is defined inline', async () => {
     const config = structuredClone(baseConfig)
     config.presets = {
       nonexistent: {},
     }
 
     const result = await validateConfig(config, TEST_DIR)
+    const presetWarnings = result.warnings.filter(w => w.path.startsWith('presets.'))
+
+    expect(result.valid).toBe(true)
+    expect(presetWarnings).toHaveLength(0)
+  })
+
+  it('warns when settings.preset does not match an inline or file preset', async () => {
+    const config = structuredClone(baseConfig)
+    config.settings.preset = 'nonexistent'
+
+    const result = await validateConfig(config, TEST_DIR)
 
     expect(result.valid).toBe(true)
     expect(result.warnings).toContainEqual(expect.objectContaining({
       level: 'warning',
-      path: 'presets.nonexistent',
-      message: expect.stringContaining('does not have a matching file'),
+      path: 'settings.preset',
+      message: expect.stringContaining('matching inline preset or file'),
       suggestion: expect.stringContaining(".invoke/presets/nonexistent.yaml"),
     }))
   })
 
-  it('does not warn when a preset reference matches a built-in preset file', async () => {
+  it('does not warn when settings.preset matches a built-in preset file', async () => {
     const config = structuredClone(baseConfig)
-    config.presets = {
-      quick: {},
-    }
+    config.settings.preset = 'quick'
 
     const result = await validateConfig(config, TEST_DIR)
-    const presetWarnings = result.warnings.filter(w => w.path.startsWith('presets.'))
+    const presetWarnings = result.warnings.filter(w => w.path === 'settings.preset')
 
     expect(presetWarnings).toHaveLength(0)
   })
 
-  it('does not warn when a preset reference matches a project preset file', async () => {
+  it('does not warn when settings.preset matches a project preset file', async () => {
     const config = structuredClone(baseConfig)
-    config.presets = {
-      custom: {},
-    }
+    config.settings.preset = 'custom'
 
     await mkdir(path.join(TEST_DIR, '.invoke', 'presets'), { recursive: true })
     await writeFile(
@@ -247,7 +254,20 @@ describe('validateConfig', () => {
     )
 
     const result = await validateConfig(config, TEST_DIR)
-    const presetWarnings = result.warnings.filter(w => w.path.startsWith('presets.'))
+    const presetWarnings = result.warnings.filter(w => w.path === 'settings.preset')
+
+    expect(presetWarnings).toHaveLength(0)
+  })
+
+  it('does not warn when settings.preset matches an inline preset', async () => {
+    const config = structuredClone(baseConfig)
+    config.settings.preset = 'custom'
+    config.presets = {
+      custom: {},
+    }
+
+    const result = await validateConfig(config, TEST_DIR)
+    const presetWarnings = result.warnings.filter(w => w.path === 'settings.preset')
 
     expect(presetWarnings).toHaveLength(0)
   })
@@ -356,9 +376,9 @@ describe('validateConfig', () => {
     expect(timeoutWarnings).toHaveLength(0)
   })
 
-  it('returns errors when max_review_cycles or max_dispatches are less than 1', async () => {
+  it('returns errors when max_review_cycles is negative or max_dispatches is less than 1', async () => {
     const config = structuredClone(baseConfig)
-    config.settings.max_review_cycles = 0
+    config.settings.max_review_cycles = -1
     config.settings.max_dispatches = 0
 
     const result = await validateConfig(config, TEST_DIR)
@@ -367,12 +387,22 @@ describe('validateConfig', () => {
     expect(result.warnings).toContainEqual(expect.objectContaining({
       level: 'error',
       path: 'settings.max_review_cycles',
-      message: expect.stringContaining('greater than or equal to 1'),
+      message: expect.stringContaining('greater than or equal to 0'),
     }))
     expect(result.warnings).toContainEqual(expect.objectContaining({
       level: 'error',
       path: 'settings.max_dispatches',
       message: expect.stringContaining('greater than or equal to 1'),
     }))
+  })
+
+  it('does not error when max_review_cycles is 0', async () => {
+    const config = structuredClone(baseConfig)
+    config.settings.max_review_cycles = 0
+
+    const result = await validateConfig(config, TEST_DIR)
+    const maxReviewWarnings = result.warnings.filter(w => w.path === 'settings.max_review_cycles')
+
+    expect(maxReviewWarnings).toHaveLength(0)
   })
 })

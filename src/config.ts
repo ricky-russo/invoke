@@ -27,6 +27,20 @@ const ReviewTierSchema = z.object({
   reviewers: z.array(z.string()),
 })
 
+const ReviewTiersSchema = z.union([
+  z.array(ReviewTierSchema),
+  z.record(z.string(), z.array(z.string())),
+]).transform(reviewTiers => {
+  if (Array.isArray(reviewTiers)) {
+    return reviewTiers
+  }
+
+  return Object.entries(reviewTiers).map(([name, reviewers]) => ({
+    name,
+    reviewers,
+  }))
+})
+
 // Accept either single-provider shorthand or providers array
 const RawRoleConfigSchema = z.object({
   prompt: z.string(),
@@ -54,14 +68,15 @@ const SettingsSchema = z.object({
   max_parallel_agents: z.number().positive().optional(),
   default_provider_mode: ProviderModeSchema.optional(),
   max_dispatches: z.number().positive().optional(),
-  max_review_cycles: z.number().positive().optional(),
-  review_tiers: z.array(ReviewTierSchema).optional(),
+  max_review_cycles: z.number().nonnegative().optional(),
+  review_tiers: ReviewTiersSchema.optional(),
 })
 
 const PresetConfigSchema = z.object({
   name: z.string().optional(),
   description: z.string().optional(),
   settings: SettingsSchema.partial().optional(),
+  researcher_selection: z.array(z.string()).optional(),
   reviewer_selection: z.array(z.string()).optional(),
   strategy_selection: z.array(z.string()).optional(),
 })
@@ -178,7 +193,8 @@ export async function loadConfig(projectDir: string): Promise<InvokeConfig> {
   let mergedConfig: RawInvokeConfig = raw
 
   if (raw.settings.preset) {
-    const preset = await loadPresetConfig(projectDir, raw.settings.preset)
+    const preset = raw.presets?.[raw.settings.preset]
+      ?? await loadPresetConfig(projectDir, raw.settings.preset)
     mergedConfig = deepMerge(
       {
         settings: preset.settings ?? {},
