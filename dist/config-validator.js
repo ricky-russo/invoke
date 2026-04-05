@@ -1,6 +1,10 @@
 import { execSync } from 'child_process';
-import { access } from 'fs/promises';
+import { access, readdir } from 'fs/promises';
 import path from 'path';
+import { fileURLToPath } from 'url';
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const PACKAGE_ROOT = path.join(__dirname, '..');
+const DEFAULT_PRESETS_DIR = path.join(PACKAGE_ROOT, 'defaults', 'presets');
 // ---------------------------------------------------------------------------
 // Model Patterns
 // ---------------------------------------------------------------------------
@@ -61,11 +65,46 @@ function suggestModel(provider, model) {
         return undefined;
     return suggestions[model];
 }
+async function pathExists(filePath) {
+    try {
+        await access(filePath);
+        return true;
+    }
+    catch {
+        return false;
+    }
+}
+function toPresetFileName(presetName) {
+    return /\.(ya?ml)$/i.test(presetName) ? presetName : `${presetName}.yaml`;
+}
+async function listAvailablePresets(projectDir) {
+    const presetDirs = [
+        DEFAULT_PRESETS_DIR,
+        path.join(projectDir, '.invoke', 'presets'),
+    ];
+    const presetNames = new Set();
+    for (const presetDir of presetDirs) {
+        if (!await pathExists(presetDir)) {
+            continue;
+        }
+        const entries = await readdir(presetDir, { withFileTypes: true });
+        for (const entry of entries) {
+            if (!entry.isFile())
+                continue;
+            if (!/\.(ya?ml)$/i.test(entry.name))
+                continue;
+            presetNames.add(path.basename(entry.name, path.extname(entry.name)));
+        }
+    }
+    return [...presetNames].sort();
+}
 // ---------------------------------------------------------------------------
 // validateConfig
 // ---------------------------------------------------------------------------
 export async function validateConfig(config, projectDir) {
     const warnings = [];
+    const reviewerSubroles = new Set(Object.keys(config.roles.reviewer ?? {}));
+    const availablePresetNames = await listAvailablePresets(projectDir);
     // 1. CLI existence for each provider
     for (const [providerName, providerConfig] of Object.entries(config.providers)) {
         if (!checkCliExists(providerConfig.cli)) {
@@ -111,10 +150,7 @@ export async function validateConfig(config, projectDir) {
             const promptPath = path.isAbsolute(roleConfig.prompt)
                 ? roleConfig.prompt
                 : path.join(projectDir, roleConfig.prompt);
-            try {
-                await access(promptPath);
-            }
-            catch {
+            if (!await pathExists(promptPath)) {
                 warnings.push({
                     level: 'error',
                     path: `${rolePath}.prompt`,
@@ -164,6 +200,46 @@ export async function validateConfig(config, projectDir) {
                 }
             }
         }
+    }
+    // 8. Review tiers reference existing reviewer subroles
+    for (const [tierIndex, tier] of (config.settings.review_tiers ?? []).entries()) {
+        for (const [reviewerIndex, reviewerName] of tier.reviewers.entries()) {
+            if (reviewerSubroles.has(reviewerName)) {
+                continue;
+            }
+            warnings.push({
+                level: 'warning',
+                path: `settings.review_tiers[${tierIndex}].reviewers[${reviewerIndex}]`,
+                message: `Review tier '${tier.name}' references reviewer '${reviewerName}', but roles.reviewer.${reviewerName} is not configured.`,
+                suggestion: `Add roles.reviewer.${reviewerName} to .invoke/pipeline.yaml or update the reviewers listed for tier '${tier.name}'.`,
+            });
+        }
+    }
+    // 9. Preset references resolve to preset files
+    for (const presetName of Object.keys(config.presets ?? {})) {
+        const presetFileName = toPresetFileName(presetName);
+        const presetPaths = [
+            path.join(DEFAULT_PRESETS_DIR, presetFileName),
+            path.join(projectDir, '.invoke', 'presets', presetFileName),
+        ];
+        let presetExists = false;
+        for (const presetPath of presetPaths) {
+            if (await pathExists(presetPath)) {
+                presetExists = true;
+                break;
+            }
+        }
+        if (presetExists) {
+            continue;
+        }
+        warnings.push({
+            level: 'warning',
+            path: `presets.${presetName}`,
+            message: `Preset '${presetName}' does not have a matching file in defaults/presets or .invoke/presets.`,
+            suggestion: availablePresetNames.length > 0
+                ? `Create '.invoke/presets/${presetFileName}' or rename the preset reference to one of: ${availablePresetNames.join(', ')}.`
+                : `Create '.invoke/presets/${presetFileName}' or add the preset file to defaults/presets.`,
+        });
     }
     const valid = !warnings.some(w => w.level === 'error');
     return { valid, warnings };

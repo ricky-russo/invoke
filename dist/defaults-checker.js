@@ -42,6 +42,8 @@ function describeDefault(relPath) {
         return `New planner: ${path.basename(relPath, '.md')}`;
     if (relPath.includes('roles/builder/'))
         return `New builder: ${path.basename(relPath, '.md')}`;
+    if (relPath.includes('presets/'))
+        return `New preset: ${path.basename(relPath, path.extname(relPath))}`;
     if (relPath.includes('strategies/'))
         return `New strategy: ${path.basename(relPath, '.md')}`;
     if (relPath === 'context-template.md')

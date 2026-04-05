@@ -28525,7 +28525,7 @@ async function loadConfig(projectDir) {
   const validated = InvokeConfigSchema.parse(mergedConfig);
   return normalizeConfig(validated);
 }
-var import_yaml, __dirname, PACKAGE_ROOT, ProviderConfigSchema, ProviderEntrySchema, ProviderModeSchema, RawRoleConfigSchema, StrategyConfigSchema, ReviewTierSchema, SettingsSchema, PresetConfigSchema, RawInvokeConfigSchema, InvokeConfigSchema;
+var import_yaml, __dirname, PACKAGE_ROOT, ProviderConfigSchema, ProviderEntrySchema, ProviderModeSchema, ReviewTierSchema, RawRoleConfigSchema, StrategyConfigSchema, SettingsSchema, PresetConfigSchema, RawInvokeConfigSchema, InvokeConfigSchema;
 var init_config = __esm({
   "src/config.ts"() {
     "use strict";
@@ -28544,6 +28544,10 @@ var init_config = __esm({
       timeout: external_exports3.number().positive().optional()
     });
     ProviderModeSchema = external_exports3.enum(["parallel", "fallback", "single"]);
+    ReviewTierSchema = external_exports3.object({
+      name: external_exports3.string(),
+      reviewers: external_exports3.array(external_exports3.string())
+    });
     RawRoleConfigSchema = external_exports3.object({
       prompt: external_exports3.string(),
       // Single-provider shorthand fields (optional)
@@ -28556,10 +28560,6 @@ var init_config = __esm({
     });
     StrategyConfigSchema = external_exports3.object({
       prompt: external_exports3.string()
-    });
-    ReviewTierSchema = external_exports3.object({
-      name: external_exports3.string(),
-      reviewers: external_exports3.array(external_exports3.string())
     });
     SettingsSchema = external_exports3.object({
       default_strategy: external_exports3.string(),
@@ -28590,7 +28590,8 @@ var init_config = __esm({
       presets: external_exports3.record(external_exports3.string(), PresetConfigSchema).optional()
     });
     InvokeConfigSchema = RawInvokeConfigSchema.extend({
-      settings: SettingsSchema
+      settings: SettingsSchema,
+      presets: external_exports3.record(external_exports3.string(), PresetConfigSchema).optional()
     });
   }
 });
@@ -38267,8 +38268,12 @@ init_config();
 
 // src/config-validator.ts
 import { execSync } from "child_process";
-import { access } from "fs/promises";
+import { access, readdir } from "fs/promises";
 import path2 from "path";
+import { fileURLToPath as fileURLToPath2 } from "url";
+var __dirname2 = path2.dirname(fileURLToPath2(import.meta.url));
+var PACKAGE_ROOT2 = path2.join(__dirname2, "..");
+var DEFAULT_PRESETS_DIR = path2.join(PACKAGE_ROOT2, "defaults", "presets");
 var MODEL_PATTERNS = {
   claude: [
     /^claude-[a-z]+-[\d-]+$/,
@@ -38314,8 +38319,40 @@ function suggestModel(provider, model) {
   if (!suggestions) return void 0;
   return suggestions[model];
 }
+async function pathExists(filePath) {
+  try {
+    await access(filePath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+function toPresetFileName(presetName) {
+  return /\.(ya?ml)$/i.test(presetName) ? presetName : `${presetName}.yaml`;
+}
+async function listAvailablePresets(projectDir) {
+  const presetDirs = [
+    DEFAULT_PRESETS_DIR,
+    path2.join(projectDir, ".invoke", "presets")
+  ];
+  const presetNames = /* @__PURE__ */ new Set();
+  for (const presetDir of presetDirs) {
+    if (!await pathExists(presetDir)) {
+      continue;
+    }
+    const entries = await readdir(presetDir, { withFileTypes: true });
+    for (const entry of entries) {
+      if (!entry.isFile()) continue;
+      if (!/\.(ya?ml)$/i.test(entry.name)) continue;
+      presetNames.add(path2.basename(entry.name, path2.extname(entry.name)));
+    }
+  }
+  return [...presetNames].sort();
+}
 async function validateConfig(config2, projectDir) {
   const warnings = [];
+  const reviewerSubroles = new Set(Object.keys(config2.roles.reviewer ?? {}));
+  const availablePresetNames = await listAvailablePresets(projectDir);
   for (const [providerName, providerConfig] of Object.entries(config2.providers)) {
     if (!checkCliExists(providerConfig.cli)) {
       warnings.push({
@@ -38354,9 +38391,7 @@ async function validateConfig(config2, projectDir) {
     for (const [subroleName, roleConfig] of Object.entries(subroles)) {
       const rolePath = `roles.${roleGroup}.${subroleName}`;
       const promptPath = path2.isAbsolute(roleConfig.prompt) ? roleConfig.prompt : path2.join(projectDir, roleConfig.prompt);
-      try {
-        await access(promptPath);
-      } catch {
+      if (!await pathExists(promptPath)) {
         warnings.push({
           level: "error",
           path: `${rolePath}.prompt`,
@@ -38401,6 +38436,42 @@ async function validateConfig(config2, projectDir) {
         }
       }
     }
+  }
+  for (const [tierIndex, tier] of (config2.settings.review_tiers ?? []).entries()) {
+    for (const [reviewerIndex, reviewerName] of tier.reviewers.entries()) {
+      if (reviewerSubroles.has(reviewerName)) {
+        continue;
+      }
+      warnings.push({
+        level: "warning",
+        path: `settings.review_tiers[${tierIndex}].reviewers[${reviewerIndex}]`,
+        message: `Review tier '${tier.name}' references reviewer '${reviewerName}', but roles.reviewer.${reviewerName} is not configured.`,
+        suggestion: `Add roles.reviewer.${reviewerName} to .invoke/pipeline.yaml or update the reviewers listed for tier '${tier.name}'.`
+      });
+    }
+  }
+  for (const presetName of Object.keys(config2.presets ?? {})) {
+    const presetFileName = toPresetFileName(presetName);
+    const presetPaths = [
+      path2.join(DEFAULT_PRESETS_DIR, presetFileName),
+      path2.join(projectDir, ".invoke", "presets", presetFileName)
+    ];
+    let presetExists = false;
+    for (const presetPath of presetPaths) {
+      if (await pathExists(presetPath)) {
+        presetExists = true;
+        break;
+      }
+    }
+    if (presetExists) {
+      continue;
+    }
+    warnings.push({
+      level: "warning",
+      path: `presets.${presetName}`,
+      message: `Preset '${presetName}' does not have a matching file in defaults/presets or .invoke/presets.`,
+      suggestion: availablePresetNames.length > 0 ? `Create '.invoke/presets/${presetFileName}' or rename the preset reference to one of: ${availablePresetNames.join(", ")}.` : `Create '.invoke/presets/${presetFileName}' or add the preset file to defaults/presets.`
+    });
   }
   const valid = !warnings.some((w) => w.level === "error");
   return { valid, warnings };
@@ -39429,7 +39500,7 @@ var MetricsManager = class {
 
 // src/session/manager.ts
 import { existsSync as existsSync5 } from "fs";
-import { mkdir as mkdir3, readFile as readFile5, readdir, rename as rename3, rm } from "fs/promises";
+import { mkdir as mkdir3, readFile as readFile5, readdir as readdir2, rename as rename3, rm } from "fs/promises";
 import path7 from "path";
 var MS_PER_DAY = 24 * 60 * 60 * 1e3;
 var SessionManager = class {
@@ -39457,7 +39528,7 @@ var SessionManager = class {
     if (!existsSync5(this.sessionsDir)) {
       return [];
     }
-    const entries = await readdir(this.sessionsDir, { withFileTypes: true });
+    const entries = await readdir2(this.sessionsDir, { withFileTypes: true });
     const sessions = await Promise.all(
       entries.filter((entry) => entry.isDirectory()).map(async (entry) => this.readSessionInfo(entry.name, staleDays))
     );
@@ -39555,7 +39626,7 @@ var SessionManager = class {
 };
 
 // src/tools/artifacts.ts
-import { readFile as readFile6, writeFile as writeFile3, mkdir as mkdir4, readdir as readdir2, unlink } from "fs/promises";
+import { readFile as readFile6, writeFile as writeFile3, mkdir as mkdir4, readdir as readdir3, unlink } from "fs/promises";
 import path8 from "path";
 
 // src/session/lock.ts
@@ -39595,7 +39666,7 @@ var ArtifactManager = class {
   async list(stage) {
     const dir = path8.join(this.baseDir, stage);
     try {
-      return await readdir2(dir);
+      return await readdir3(dir);
     } catch {
       return [];
     }
@@ -39611,15 +39682,15 @@ init_zod();
 init_config();
 
 // src/init.ts
-import { cp, mkdir as mkdir5, readdir as readdir3 } from "fs/promises";
+import { cp, mkdir as mkdir5, readdir as readdir4 } from "fs/promises";
 import { existsSync as existsSync6 } from "fs";
 import path9 from "path";
-import { fileURLToPath as fileURLToPath2 } from "url";
-var __dirname2 = path9.dirname(fileURLToPath2(import.meta.url));
-var PACKAGE_ROOT2 = path9.join(__dirname2, "..");
+import { fileURLToPath as fileURLToPath3 } from "url";
+var __dirname3 = path9.dirname(fileURLToPath3(import.meta.url));
+var PACKAGE_ROOT3 = path9.join(__dirname3, "..");
 async function initProject(projectDir) {
   const invokeDir = path9.join(projectDir, ".invoke");
-  const defaultsDir = path9.join(PACKAGE_ROOT2, "defaults");
+  const defaultsDir = path9.join(PACKAGE_ROOT3, "defaults");
   await mkdir5(invokeDir, { recursive: true });
   const configDest = path9.join(invokeDir, "pipeline.yaml");
   if (!existsSync6(configDest)) {
@@ -39634,7 +39705,7 @@ async function initProject(projectDir) {
 async function copyDefaults(srcDir, destDir) {
   if (!existsSync6(srcDir)) return;
   await mkdir5(destDir, { recursive: true });
-  const entries = await readdir3(srcDir, { withFileTypes: true });
+  const entries = await readdir4(srcDir, { withFileTypes: true });
   for (const entry of entries) {
     const srcPath = path9.join(srcDir, entry.name);
     const destPath = path9.join(destDir, entry.name);
@@ -40656,15 +40727,15 @@ function registerMetricsTools(server, metricsManager, projectDir, sessionManager
 }
 
 // src/defaults-checker.ts
-import { readdir as readdir4 } from "fs/promises";
+import { readdir as readdir5 } from "fs/promises";
 import { existsSync as existsSync8 } from "fs";
 import path12 from "path";
-import { fileURLToPath as fileURLToPath3 } from "url";
-var __dirname3 = path12.dirname(fileURLToPath3(import.meta.url));
-var PACKAGE_ROOT3 = path12.join(__dirname3, "..");
+import { fileURLToPath as fileURLToPath4 } from "url";
+var __dirname4 = path12.dirname(fileURLToPath4(import.meta.url));
+var PACKAGE_ROOT4 = path12.join(__dirname4, "..");
 async function checkForNewDefaults(projectDir) {
   const invokeDir = path12.join(projectDir, ".invoke");
-  const defaultsDir = path12.join(PACKAGE_ROOT3, "defaults");
+  const defaultsDir = path12.join(PACKAGE_ROOT4, "defaults");
   if (!existsSync8(invokeDir) || !existsSync8(defaultsDir)) {
     return [];
   }
@@ -40674,7 +40745,7 @@ async function checkForNewDefaults(projectDir) {
 }
 async function scanDir(srcDir, destDir, relativePath, missing) {
   if (!existsSync8(srcDir)) return;
-  const entries = await readdir4(srcDir, { withFileTypes: true });
+  const entries = await readdir5(srcDir, { withFileTypes: true });
   for (const entry of entries) {
     const srcPath = path12.join(srcDir, entry.name);
     const destPath = path12.join(destDir, entry.name);
@@ -40694,6 +40765,7 @@ function describeDefault(relPath) {
   if (relPath.includes("roles/researcher/")) return `New researcher: ${path12.basename(relPath, ".md")}`;
   if (relPath.includes("roles/planner/")) return `New planner: ${path12.basename(relPath, ".md")}`;
   if (relPath.includes("roles/builder/")) return `New builder: ${path12.basename(relPath, ".md")}`;
+  if (relPath.includes("presets/")) return `New preset: ${path12.basename(relPath, path12.extname(relPath))}`;
   if (relPath.includes("strategies/")) return `New strategy: ${path12.basename(relPath, ".md")}`;
   if (relPath === "context-template.md") return "Project context template";
   return `New default: ${relPath}`;

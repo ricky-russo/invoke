@@ -55,6 +55,7 @@ function describeDefault(relPath: string): string {
   if (relPath.includes('roles/researcher/')) return `New researcher: ${path.basename(relPath, '.md')}`
   if (relPath.includes('roles/planner/')) return `New planner: ${path.basename(relPath, '.md')}`
   if (relPath.includes('roles/builder/')) return `New builder: ${path.basename(relPath, '.md')}`
+  if (relPath.includes('presets/')) return `New preset: ${path.basename(relPath, path.extname(relPath))}`
   if (relPath.includes('strategies/')) return `New strategy: ${path.basename(relPath, '.md')}`
   if (relPath === 'context-template.md') return 'Project context template'
   return `New default: ${relPath}`

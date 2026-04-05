@@ -22,6 +22,11 @@ const ProviderEntrySchema = z.object({
 
 const ProviderModeSchema = z.enum(['parallel', 'fallback', 'single'])
 
+const ReviewTierSchema = z.object({
+  name: z.string(),
+  reviewers: z.array(z.string()),
+})
+
 // Accept either single-provider shorthand or providers array
 const RawRoleConfigSchema = z.object({
   prompt: z.string(),
@@ -36,11 +41,6 @@ const RawRoleConfigSchema = z.object({
 
 const StrategyConfigSchema = z.object({
   prompt: z.string(),
-})
-
-const ReviewTierSchema = z.object({
-  name: z.string(),
-  reviewers: z.array(z.string()),
 })
 
 const SettingsSchema = z.object({
@@ -76,6 +76,7 @@ const RawInvokeConfigSchema = z.object({
 
 const InvokeConfigSchema = RawInvokeConfigSchema.extend({
   settings: SettingsSchema,
+  presets: z.record(z.string(), PresetConfigSchema).optional(),
 })
 
 type RawInvokeConfig = z.infer<typeof RawInvokeConfigSchema>
