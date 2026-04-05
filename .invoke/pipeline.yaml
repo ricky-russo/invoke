@@ -48,6 +48,10 @@ roles:
                   model: claude-opus-4-6
                   effort: high
                   timeout: 900
+                - provider: codex
+                  model: gpt-5.4
+                  effort: high
+                  timeout: 900
             provider_mode: fallback
         alternative:
             prompt: .invoke/roles/planner/alternative.md
@@ -56,6 +60,11 @@ roles:
                   model: claude-opus-4-6
                   effort: high
                   timeout: 900
+                - provider: codex
+                  model: gpt-5.4
+                  effort: high
+                  timeout: 900
+            provider_mode: fallback
 
     builder:
         default:
@@ -65,10 +74,39 @@ roles:
                   model: gpt-5.4
                   effort: high
                   timeout: 900
+        docs:
+            prompt: .invoke/roles/builder/docs.md
+            providers:
+                - provider: claude
+                  model: claude-sonnet-4-6
+                  effort: medium
+                  timeout: 600
+        integration-test:
+            prompt: .invoke/roles/builder/integration-test.md
+            providers:
+                - provider: claude
+                  model: claude-sonnet-4-6
+                  effort: medium
+                  timeout: 600
+        refactor:
+            prompt: .invoke/roles/builder/refactor.md
+            providers:
+                - provider: claude
+                  model: claude-opus-4-6
+                  effort: high
+                  timeout: 900
+        migration:
+            prompt: .invoke/roles/builder/migration.md
+            providers:
+                - provider: claude
+                  model: claude-sonnet-4-6
+                  effort: medium
+                  timeout: 600
 
     reviewer:
         spec-compliance:
             prompt: .invoke/roles/reviewer/spec-compliance.md
+            provider_mode: parallel
             providers:
                 - provider: claude
                   model: claude-opus-4-6
@@ -80,6 +118,7 @@ roles:
                   timeout: 900
         security:
             prompt: .invoke/roles/reviewer/security.md
+            provider_mode: parallel
             providers:
                 - provider: claude
                   model: claude-opus-4-6
@@ -91,6 +130,7 @@ roles:
                   timeout: 900
         code-quality:
             prompt: .invoke/roles/reviewer/code-quality.md
+            provider_mode: parallel
             providers:
                 - provider: claude
                   model: claude-opus-4-6
@@ -102,6 +142,7 @@ roles:
                   timeout: 900
         performance:
             prompt: .invoke/roles/reviewer/performance.md
+            provider_mode: parallel
             providers:
                 - provider: claude
                   model: claude-opus-4-6
