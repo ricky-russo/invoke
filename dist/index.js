@@ -39501,6 +39501,7 @@ var StateManager = class {
 };
 
 // src/metrics/manager.ts
+var COST_PRECISION = 1e9;
 var MetricsManager = class {
   constructor(projectDir, sessionDir) {
     this.projectDir = projectDir;
@@ -39551,30 +39552,37 @@ var MetricsManager = class {
       total_dispatches: metrics.length,
       total_prompt_chars: 0,
       total_duration_ms: 0,
+      total_estimated_cost_usd: 0,
       by_stage: {},
       by_provider_model: {}
     };
     for (const metric of metrics) {
+      const cost = normalizeCost(metric.estimated_cost_usd ?? 0);
       summary.total_prompt_chars += metric.prompt_size_chars;
       summary.total_duration_ms += metric.duration_ms;
+      summary.total_estimated_cost_usd = normalizeCost(summary.total_estimated_cost_usd + cost);
       const stageEntry = summary.by_stage[metric.stage] ?? {
         dispatches: 0,
         duration_ms: 0,
-        prompt_chars: 0
+        prompt_chars: 0,
+        estimated_cost_usd: 0
       };
       stageEntry.dispatches += 1;
       stageEntry.duration_ms += metric.duration_ms;
       stageEntry.prompt_chars += metric.prompt_size_chars;
+      stageEntry.estimated_cost_usd = normalizeCost(stageEntry.estimated_cost_usd + cost);
       summary.by_stage[metric.stage] = stageEntry;
       const providerModelKey = `${metric.provider}:${metric.model}`;
       const providerEntry = summary.by_provider_model[providerModelKey] ?? {
         dispatches: 0,
         duration_ms: 0,
-        prompt_chars: 0
+        prompt_chars: 0,
+        estimated_cost_usd: 0
       };
       providerEntry.dispatches += 1;
       providerEntry.duration_ms += metric.duration_ms;
       providerEntry.prompt_chars += metric.prompt_size_chars;
+      providerEntry.estimated_cost_usd = normalizeCost(providerEntry.estimated_cost_usd + cost);
       summary.by_provider_model[providerModelKey] = providerEntry;
     }
     return summary;
@@ -39640,6 +39648,9 @@ var MetricsManager = class {
     );
   }
 };
+function normalizeCost(value) {
+  return Math.round(value * COST_PRECISION) / COST_PRECISION;
+}
 
 // src/session/manager.ts
 import { existsSync as existsSync5 } from "fs";

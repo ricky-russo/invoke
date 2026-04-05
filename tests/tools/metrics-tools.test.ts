@@ -72,11 +72,13 @@ const BUILD_SUMMARY: MetricsSummary = {
   total_dispatches: 1,
   total_prompt_chars: 120,
   total_duration_ms: 300,
+  total_estimated_cost_usd: 0,
   by_stage: {
     build: {
       dispatches: 1,
       duration_ms: 300,
       prompt_chars: 120,
+      estimated_cost_usd: 0,
     },
   },
   by_provider_model: {
@@ -84,6 +86,7 @@ const BUILD_SUMMARY: MetricsSummary = {
       dispatches: 1,
       duration_ms: 300,
       prompt_chars: 120,
+      estimated_cost_usd: 0,
     },
   },
 }

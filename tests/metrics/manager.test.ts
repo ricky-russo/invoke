@@ -142,6 +142,7 @@ describe('MetricsManager', () => {
         model: 'opus-4.6',
         prompt_size_chars: 100,
         duration_ms: 200,
+        estimated_cost_usd: 0.05,
         started_at: '2026-04-04T12:00:00.000Z',
       })
     )
@@ -152,6 +153,7 @@ describe('MetricsManager', () => {
         model: 'gpt-5',
         prompt_size_chars: 150,
         duration_ms: 300,
+        estimated_cost_usd: 0.1,
         started_at: '2026-04-04T12:01:00.000Z',
       })
     )
@@ -181,13 +183,24 @@ describe('MetricsManager', () => {
       total_dispatches: 3,
       total_prompt_chars: 300,
       total_duration_ms: 900,
+      total_estimated_cost_usd: 0.15,
       by_stage: {
-        build: { dispatches: 2, duration_ms: 500, prompt_chars: 250 },
-        review: { dispatches: 1, duration_ms: 400, prompt_chars: 50 },
+        build: { dispatches: 2, duration_ms: 500, prompt_chars: 250, estimated_cost_usd: 0.15 },
+        review: { dispatches: 1, duration_ms: 400, prompt_chars: 50, estimated_cost_usd: 0 },
       },
       by_provider_model: {
-        'claude:opus-4.6': { dispatches: 2, duration_ms: 600, prompt_chars: 150 },
-        'codex:gpt-5': { dispatches: 1, duration_ms: 300, prompt_chars: 150 },
+        'claude:opus-4.6': {
+          dispatches: 2,
+          duration_ms: 600,
+          prompt_chars: 150,
+          estimated_cost_usd: 0.05,
+        },
+        'codex:gpt-5': {
+          dispatches: 1,
+          duration_ms: 300,
+          prompt_chars: 150,
+          estimated_cost_usd: 0.1,
+        },
       },
     })
 
@@ -195,12 +208,23 @@ describe('MetricsManager', () => {
       total_dispatches: 2,
       total_prompt_chars: 250,
       total_duration_ms: 500,
+      total_estimated_cost_usd: 0.15,
       by_stage: {
-        build: { dispatches: 2, duration_ms: 500, prompt_chars: 250 },
+        build: { dispatches: 2, duration_ms: 500, prompt_chars: 250, estimated_cost_usd: 0.15 },
       },
       by_provider_model: {
-        'claude:opus-4.6': { dispatches: 1, duration_ms: 200, prompt_chars: 100 },
-        'codex:gpt-5': { dispatches: 1, duration_ms: 300, prompt_chars: 150 },
+        'claude:opus-4.6': {
+          dispatches: 1,
+          duration_ms: 200,
+          prompt_chars: 100,
+          estimated_cost_usd: 0.05,
+        },
+        'codex:gpt-5': {
+          dispatches: 1,
+          duration_ms: 300,
+          prompt_chars: 150,
+          estimated_cost_usd: 0.1,
+        },
       },
     })
   })

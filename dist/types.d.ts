@@ -96,16 +96,18 @@ export interface MetricsSummary {
     total_dispatches: number;
     total_prompt_chars: number;
     total_duration_ms: number;
-    total_estimated_cost_usd?: number;
+    total_estimated_cost_usd: number;
     by_stage: Record<string, {
         dispatches: number;
         duration_ms: number;
         prompt_chars: number;
+        estimated_cost_usd: number;
     }>;
     by_provider_model: Record<string, {
         dispatches: number;
         duration_ms: number;
         prompt_chars: number;
+        estimated_cost_usd: number;
     }>;
 }
 export interface Finding {
