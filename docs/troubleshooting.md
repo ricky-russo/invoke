@@ -58,7 +58,7 @@ roles:
 
 The three modes:
 
-- `parallel` — all providers run at the same time; results are collected from whichever finish.
+- `parallel` — all providers run at the same time; results are merged when all complete.
 - `fallback` — providers are tried in order; the next is used only if the previous one errors.
 - `single` — only the first provider entry is used; the rest are ignored.
 
