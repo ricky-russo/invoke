@@ -28432,6 +28432,45 @@ __export(config_exports, {
 });
 import { readFile } from "fs/promises";
 import path from "path";
+import { fileURLToPath } from "url";
+function isPlainObject3(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+function deepMerge(base, override) {
+  if (Array.isArray(base) || Array.isArray(override)) {
+    return override;
+  }
+  if (!isPlainObject3(base) || !isPlainObject3(override)) {
+    return override;
+  }
+  const merged = { ...base };
+  for (const [key, value] of Object.entries(override)) {
+    merged[key] = key in merged ? deepMerge(merged[key], value) : value;
+  }
+  return merged;
+}
+async function loadPresetConfig(projectDir, presetName) {
+  const presetPaths = [
+    path.join(projectDir, ".invoke", "presets", `${presetName}.yaml`),
+    path.join(PACKAGE_ROOT, "defaults", "presets", `${presetName}.yaml`)
+  ];
+  for (const presetPath of presetPaths) {
+    try {
+      const content = await readFile(presetPath, "utf-8");
+      return PresetConfigSchema.parse((0, import_yaml.parse)(content));
+    } catch (error48) {
+      if (error48.code === "ENOENT") {
+        continue;
+      }
+      throw new Error(
+        `Failed to load preset '${presetName}' from ${presetPath}: ${error48 instanceof Error ? error48.message : String(error48)}`
+      );
+    }
+  }
+  throw new Error(
+    `Preset '${presetName}' not found. Checked ${presetPaths.join(" and ")}.`
+  );
+}
 function normalizeConfig(raw) {
   const roles = {};
   for (const [roleGroup, subroles] of Object.entries(raw.roles)) {
@@ -28464,22 +28503,36 @@ function normalizeConfig(raw) {
     providers: raw.providers,
     roles,
     strategies: raw.strategies,
-    settings: raw.settings
+    settings: raw.settings,
+    presets: raw.presets
   };
 }
 async function loadConfig(projectDir) {
   const configPath = path.join(projectDir, ".invoke", "pipeline.yaml");
   const content = await readFile(configPath, "utf-8");
-  const raw = (0, import_yaml.parse)(content);
-  const validated = RawInvokeConfigSchema.parse(raw);
+  const raw = RawInvokeConfigSchema.parse((0, import_yaml.parse)(content));
+  let mergedConfig = raw;
+  if (raw.settings.preset) {
+    const preset = await loadPresetConfig(projectDir, raw.settings.preset);
+    mergedConfig = deepMerge(
+      {
+        settings: preset.settings ?? {},
+        presets: { [raw.settings.preset]: preset }
+      },
+      raw
+    );
+  }
+  const validated = InvokeConfigSchema.parse(mergedConfig);
   return normalizeConfig(validated);
 }
-var import_yaml, ProviderConfigSchema, ProviderEntrySchema, ProviderModeSchema, RawRoleConfigSchema, StrategyConfigSchema, SettingsSchema, RawInvokeConfigSchema;
+var import_yaml, __dirname, PACKAGE_ROOT, ProviderConfigSchema, ProviderEntrySchema, ProviderModeSchema, RawRoleConfigSchema, StrategyConfigSchema, ReviewTierSchema, SettingsSchema, PresetConfigSchema, RawInvokeConfigSchema, InvokeConfigSchema;
 var init_config = __esm({
   "src/config.ts"() {
     "use strict";
     import_yaml = __toESM(require_dist2(), 1);
     init_zod();
+    __dirname = path.dirname(fileURLToPath(import.meta.url));
+    PACKAGE_ROOT = path.join(__dirname, "..");
     ProviderConfigSchema = external_exports3.object({
       cli: external_exports3.string(),
       args: external_exports3.array(external_exports3.string())
@@ -28504,22 +28557,39 @@ var init_config = __esm({
     StrategyConfigSchema = external_exports3.object({
       prompt: external_exports3.string()
     });
+    ReviewTierSchema = external_exports3.object({
+      name: external_exports3.string(),
+      reviewers: external_exports3.array(external_exports3.string())
+    });
     SettingsSchema = external_exports3.object({
       default_strategy: external_exports3.string(),
       agent_timeout: external_exports3.number().positive(),
       commit_style: external_exports3.enum(["one-commit", "per-batch", "per-task", "custom"]),
       work_branch_prefix: external_exports3.string(),
+      preset: external_exports3.string().optional(),
       stale_session_days: external_exports3.number().positive().optional(),
       post_merge_commands: external_exports3.array(external_exports3.string()).optional(),
       max_parallel_agents: external_exports3.number().positive().optional(),
       default_provider_mode: ProviderModeSchema.optional(),
       max_dispatches: external_exports3.number().positive().optional(),
-      max_review_cycles: external_exports3.number().positive().optional()
+      max_review_cycles: external_exports3.number().positive().optional(),
+      review_tiers: external_exports3.array(ReviewTierSchema).optional()
+    });
+    PresetConfigSchema = external_exports3.object({
+      name: external_exports3.string().optional(),
+      description: external_exports3.string().optional(),
+      settings: SettingsSchema.partial().optional(),
+      reviewer_selection: external_exports3.array(external_exports3.string()).optional(),
+      strategy_selection: external_exports3.array(external_exports3.string()).optional()
     });
     RawInvokeConfigSchema = external_exports3.object({
       providers: external_exports3.record(external_exports3.string(), ProviderConfigSchema),
       roles: external_exports3.record(external_exports3.string(), external_exports3.record(external_exports3.string(), RawRoleConfigSchema)),
       strategies: external_exports3.record(external_exports3.string(), StrategyConfigSchema),
+      settings: SettingsSchema.partial(),
+      presets: external_exports3.record(external_exports3.string(), PresetConfigSchema).optional()
+    });
+    InvokeConfigSchema = RawInvokeConfigSchema.extend({
       settings: SettingsSchema
     });
   }
@@ -39544,12 +39614,12 @@ init_config();
 import { cp, mkdir as mkdir5, readdir as readdir3 } from "fs/promises";
 import { existsSync as existsSync6 } from "fs";
 import path9 from "path";
-import { fileURLToPath } from "url";
-var __dirname = path9.dirname(fileURLToPath(import.meta.url));
-var PACKAGE_ROOT = path9.join(__dirname, "..");
+import { fileURLToPath as fileURLToPath2 } from "url";
+var __dirname2 = path9.dirname(fileURLToPath2(import.meta.url));
+var PACKAGE_ROOT2 = path9.join(__dirname2, "..");
 async function initProject(projectDir) {
   const invokeDir = path9.join(projectDir, ".invoke");
-  const defaultsDir = path9.join(PACKAGE_ROOT, "defaults");
+  const defaultsDir = path9.join(PACKAGE_ROOT2, "defaults");
   await mkdir5(invokeDir, { recursive: true });
   const configDest = path9.join(invokeDir, "pipeline.yaml");
   if (!existsSync6(configDest)) {
@@ -40589,12 +40659,12 @@ function registerMetricsTools(server, metricsManager, projectDir, sessionManager
 import { readdir as readdir4 } from "fs/promises";
 import { existsSync as existsSync8 } from "fs";
 import path12 from "path";
-import { fileURLToPath as fileURLToPath2 } from "url";
-var __dirname2 = path12.dirname(fileURLToPath2(import.meta.url));
-var PACKAGE_ROOT2 = path12.join(__dirname2, "..");
+import { fileURLToPath as fileURLToPath3 } from "url";
+var __dirname3 = path12.dirname(fileURLToPath3(import.meta.url));
+var PACKAGE_ROOT3 = path12.join(__dirname3, "..");
 async function checkForNewDefaults(projectDir) {
   const invokeDir = path12.join(projectDir, ".invoke");
-  const defaultsDir = path12.join(PACKAGE_ROOT2, "defaults");
+  const defaultsDir = path12.join(PACKAGE_ROOT3, "defaults");
   if (!existsSync8(invokeDir) || !existsSync8(defaultsDir)) {
     return [];
   }

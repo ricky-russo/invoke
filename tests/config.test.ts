@@ -133,6 +133,186 @@ settings:
     expect(config.settings.max_review_cycles).toBe(3)
   })
 
+  it('accepts presets and review_tiers in the config schema', async () => {
+    const yaml = `
+providers:
+  claude:
+    cli: claude
+    args: ["--print", "--model", "{{model}}"]
+
+roles:
+  reviewer:
+    security:
+      prompt: .invoke/roles/reviewer/security.md
+      provider: claude
+      model: opus-4.6
+      effort: high
+
+strategies:
+  tdd:
+    prompt: .invoke/strategies/tdd.md
+
+settings:
+  default_strategy: tdd
+  agent_timeout: 300000
+  commit_style: per-batch
+  work_branch_prefix: invoke/work
+  review_tiers:
+    - name: final
+      reviewers:
+        - security
+        - spec-compliance
+
+presets:
+  quick:
+    name: quick
+    description: Fast path
+    settings:
+      max_review_cycles: 1
+    reviewer_selection:
+      - security
+    strategy_selection:
+      - tdd
+`
+    await writeFile(path.join(TEST_DIR, '.invoke', 'pipeline.yaml'), yaml)
+
+    const config = await loadConfig(TEST_DIR)
+
+    expect(config.settings.review_tiers).toEqual([
+      {
+        name: 'final',
+        reviewers: ['security', 'spec-compliance'],
+      },
+    ])
+    expect(config.presets).toEqual({
+      quick: {
+        name: 'quick',
+        description: 'Fast path',
+        settings: {
+          max_review_cycles: 1,
+        },
+        reviewer_selection: ['security'],
+        strategy_selection: ['tdd'],
+      },
+    })
+  })
+
+  it('loads and merges a default preset when settings.preset is set', async () => {
+    const yaml = `
+providers:
+  claude:
+    cli: claude
+    args: ["--print", "--model", "{{model}}"]
+
+roles:
+  reviewer:
+    security:
+      prompt: .invoke/roles/reviewer/security.md
+      provider: claude
+      model: opus-4.6
+      effort: high
+
+strategies:
+  tdd:
+    prompt: .invoke/strategies/tdd.md
+  implementation-first:
+    prompt: .invoke/strategies/implementation-first.md
+  bug-fix:
+    prompt: .invoke/strategies/bug-fix.md
+
+settings:
+  preset: quick
+  agent_timeout: 300000
+  commit_style: per-batch
+  work_branch_prefix: invoke/work
+`
+    await writeFile(path.join(TEST_DIR, '.invoke', 'pipeline.yaml'), yaml)
+
+    const config = await loadConfig(TEST_DIR)
+
+    expect(config.settings.preset).toBe('quick')
+    expect(config.settings.default_strategy).toBe('implementation-first')
+    expect(config.settings.max_review_cycles).toBe(1)
+    expect(config.settings.max_parallel_agents).toBe(2)
+    expect(config.presets?.quick).toEqual({
+      name: 'quick',
+      description: 'Fast pipeline preset for small changes with limited review coverage.',
+      settings: {
+        default_strategy: 'implementation-first',
+        max_review_cycles: 1,
+        max_parallel_agents: 2,
+      },
+      reviewer_selection: ['spec-compliance', 'security'],
+      strategy_selection: ['implementation-first', 'bug-fix'],
+    })
+  })
+
+  it('prefers user config values over preset values and replaces arrays', async () => {
+    await mkdir(path.join(TEST_DIR, '.invoke', 'presets'), { recursive: true })
+
+    const presetYaml = `
+name: quick
+settings:
+  default_strategy: implementation-first
+  max_parallel_agents: 1
+  post_merge_commands:
+    - npm install
+  review_tiers:
+    - name: quick-pass
+      reviewers:
+        - security
+`
+    await writeFile(path.join(TEST_DIR, '.invoke', 'presets', 'quick.yaml'), presetYaml)
+
+    const yaml = `
+providers:
+  claude:
+    cli: claude
+    args: ["--print", "--model", "{{model}}"]
+
+roles:
+  reviewer:
+    security:
+      prompt: .invoke/roles/reviewer/security.md
+      provider: claude
+      model: opus-4.6
+      effort: high
+
+strategies:
+  tdd:
+    prompt: .invoke/strategies/tdd.md
+  implementation-first:
+    prompt: .invoke/strategies/implementation-first.md
+
+settings:
+  preset: quick
+  default_strategy: tdd
+  agent_timeout: 300000
+  commit_style: per-batch
+  work_branch_prefix: invoke/work
+  post_merge_commands:
+    - pnpm install
+  review_tiers:
+    - name: full-pass
+      reviewers:
+        - spec-compliance
+        - security
+`
+    await writeFile(path.join(TEST_DIR, '.invoke', 'pipeline.yaml'), yaml)
+
+    const config = await loadConfig(TEST_DIR)
+
+    expect(config.settings.default_strategy).toBe('tdd')
+    expect(config.settings.max_parallel_agents).toBe(1)
+    expect(config.settings.post_merge_commands).toEqual(['pnpm install'])
+    expect(config.settings.review_tiers).toEqual([
+      {
+        name: 'full-pass',
+        reviewers: ['spec-compliance', 'security'],
+      },
+    ])
+  })
+
   it('leaves provider_mode undefined when it is omitted', async () => {
     const yaml = `
 providers:
@@ -219,5 +399,36 @@ settings:
   it('throws if config is missing required fields', async () => {
     await writeFile(path.join(TEST_DIR, '.invoke', 'pipeline.yaml'), 'providers: {}')
     await expect(loadConfig(TEST_DIR)).rejects.toThrow()
+  })
+
+  it('throws a clear error when a referenced preset file is missing', async () => {
+    const yaml = `
+providers:
+  claude:
+    cli: claude
+    args: ["--print", "--model", "{{model}}"]
+
+roles:
+  reviewer:
+    security:
+      prompt: .invoke/roles/reviewer/security.md
+      provider: claude
+      model: opus-4.6
+      effort: high
+
+strategies:
+  tdd:
+    prompt: .invoke/strategies/tdd.md
+
+settings:
+  preset: missing
+  default_strategy: tdd
+  agent_timeout: 300000
+  commit_style: per-batch
+  work_branch_prefix: invoke/work
+`
+    await writeFile(path.join(TEST_DIR, '.invoke', 'pipeline.yaml'), yaml)
+
+    await expect(loadConfig(TEST_DIR)).rejects.toThrow(/Preset 'missing' not found/)
   })
 })

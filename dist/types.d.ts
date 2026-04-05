@@ -26,6 +26,7 @@ export interface Settings {
     agent_timeout: number;
     commit_style: 'one-commit' | 'per-batch' | 'per-task' | 'custom';
     work_branch_prefix: string;
+    preset?: string;
     stale_session_days?: number;
     post_merge_commands?: string[];
     max_parallel_agents?: number;
