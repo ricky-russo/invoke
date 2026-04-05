@@ -173,45 +173,28 @@ AskUserQuestion({
 
 ### Manage Presets
 
-Presets live in `config.presets` and are managed via `invoke_update_config`.
+> **Note:** Preset definitions (the preset objects themselves) are declared in `pipeline.yaml` — either as inline entries under `presets:` or as files in `.invoke/presets/`. There is no `add_preset`, `update_preset`, or `remove_preset` operation in `invoke_update_config`. To create or edit a preset definition, the user must edit `pipeline.yaml` or the corresponding preset file directly. The config tool API only supports changing which preset is currently active.
 
 #### List Presets
 
 1. Call `invoke_get_config`
-2. Present a formatted list of all presets from `config.presets`, showing each preset's name and key settings.
+2. If `config.presets` is present, present a formatted list of all preset names and their key settings. Also show the active preset from `config.settings.preset` if set.
 
-#### Create Preset
+#### Set Active Preset
 
-1. Ask the user what the preset should configure (e.g., provider selection, effort levels, reviewer set)
-2. Confirm the preset details with the user using `AskUserQuestion` before saving
-3. Save via `invoke_update_config` with `operation: "add_preset"`
+To switch which preset is active:
 
-#### Edit Preset
+1. Call `invoke_get_config` to show available presets and the current active preset
+2. Confirm the desired preset name with the user using `AskUserQuestion`
+3. Apply via `invoke_update_config` with `operation: "update_settings"` and `settings: { preset: "<name>" }`
+4. Confirm: "Active preset set to [name]."
 
-1. Call `invoke_get_config` to read the current preset
-2. Present the current preset details
-3. Ask what to change
-4. Apply edits via `invoke_update_config` with `operation: "update_preset"`
+#### Create or Edit Preset Definition
 
-#### Delete Preset
+Preset definitions cannot be created or modified through the config tool API. When the user wants to define a new preset or change an existing one:
 
-1. Confirm with the user:
-
-```
-AskUserQuestion({
-  questions: [{
-    question: "Delete preset [name]? This cannot be undone.",
-    header: "Delete Preset",
-    multiSelect: false,
-    options: [
-      { label: "Delete", description: "Permanently remove this preset" },
-      { label: "Cancel", description: "Keep the preset" }
-    ]
-  }]
-})
-```
-
-2. Remove via `invoke_update_config` with `operation: "remove_preset"`
+1. Explain that preset definitions live in `pipeline.yaml` (under the `presets:` key) or as separate YAML files in `.invoke/presets/`
+2. Offer to help the user edit the relevant file directly
 
 ### Edit Settings
 
