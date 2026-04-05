@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   registerConfigUpdateTools: vi.fn(),
   registerContextTools: vi.fn(),
   registerMetricsTools: vi.fn(),
+  registerSessionTools: vi.fn(),
   checkForNewDefaults: vi.fn(),
   writeFile: vi.fn(),
   serverInstances: [] as any[],
@@ -21,10 +22,12 @@ const mocks = vi.hoisted(() => ({
   dispatchEngineInstances: [] as any[],
   batchManagerInstances: [] as any[],
   worktreeManagerInstances: [] as any[],
+  sessionManagerInstances: [] as any[],
   stateManagerInstances: [] as any[],
   artifactManagerInstances: [] as any[],
   contextManagerInstances: [] as any[],
   metricsManagerInstances: [] as any[],
+  sessionMigrationResult: { migrated: false } as { migrated: boolean; sessionId?: string },
 }))
 
 vi.mock('@modelcontextprotocol/sdk/server/mcp.js', () => ({
@@ -93,6 +96,18 @@ vi.mock('../src/worktree/manager.js', () => ({
     constructor(projectDir: string) {
       this.projectDir = projectDir
       mocks.worktreeManagerInstances.push(this)
+    }
+  },
+}))
+
+vi.mock('../src/session/manager.js', () => ({
+  SessionManager: class {
+    projectDir: string
+    migrate = vi.fn().mockImplementation(async () => mocks.sessionMigrationResult)
+
+    constructor(projectDir: string) {
+      this.projectDir = projectDir
+      mocks.sessionManagerInstances.push(this)
     }
   },
 }))
@@ -174,6 +189,10 @@ vi.mock('../src/tools/metrics-tools.js', () => ({
   registerMetricsTools: mocks.registerMetricsTools,
 }))
 
+vi.mock('../src/tools/session-tools.js', () => ({
+  registerSessionTools: mocks.registerSessionTools,
+}))
+
 vi.mock('../src/defaults-checker.js', () => ({
   checkForNewDefaults: mocks.checkForNewDefaults,
 }))
@@ -216,6 +235,7 @@ describe('index bootstrap', () => {
     mocks.dispatchEngineInstances.length = 0
     mocks.batchManagerInstances.length = 0
     mocks.worktreeManagerInstances.length = 0
+    mocks.sessionManagerInstances.length = 0
     mocks.stateManagerInstances.length = 0
     mocks.artifactManagerInstances.length = 0
     mocks.contextManagerInstances.length = 0
@@ -226,6 +246,7 @@ describe('index bootstrap', () => {
     mocks.createParserRegistry.mockReturnValue(new Map())
     mocks.checkForNewDefaults.mockResolvedValue([])
     mocks.writeFile.mockResolvedValue(undefined)
+    mocks.sessionMigrationResult = { migrated: false }
 
     vi.spyOn(console, 'error').mockImplementation(() => {})
     vi.spyOn(process, 'exit').mockImplementation((() => undefined) as never)
@@ -233,6 +254,35 @@ describe('index bootstrap', () => {
 
   afterEach(() => {
     vi.restoreAllMocks()
+  })
+
+  it('instantiates SessionManager, runs migration, and registers session tools before state tools', async () => {
+    mocks.loadConfig.mockResolvedValue(TEST_CONFIG)
+    mocks.sessionMigrationResult = { migrated: true, sessionId: 'session-123' }
+
+    await import('../src/index.js')
+
+    await vi.waitFor(() => {
+      expect(mocks.registerSessionTools).toHaveBeenCalledTimes(1)
+      expect(mocks.registerStateTools).toHaveBeenCalledTimes(1)
+    })
+
+    const server = mocks.serverInstances[0]
+    const sessionManager = mocks.sessionManagerInstances[0]
+    const stateManager = mocks.stateManagerInstances[0]
+    const metricsManager = mocks.metricsManagerInstances[0]
+
+    expect(sessionManager.projectDir).toBe(process.cwd())
+    expect(sessionManager.migrate).toHaveBeenCalledTimes(1)
+    expect(mocks.registerSessionTools).toHaveBeenCalledWith(server, sessionManager, process.cwd())
+    expect(mocks.registerSessionTools.mock.invocationCallOrder[0])
+      .toBeLessThan(mocks.registerStateTools.mock.invocationCallOrder[0])
+    expect(sessionManager.migrate.mock.invocationCallOrder[0])
+      .toBeLessThan(mocks.registerStateTools.mock.invocationCallOrder[0])
+    expect(stateManager.projectDir).toBe(process.cwd())
+    expect(metricsManager.projectDir).toBe(process.cwd())
+    expect(mocks.registerStateTools).toHaveBeenCalledWith(server, stateManager, process.cwd(), sessionManager)
+    expect(console.error).toHaveBeenCalledWith('Migrated legacy state to session: session-123')
   })
 
   it('instantiates MetricsManager, wires onDispatchComplete, and passes it to tool registration', async () => {
@@ -249,15 +299,22 @@ describe('index bootstrap', () => {
     const metricsManager = mocks.metricsManagerInstances[0]
     const dispatchEngine = mocks.dispatchEngineInstances[0]
     const batchManager = mocks.batchManagerInstances[0]
+    const sessionManager = mocks.sessionManagerInstances[0]
 
     expect(metricsManager.projectDir).toBe(process.cwd())
-    expect(mocks.registerMetricsTools).toHaveBeenCalledWith(server, metricsManager, process.cwd())
+    expect(mocks.registerMetricsTools).toHaveBeenCalledWith(
+      server,
+      metricsManager,
+      process.cwd(),
+      sessionManager
+    )
     expect(mocks.registerDispatchTools).toHaveBeenCalledWith(
       server,
       dispatchEngine,
       batchManager,
       process.cwd(),
-      metricsManager
+      metricsManager,
+      sessionManager
     )
 
     const metric: DispatchMetric = {

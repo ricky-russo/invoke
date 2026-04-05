@@ -21,6 +21,8 @@ Then call `invoke_set_state` to create or verify pipeline state:
 - If no active pipeline, initialize one with `current_stage: "scope"`
 - If an active pipeline exists at a later stage, ask the user if they want to start a new pipeline
 
+Once the pipeline exists, use the returned `pipeline_id` as `session_id` for all subsequent `invoke_get_state` and `invoke_set_state` calls. The tools remain backward-compatible because `session_id` is optional, but do not omit it in this flow.
+
 ### 2. Initialize Project Context (if needed)
 
 Call `invoke_get_context` to check if context.md exists.
@@ -128,7 +130,7 @@ Save the spec using `invoke_save_artifact`:
 
 ### 7. Update State
 
-Call `invoke_set_state` with:
+Call `invoke_set_state` with `session_id: <pipeline_id>` and:
 - `current_stage: "scope"` (until user approves)
 - `spec: "specs/YYYY-MM-DD-<slug>-spec.md"`
 
@@ -136,14 +138,14 @@ Call `invoke_set_state` with:
 
 **Print the full spec as text output first** so the user can read it. THEN, in a separate message, ask for approval using `AskUserQuestion`. Do NOT combine the spec content and the approval prompt.
 
-Once approved, update state to `current_stage: "plan"`. If the user wants changes, revise the spec and repeat.
+Once approved, update state via `invoke_set_state` with `session_id: <pipeline_id>` and `current_stage: "plan"`. If the user wants changes, revise the spec and repeat.
 
 The plan stage skill will auto-trigger from here.
 
 ## Error Handling
 
 - If a researcher fails or times out, present the error and ask if the user wants to retry or proceed without it
-- If the user wants to abort, call `invoke_set_state` to reset the pipeline
+- If the user wants to abort, call `invoke_set_state` with `session_id: <pipeline_id>` to reset the pipeline
 
 ## Key Principle
 

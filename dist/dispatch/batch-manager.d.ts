@@ -6,10 +6,10 @@ export declare class BatchManager {
     private engine;
     private worktreeManager;
     private stateManager?;
-    private batchIndex;
     private batches;
-    constructor(engine: DispatchEngine, worktreeManager: WorktreeManager, stateManager?: StateManager | undefined, batchIndex?: number);
-    dispatchBatch(request: BatchRequest): string;
+    constructor(engine: DispatchEngine, worktreeManager: WorktreeManager, stateManager?: StateManager | undefined);
+    dispatchBatch(request: BatchRequest): Promise<string>;
+    private getPersistedBatchIndex;
     getStatus(batchId: string): BatchStatus | null;
     waitForStatus(batchId: string, waitSeconds: number): Promise<BatchStatus | null>;
     cancel(batchId: string): void;

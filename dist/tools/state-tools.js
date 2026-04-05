@@ -1,18 +1,55 @@
 import { z } from 'zod';
 import { loadConfig } from '../config.js';
-export function registerStateTools(server, stateManager, projectDir) {
+import { StateManager } from './state.js';
+export function registerStateTools(server, stateManager, projectDir, sessionManager) {
+    function resolveStateManager(sessionId) {
+        if (!sessionId) {
+            return stateManager;
+        }
+        return new StateManager(projectDir, sessionManager.resolve(sessionId));
+    }
+    async function resolveWritableStateManager(sessionId) {
+        if (!sessionId) {
+            return stateManager;
+        }
+        const sessionDir = sessionManager.exists(sessionId)
+            ? sessionManager.resolve(sessionId)
+            : await sessionManager.create(sessionId);
+        return new StateManager(projectDir, sessionDir);
+    }
     server.registerTool('invoke_get_state', {
         description: 'Get the current pipeline state.',
-        inputSchema: z.object({}),
-    }, async () => {
-        const state = await stateManager.get();
-        return {
-            content: [{ type: 'text', text: JSON.stringify(state, null, 2) }],
-        };
+        inputSchema: z.object({
+            session_id: z.string().optional(),
+        }),
+    }, async ({ session_id }) => {
+        try {
+            const scopedStateManager = resolveStateManager(session_id);
+            const state = await scopedStateManager.get();
+            if (!session_id && !state) {
+                return {
+                    content: [{
+                            type: 'text',
+                            text: 'No session_id provided. Use invoke_list_sessions to see available sessions.',
+                        }],
+                    isError: true,
+                };
+            }
+            return {
+                content: [{ type: 'text', text: JSON.stringify(state, null, 2) }],
+            };
+        }
+        catch (err) {
+            return {
+                content: [{ type: 'text', text: `State error: ${err instanceof Error ? err.message : String(err)}` }],
+                isError: true,
+            };
+        }
     });
     server.registerTool('invoke_set_state', {
         description: 'Update pipeline state fields. Pass only the fields to update. Supports nested batches and review_cycles.',
         inputSchema: z.object({
+            session_id: z.string().optional(),
             pipeline_id: z.string().optional(),
             current_stage: z.enum(['scope', 'plan', 'orchestrate', 'build', 'review', 'complete']).optional(),
             work_branch: z.string().optional(),
@@ -45,11 +82,13 @@ export function registerStateTools(server, stateManager, projectDir) {
         }),
     }, async (updates) => {
         try {
-            let state = await stateManager.get();
+            const { session_id, ...stateUpdates } = updates;
+            const scopedStateManager = await resolveWritableStateManager(session_id);
+            let state = await scopedStateManager.get();
             if (!state) {
-                state = await stateManager.initialize(updates.pipeline_id ?? `pipeline-${Date.now()}`);
+                state = await scopedStateManager.initialize(stateUpdates.pipeline_id ?? `pipeline-${Date.now()}`);
             }
-            const updated = await stateManager.update(updates);
+            const updated = await scopedStateManager.update(stateUpdates);
             return {
                 content: [{ type: 'text', text: JSON.stringify(updated, null, 2) }],
             };
@@ -64,11 +103,13 @@ export function registerStateTools(server, stateManager, projectDir) {
     server.registerTool('invoke_get_review_cycle_count', {
         description: 'Get the number of recorded review cycles, optionally filtered to a batch, plus the configured max review cycle limit when available.',
         inputSchema: z.object({
+            session_id: z.string().optional(),
             batch_id: z.number().optional(),
         }),
-    }, async ({ batch_id }) => {
+    }, async ({ session_id, batch_id }) => {
         try {
-            const count = await stateManager.getReviewCycleCount(batch_id);
+            const scopedStateManager = resolveStateManager(session_id);
+            const count = await scopedStateManager.getReviewCycleCount(batch_id);
             let maxReviewCycles;
             try {
                 const config = await loadConfig(projectDir);

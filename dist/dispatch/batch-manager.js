@@ -3,22 +3,22 @@ export class BatchManager {
     engine;
     worktreeManager;
     stateManager;
-    batchIndex;
     batches = new Map();
-    constructor(engine, worktreeManager, stateManager, batchIndex = 0) {
+    constructor(engine, worktreeManager, stateManager) {
         this.engine = engine;
         this.worktreeManager = worktreeManager;
         this.stateManager = stateManager;
-        this.batchIndex = batchIndex;
     }
-    dispatchBatch(request) {
+    async dispatchBatch(request) {
         const batchId = randomUUID().slice(0, 8);
         const agents = request.tasks.map(task => ({
             taskId: task.taskId,
             status: 'pending',
         }));
         const abortController = new AbortController();
-        const currentBatchIndex = this.batchIndex++;
+        const currentBatchIndex = this.stateManager
+            ? await this.getPersistedBatchIndex()
+            : this.batches.size;
         const record = {
             status: { batchId, status: 'running', agents },
             abortController,
@@ -28,6 +28,10 @@ export class BatchManager {
         // Fire and forget — dispatch all tasks in parallel
         this.runBatch(batchId, request, abortController.signal, currentBatchIndex);
         return batchId;
+    }
+    async getPersistedBatchIndex() {
+        const state = await this.stateManager?.get();
+        return state ? state.batches.length : 0;
     }
     getStatus(batchId) {
         const record = this.batches.get(batchId);

@@ -8,6 +8,7 @@ vi.mock('../../src/config.js', () => ({
 }))
 
 import { loadConfig } from '../../src/config.js'
+import { SessionManager } from '../../src/session/manager.js'
 import { StateManager } from '../../src/tools/state.js'
 import { registerStateTools } from '../../src/tools/state-tools.js'
 import type { InvokeConfig } from '../../src/types.js'
@@ -49,6 +50,7 @@ type RegisteredTool = {
 }
 
 let stateManager: StateManager
+let sessionManager: SessionManager
 let registeredTools: Map<string, RegisteredTool>
 
 const registerTool = vi.fn((name: string, config: RegisteredTool['config'], handler: RegisteredTool['handler']) => {
@@ -72,10 +74,11 @@ function parseResponseText(result: Awaited<ReturnType<RegisteredTool['handler']>
 beforeEach(async () => {
   await mkdir(path.join(TEST_DIR, '.invoke'), { recursive: true })
   stateManager = new StateManager(TEST_DIR)
+  sessionManager = new SessionManager(TEST_DIR)
   registeredTools = new Map()
   registerTool.mockClear()
   vi.mocked(loadConfig).mockResolvedValue(testConfig)
-  registerStateTools(server, stateManager, TEST_DIR)
+  registerStateTools(server, stateManager, TEST_DIR, sessionManager)
 })
 
 afterEach(async () => {
@@ -83,9 +86,19 @@ afterEach(async () => {
 })
 
 describe('registerStateTools', () => {
+  it('accepts session_id in all state tool schemas', () => {
+    expect(getTool('invoke_get_state').config.inputSchema.safeParse({ session_id: 'session-1' }).success).toBe(true)
+    expect(getTool('invoke_set_state').config.inputSchema.safeParse({ session_id: 'session-1' }).success).toBe(true)
+    expect(
+      getTool('invoke_get_review_cycle_count').config.inputSchema.safeParse({ session_id: 'session-1' }).success
+    ).toBe(true)
+  })
+
   it('accepts batch_id and scope in invoke_set_state review_cycles', async () => {
+    const createSpy = vi.spyOn(sessionManager, 'create')
     const setStateTool = getTool('invoke_set_state')
     const input = {
+      session_id: 'session-1',
       pipeline_id: 'pipeline-123',
       review_cycles: [
         {
@@ -106,8 +119,13 @@ describe('registerStateTools', () => {
 
     const result = await setStateTool.handler(input)
     expect(result.isError).toBeUndefined()
+    expect(createSpy).toHaveBeenCalledWith('session-1')
 
-    const state = await stateManager.get()
+    const sessionStateManager = new StateManager(
+      TEST_DIR,
+      sessionManager.resolve('session-1')
+    )
+    const state = await sessionStateManager.get()
     expect(state?.review_cycles).toEqual([
       {
         id: 1,
@@ -121,6 +139,39 @@ describe('registerStateTools', () => {
         },
       },
     ])
+    await expect(stateManager.get()).resolves.toBeNull()
+  })
+
+  it('returns session-scoped state when session_id is provided to invoke_get_state', async () => {
+    const resolveSpy = vi.spyOn(sessionManager, 'resolve')
+    const sessionStateManager = new StateManager(TEST_DIR, await sessionManager.create('session-1'))
+    await sessionStateManager.initialize('pipeline-session')
+
+    const result = await getTool('invoke_get_state').handler({ session_id: 'session-1' })
+    expect(result.isError).toBeUndefined()
+    expect(resolveSpy).toHaveBeenCalledWith('session-1')
+    expect(parseResponseText(result)).toMatchObject({
+      pipeline_id: 'pipeline-session',
+    })
+  })
+
+  it('returns the legacy root state when no session_id is provided and root state exists', async () => {
+    await stateManager.initialize('pipeline-root')
+
+    const result = await getTool('invoke_get_state').handler({})
+    expect(result.isError).toBeUndefined()
+    expect(parseResponseText(result)).toMatchObject({
+      pipeline_id: 'pipeline-root',
+    })
+  })
+
+  it('returns a helpful error when no session_id is provided and no root state exists', async () => {
+    const result = await getTool('invoke_get_state').handler({})
+
+    expect(result.isError).toBe(true)
+    expect(result.content[0].text).toBe(
+      'No session_id provided. Use invoke_list_sessions to see available sessions.'
+    )
   })
 
   it('returns the total review cycle count and configured limit', async () => {
@@ -152,6 +203,31 @@ describe('registerStateTools', () => {
     })
 
     const result = await getTool('invoke_get_review_cycle_count').handler({ batch_id: 2 })
+    expect(result.isError).toBeUndefined()
+    expect(parseResponseText(result)).toEqual({
+      count: 2,
+      max_review_cycles: 3,
+    })
+  })
+
+  it('reads the review cycle count from session-scoped state when session_id is provided', async () => {
+    const sessionStateManager = new StateManager(
+      TEST_DIR,
+      path.join(TEST_DIR, '.invoke', 'sessions', 'session-2')
+    )
+    await sessionStateManager.initialize('pipeline-123')
+    await sessionStateManager.update({
+      review_cycles: [
+        { id: 1, reviewers: ['reviewer-a'], findings: [], batch_id: 2, scope: 'batch' },
+        { id: 2, reviewers: ['reviewer-b'], findings: [], batch_id: 2, scope: 'batch' },
+      ],
+    })
+
+    const result = await getTool('invoke_get_review_cycle_count').handler({
+      session_id: 'session-2',
+      batch_id: 2,
+    })
+
     expect(result.isError).toBeUndefined()
     expect(parseResponseText(result)).toEqual({
       count: 2,

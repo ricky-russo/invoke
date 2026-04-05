@@ -1,14 +1,14 @@
-import { readFile, writeFile, rename } from 'fs/promises';
+import { mkdir, readFile, writeFile, rename } from 'fs/promises';
 import { existsSync } from 'fs';
 import path from 'path';
 export class StateManager {
-    projectDir;
     statePath;
     tmpPath;
-    constructor(projectDir) {
-        this.projectDir = projectDir;
-        this.statePath = path.join(projectDir, '.invoke', 'state.json');
-        this.tmpPath = path.join(projectDir, '.invoke', 'state.json.tmp');
+    storageDir;
+    constructor(projectDir, sessionDir) {
+        this.storageDir = sessionDir ?? path.join(projectDir, '.invoke');
+        this.statePath = path.join(this.storageDir, 'state.json');
+        this.tmpPath = path.join(this.storageDir, 'state.json.tmp');
     }
     async get() {
         if (!existsSync(this.statePath)) {
@@ -95,6 +95,7 @@ export class StateManager {
         }
     }
     async writeAtomic(state) {
+        await mkdir(this.storageDir, { recursive: true });
         const content = JSON.stringify(state, null, 2) + '\n';
         await writeFile(this.tmpPath, content);
         await rename(this.tmpPath, this.statePath);

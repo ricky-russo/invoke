@@ -1,6 +1,16 @@
 import { z } from 'zod';
+import path from 'path';
 import { loadConfig } from '../config.js';
+import { StateManager } from './state.js';
 export function registerDispatchTools(server, engine, batchManager, projectDir, metricsManager) {
+    function resolveBatchManager(sessionId) {
+        if (!sessionId) {
+            return batchManager;
+        }
+        return Object.assign(Object.create(Object.getPrototypeOf(batchManager)), batchManager, {
+            stateManager: new StateManager(projectDir, path.join(projectDir, '.invoke', 'sessions', sessionId)),
+        });
+    }
     server.registerTool('invoke_dispatch', {
         description: 'Dispatch a single agent by role and subrole. Blocks until the agent completes.',
         inputSchema: z.object({
@@ -38,8 +48,9 @@ export function registerDispatchTools(server, engine, batchManager, projectDir, 
                 task_context: z.record(z.string(), z.string()),
             })),
             create_worktrees: z.boolean().describe('Whether to create git worktrees for each task'),
+            session_id: z.string().optional(),
         }),
-    }, async ({ tasks, create_worktrees }) => {
+    }, async ({ tasks, create_worktrees, session_id }) => {
         // Read current config to report accurate provider info
         let taskProviders = [];
         let config;
@@ -82,7 +93,8 @@ export function registerDispatchTools(server, engine, batchManager, projectDir, 
             }
         }
         const maxParallel = config?.settings?.max_parallel_agents;
-        const batchId = batchManager.dispatchBatch({
+        const activeBatchManager = resolveBatchManager(session_id);
+        const batchId = await activeBatchManager.dispatchBatch({
             tasks: tasks.map(t => ({
                 taskId: t.task_id,
                 role: t.role,

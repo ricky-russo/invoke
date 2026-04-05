@@ -13,13 +13,21 @@ You are resuming an in-progress invoke pipeline from a previous session.
 
 ## Flow
 
-### 1. Read State
+### 1. Discover Sessions
 
-Call `invoke_get_state` to get the current pipeline state.
+Call `invoke_list_sessions` first to discover all active sessions.
+
+Present the active sessions to the user for selection using `AskUserQuestion`. If there are no active sessions, inform the user and offer to start a new pipeline.
+
+Use the chosen session's `session_id` for all subsequent state tool calls in this flow. The chosen `session_id` is the same value as the pipeline's `pipeline_id`, and the tools remain backward-compatible because `session_id` is optional.
+
+### 2. Read State
+
+Call `invoke_get_state` with the selected `session_id` to get the current pipeline state.
 
 If state is null, inform the user there's no active pipeline and offer to start one (which will trigger invoke-scope).
 
-### 2. Present Status
+### 3. Present Status
 
 Present the pipeline status clearly, including the last activity timestamp:
 
@@ -40,7 +48,7 @@ For each batch, show task-level progress:
 >   • [task-id]: ❌ error — [result_summary]
 >   • [task-id]: ⏳ pending
 
-### 3. Check for Orphaned Worktrees
+### 4. Check for Orphaned Worktrees
 
 Call `invoke_cleanup_worktrees` with `discover_only: true` (or read the worktree list) to check for worktrees that exist on disk but may be from a crashed session.
 
@@ -53,14 +61,14 @@ If orphaned worktrees are found:
 
 If "Inspect": check each worktree for uncommitted changes and committed changes via `git -C <worktree_path> status` and `git -C <worktree_path> log --oneline -5`, then present options per worktree.
 
-### 4. Offer Options
+### 5. Offer Options
 
 > "What would you like to do?"
 > 1. **Continue** — pick up where we left off at the [stage] stage
 > 2. **Redo current stage** — restart the [stage] stage from scratch
 > 3. **Abort** — clean up and start fresh
 
-### 5. Handle Choice
+### 6. Handle Choice
 
 **Continue:**
 - Load the appropriate stage skill based on `current_stage`:

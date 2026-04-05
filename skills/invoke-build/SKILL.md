@@ -13,9 +13,11 @@ You are running the build stage. Your job is to dispatch builder agents for each
 
 ## Flow
 
+All `invoke_get_state`, `invoke_set_state`, `invoke_get_metrics`, and `invoke_get_review_cycle_count` calls in this flow must include `session_id`, and `session_id` equals the pipeline's `pipeline_id`. The tools remain backward-compatible because `session_id` is optional, but do not omit it here.
+
 ### 1. Verify State
 
-Call `invoke_get_state` to verify we're at the build stage. Read the task breakdown from `invoke_read_artifact` with `stage: "plans"`, `filename: "tasks.json"`.
+Call `invoke_get_state` with `session_id: <pipeline_id>` to verify we're at the build stage. Read the task breakdown from `invoke_read_artifact` with `stage: "plans"`, `filename: "tasks.json"`.
 
 ### 2. Create Work Branch
 
@@ -27,7 +29,7 @@ For each batch in order:
 
 #### a. Check Review Cycle Guard Rail
 
-Before selecting builders, call `invoke_get_review_cycle_count` with the current orchestration batch ID (`batch.id`).
+Before selecting builders, call `invoke_get_review_cycle_count` with `session_id: <pipeline_id>` and the current orchestration batch ID (`batch.id`).
 
 If the response includes `max_review_cycles` and `count >= max_review_cycles`, warn the user that this batch has reached the configured review-cycle limit and ask whether to continue allowing review cycles for this batch or skip further review cycles for it. Use `AskUserQuestion`:
 
@@ -59,7 +61,7 @@ Call `invoke_dispatch_batch` with:
 
 The response includes the **resolved provider/model/effort** for each task (read from the current pipeline.yaml). Use this info for your dispatch message — do NOT guess the provider before the tool returns. Display the dispatch summary AFTER receiving the response.
 
-After dispatching, note that `invoke_get_metrics` can be called at any time to inspect current pipeline usage and dispatch limits.
+After dispatching, note that `invoke_get_metrics` can be called with `session_id: <pipeline_id>` at any time to inspect current pipeline usage and dispatch limits.
 
 #### d. Monitor Progress
 
@@ -88,7 +90,7 @@ The post-merge validation hook will run automatically (lint, tests). If it fails
 
 #### h. Update State
 
-Update the batch status in the pipeline state via `invoke_set_state`.
+Update the batch status in the pipeline state via `invoke_set_state` with `session_id: <pipeline_id>`.
 
 #### i. Inter-Batch Review (optional)
 
@@ -114,11 +116,11 @@ If step a resulted in "Skip further review", skip this prompt for the current ba
 
 **For accepted findings that need fixing: ALWAYS dispatch builder agents via `invoke_dispatch_batch` with worktrees.** Do NOT fix code directly in the session — that bypasses the pipeline (no worktrees, no state tracking, no validation). Bundle accepted findings as fix tasks, dispatch builders, merge, validate — same flow as a regular build batch.
 
-When you record an inter-batch review cycle with `invoke_set_state`, include `batch_id: <current batch id>` and `scope: 'batch'`. This is especially important when accepted findings trigger fix dispatches, so later review-cycle checks stay tied to the correct batch.
+When you record an inter-batch review cycle with `invoke_set_state`, include `session_id: <pipeline_id>`, `batch_id: <current batch id>`, and `scope: 'batch'`. This is especially important when accepted findings trigger fix dispatches, so later review-cycle checks stay tied to the correct batch.
 
 ### 4. Build Complete
 
-When all batches are done, update state:
+When all batches are done, update state via `invoke_set_state` with `session_id: <pipeline_id>`:
 - `current_stage: "review"`
 
 The review stage skill will auto-trigger from here.

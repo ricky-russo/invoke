@@ -1,6 +1,7 @@
 import { readFile, writeFile } from 'fs/promises'
 import { existsSync } from 'fs'
 import path from 'path'
+import { withLock } from '../session/lock.js'
 
 export class ContextManager {
   private contextPath: string
@@ -25,7 +26,9 @@ export class ContextManager {
   }
 
   async initialize(content: string): Promise<void> {
-    await writeFile(this.contextPath, content)
+    await withLock(this.contextPath, async () => {
+      await writeFile(this.contextPath, content)
+    })
   }
 
   async updateSection(
@@ -33,33 +36,35 @@ export class ContextManager {
     content: string,
     mode: 'replace' | 'append'
   ): Promise<void> {
-    const current = await this.get()
-    if (!current) {
-      throw new Error('No context.md exists. Call initialize() first.')
-    }
+    await withLock(this.contextPath, async () => {
+      const current = await this.get()
+      if (!current) {
+        throw new Error('No context.md exists. Call initialize() first.')
+      }
 
-    const heading = `## ${sectionName}`
-    const headingIndex = current.indexOf(heading)
-    if (headingIndex === -1) {
-      throw new Error(`Section '${sectionName}' not found in context.md`)
-    }
+      const heading = `## ${sectionName}`
+      const headingIndex = current.indexOf(heading)
+      if (headingIndex === -1) {
+        throw new Error(`Section '${sectionName}' not found in context.md`)
+      }
 
-    const afterHeading = headingIndex + heading.length
-    const nextHeadingIndex = current.indexOf('\n## ', afterHeading)
-    const sectionEnd = nextHeadingIndex === -1 ? current.length : nextHeadingIndex
+      const afterHeading = headingIndex + heading.length
+      const nextHeadingIndex = current.indexOf('\n## ', afterHeading)
+      const sectionEnd = nextHeadingIndex === -1 ? current.length : nextHeadingIndex
 
-    if (mode === 'replace') {
-      const updated =
-        current.slice(0, afterHeading) +
-        '\n\n' + content + '\n' +
-        current.slice(sectionEnd)
-      await writeFile(this.contextPath, updated)
-    } else {
-      const updated =
-        current.slice(0, sectionEnd) +
-        content + '\n' +
-        current.slice(sectionEnd)
-      await writeFile(this.contextPath, updated)
-    }
+      if (mode === 'replace') {
+        const updated =
+          current.slice(0, afterHeading) +
+          '\n\n' + content + '\n' +
+          current.slice(sectionEnd)
+        await writeFile(this.contextPath, updated)
+      } else {
+        const updated =
+          current.slice(0, sectionEnd) +
+          content + '\n' +
+          current.slice(sectionEnd)
+        await writeFile(this.contextPath, updated)
+      }
+    })
   }
 }

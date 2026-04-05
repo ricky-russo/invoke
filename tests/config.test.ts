@@ -118,6 +118,7 @@ settings:
   commit_style: per-batch
   work_branch_prefix: invoke/work
   default_provider_mode: fallback
+  stale_session_days: 14
   max_dispatches: 8
   max_review_cycles: 3
 `
@@ -127,6 +128,7 @@ settings:
 
     expect(config.roles.reviewer.security.provider_mode).toBe('single')
     expect(config.settings.default_provider_mode).toBe('fallback')
+    expect(config.settings.stale_session_days).toBe(14)
     expect(config.settings.max_dispatches).toBe(8)
     expect(config.settings.max_review_cycles).toBe(3)
   })

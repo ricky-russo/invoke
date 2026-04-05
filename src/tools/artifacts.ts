@@ -1,5 +1,6 @@
 import { readFile, writeFile, mkdir, readdir, unlink } from 'fs/promises'
 import path from 'path'
+import { withLock } from '../session/lock.js'
 
 export class ArtifactManager {
   private baseDir: string
@@ -12,7 +13,9 @@ export class ArtifactManager {
     const dir = path.join(this.baseDir, stage)
     await mkdir(dir, { recursive: true })
     const filePath = path.join(dir, filename)
-    await writeFile(filePath, content)
+    await withLock(filePath, async () => {
+      await writeFile(filePath, content)
+    })
     return filePath
   }
 

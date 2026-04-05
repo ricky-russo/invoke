@@ -1,4 +1,4 @@
-import { readFile, writeFile, rename } from 'fs/promises'
+import { mkdir, readFile, writeFile, rename } from 'fs/promises'
 import { existsSync } from 'fs'
 import path from 'path'
 import type { PipelineState, BatchState, TaskState } from '../types.js'
@@ -6,10 +6,13 @@ import type { PipelineState, BatchState, TaskState } from '../types.js'
 export class StateManager {
   private statePath: string
   private tmpPath: string
+  private storageDir: string
+  private dirEnsured = false
 
-  constructor(private projectDir: string) {
-    this.statePath = path.join(projectDir, '.invoke', 'state.json')
-    this.tmpPath = path.join(projectDir, '.invoke', 'state.json.tmp')
+  constructor(projectDir: string, sessionDir?: string) {
+    this.storageDir = sessionDir ?? path.join(projectDir, '.invoke')
+    this.statePath = path.join(this.storageDir, 'state.json')
+    this.tmpPath = path.join(this.storageDir, 'state.json.tmp')
   }
 
   async get(): Promise<PipelineState | null> {
@@ -108,6 +111,11 @@ export class StateManager {
   }
 
   private async writeAtomic(state: PipelineState): Promise<void> {
+    if (!this.dirEnsured) {
+      await mkdir(this.storageDir, { recursive: true })
+      this.dirEnsured = true
+    }
+
     const content = JSON.stringify(state, null, 2) + '\n'
     await writeFile(this.tmpPath, content)
     await rename(this.tmpPath, this.statePath)

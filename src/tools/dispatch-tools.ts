@@ -3,8 +3,10 @@ import { z } from 'zod'
 import type { DispatchEngine } from '../dispatch/engine.js'
 import type { BatchManager } from '../dispatch/batch-manager.js'
 import type { MetricsManager } from '../metrics/manager.js'
+import type { SessionManager } from '../session/manager.js'
 import type { InvokeConfig, ProviderMode } from '../types.js'
 import { loadConfig } from '../config.js'
+import { StateManager } from './state.js'
 
 type TaskProviderInfo = {
   task_id: string
@@ -17,8 +19,30 @@ export function registerDispatchTools(
   engine: DispatchEngine,
   batchManager: BatchManager,
   projectDir: string,
-  metricsManager?: MetricsManager
+  metricsManager: MetricsManager,
+  sessionManager?: SessionManager
 ): void {
+  function resolveBatchManager(sessionId?: string): BatchManager {
+    if (!sessionId) {
+      return batchManager
+    }
+
+    if (!sessionManager) {
+      throw new Error('Session manager is required for session-scoped dispatch')
+    }
+
+    return Object.assign(
+      Object.create(Object.getPrototypeOf(batchManager)),
+      batchManager,
+      {
+        stateManager: new StateManager(
+          projectDir,
+          sessionManager.resolve(sessionId)
+        ),
+      }
+    ) as BatchManager
+  }
+
   server.registerTool(
     'invoke_dispatch',
     {
@@ -62,9 +86,10 @@ export function registerDispatchTools(
           task_context: z.record(z.string(), z.string()),
         })),
         create_worktrees: z.boolean().describe('Whether to create git worktrees for each task'),
+        session_id: z.string().optional(),
       }),
     },
-    async ({ tasks, create_worktrees }) => {
+    async ({ tasks, create_worktrees, session_id }) => {
       // Read current config to report accurate provider info
       let taskProviders: TaskProviderInfo[] = []
       let config: InvokeConfig | undefined
@@ -93,7 +118,7 @@ export function registerDispatchTools(
         return sum + (mode === 'parallel' ? task.providers.length : 1)
       }, 0)
 
-      if (metricsManager && config?.settings.max_dispatches !== undefined) {
+      if (config?.settings.max_dispatches !== undefined) {
         try {
           const limitStatus = await metricsManager.getLimitStatus(config)
           const projectedDispatches = limitStatus.dispatches_used + estimatedDispatches
@@ -109,8 +134,9 @@ export function registerDispatchTools(
       }
 
       const maxParallel = config?.settings?.max_parallel_agents
+      const activeBatchManager = resolveBatchManager(session_id)
 
-      const batchId = batchManager.dispatchBatch({
+      const batchId = await activeBatchManager.dispatchBatch({
         tasks: tasks.map(t => ({
           taskId: t.task_id,
           role: t.role,

@@ -13,9 +13,11 @@ You are running the plan stage of the invoke pipeline. Your job is to dispatch p
 
 ## Flow
 
+All `invoke_get_state` and `invoke_set_state` calls in this flow must include `session_id`, and `session_id` equals the pipeline's `pipeline_id`. The tools remain backward-compatible because `session_id` is optional, but do not omit it here.
+
 ### 1. Verify State
 
-Call `invoke_get_state` to verify we're at the plan stage. Read the spec from `invoke_read_artifact` with `stage: "specs"`, `filename: "spec.md"`.
+Call `invoke_get_state` with `session_id: <pipeline_id>` to verify we're at the plan stage. Read the spec from `invoke_read_artifact` with `stage: "specs"`, `filename: "spec.md"`.
 
 ### 2. Dispatch Planners
 
@@ -61,7 +63,7 @@ Save the chosen plan using `invoke_save_artifact`:
 
 ### 6. Update State
 
-Call `invoke_set_state` with:
+Call `invoke_set_state` with `session_id: <pipeline_id>` and:
 - `current_stage: "orchestrate"`
 - `plan: "plans/YYYY-MM-DD-<slug>-plan.md"`
 

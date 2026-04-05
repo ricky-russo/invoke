@@ -1,9 +1,9 @@
 import type { PipelineState, BatchState, TaskState } from '../types.js';
 export declare class StateManager {
-    private projectDir;
     private statePath;
     private tmpPath;
-    constructor(projectDir: string);
+    private storageDir;
+    constructor(projectDir: string, sessionDir?: string);
     get(): Promise<PipelineState | null>;
     initialize(pipelineId: string): Promise<PipelineState>;
     update(updates: Partial<PipelineState>): Promise<PipelineState>;

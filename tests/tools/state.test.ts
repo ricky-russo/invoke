@@ -1,6 +1,7 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { StateManager } from '../../src/tools/state.js'
 import { mkdir, rm, readFile } from 'fs/promises'
+import { existsSync } from 'fs'
 import path from 'path'
 
 const TEST_DIR = path.join(import.meta.dirname, 'fixtures', 'state-test')
@@ -58,6 +59,23 @@ describe('StateManager', () => {
     const parsed = JSON.parse(raw)
     expect(parsed.pipeline_id).toBe('pipeline-123')
     expect(raw).toContain('\n') // formatted, not minified
+  })
+
+  it('writes session-scoped state when sessionDir is provided', async () => {
+    const sessionDir = path.join(TEST_DIR, '.invoke', 'sessions', 'session-123')
+    const sessionStateManager = new StateManager(TEST_DIR, sessionDir)
+
+    await sessionStateManager.initialize('pipeline-123')
+
+    const raw = await readFile(path.join(sessionDir, 'state.json'), 'utf-8')
+    expect(JSON.parse(raw).pipeline_id).toBe('pipeline-123')
+    expect(existsSync(path.join(TEST_DIR, '.invoke', 'state.json'))).toBe(false)
+  })
+
+  it('uses the legacy root state path when sessionDir is omitted', async () => {
+    await stateManager.initialize('pipeline-123')
+
+    expect(existsSync(path.join(TEST_DIR, '.invoke', 'state.json'))).toBe(true)
   })
 
   it('resets state', async () => {
@@ -162,6 +180,33 @@ describe('StateManager', () => {
     const files = readdirSync(path.join(TEST_DIR, '.invoke'))
     const tmpFiles = files.filter((f: string) => f.endsWith('.tmp'))
     expect(tmpFiles).toHaveLength(0)
+  })
+
+  it('only ensures the storage directory on the first write', async () => {
+    vi.resetModules()
+    const mkdirSpy = vi.fn().mockResolvedValue(undefined)
+
+    try {
+      vi.doMock('fs/promises', async importOriginal => {
+        const actual = await importOriginal<typeof import('fs/promises')>()
+        return {
+          ...actual,
+          mkdir: mkdirSpy,
+        }
+      })
+
+      const { StateManager: MockedStateManager } = await import('../../src/tools/state.js')
+      const mockedStateManager = new MockedStateManager(TEST_DIR)
+
+      await mockedStateManager.initialize('pipeline-123')
+      await mockedStateManager.update({ current_stage: 'build' })
+
+      expect(mkdirSpy).toHaveBeenCalledTimes(1)
+      expect(mkdirSpy).toHaveBeenCalledWith(path.join(TEST_DIR, '.invoke'), { recursive: true })
+    } finally {
+      vi.doUnmock('fs/promises')
+      vi.resetModules()
+    }
   })
 
   it('counts review cycles across the whole pipeline and per batch', async () => {

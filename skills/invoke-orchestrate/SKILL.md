@@ -13,9 +13,11 @@ You are running the orchestrate stage. Your job is to break the approved plan in
 
 ## Flow
 
+All `invoke_get_state` and `invoke_set_state` calls in this flow must include `session_id`, and `session_id` equals the pipeline's `pipeline_id`. The tools remain backward-compatible because `session_id` is optional, but do not omit it here.
+
 ### 1. Verify State
 
-Call `invoke_get_state` to verify we're at the orchestrate stage. Read the plan from `invoke_read_artifact` with `stage: "plans"`, `filename: "plan.md"`.
+Call `invoke_get_state` with `session_id: <pipeline_id>` to verify we're at the orchestrate stage. Read the plan from `invoke_read_artifact` with `stage: "plans"`, `filename: "plan.md"`.
 
 ### 2. Choose Build Strategy
 
@@ -93,7 +95,7 @@ The format:
 
 ### 7. Update State
 
-Call `invoke_set_state` with:
+Call `invoke_set_state` with `session_id: <pipeline_id>` and:
 - `current_stage: "build"`
 - `strategy: "<chosen strategy>"`
 

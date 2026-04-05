@@ -10,11 +10,13 @@ import { DispatchEngine } from './dispatch/engine.js'
 import { BatchManager } from './dispatch/batch-manager.js'
 import { WorktreeManager } from './worktree/manager.js'
 import { MetricsManager } from './metrics/manager.js'
+import { SessionManager } from './session/manager.js'
 import { StateManager } from './tools/state.js'
 import { ArtifactManager } from './tools/artifacts.js'
 import { registerConfigTools } from './tools/config-tool.js'
 import { registerDispatchTools } from './tools/dispatch-tools.js'
 import { registerWorktreeTools } from './tools/worktree-tools.js'
+import { registerSessionTools } from './tools/session-tools.js'
 import { registerStateTools } from './tools/state-tools.js'
 import { registerArtifactTools } from './tools/artifact-tools.js'
 import { registerConfigUpdateTools } from './tools/config-update-tools.js'
@@ -76,15 +78,22 @@ async function main() {
   const artifactManager = new ArtifactManager(projectDir)
   const contextManager = new ContextManager(projectDir)
   const metricsManager = new MetricsManager(projectDir)
+  const sessionManager = new SessionManager(projectDir)
 
-  // Register config-independent tools first
-  registerStateTools(server, stateManager, projectDir)
+  // Run session migration and register tools
+  const migration = await sessionManager.migrate()
+  if (migration.migrated) {
+    console.error(`Migrated legacy state to session: ${migration.sessionId}`)
+  }
+
+  registerSessionTools(server, sessionManager, projectDir)
+  registerStateTools(server, stateManager, projectDir, sessionManager)
   registerArtifactTools(server, artifactManager)
   registerWorktreeTools(server, worktreeManager, config, projectDir)
   registerConfigTools(server, projectDir)
   registerConfigUpdateTools(server, projectDir)
   registerContextTools(server, contextManager)
-  registerMetricsTools(server, metricsManager, projectDir)
+  registerMetricsTools(server, metricsManager, projectDir, sessionManager)
 
   // Register dispatch tools (need config)
   if (config) {
@@ -97,7 +106,7 @@ async function main() {
       onDispatchComplete: (metric) => metricsManager.record(metric),
     })
     const batchManager = new BatchManager(engine, worktreeManager, stateManager)
-    registerDispatchTools(server, engine, batchManager, projectDir, metricsManager)
+    registerDispatchTools(server, engine, batchManager, projectDir, metricsManager, sessionManager)
   }
 
   // Connect via stdio

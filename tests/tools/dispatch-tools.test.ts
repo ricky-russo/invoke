@@ -3,12 +3,14 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import type { BatchManager } from '../../src/dispatch/batch-manager.js'
 import type { DispatchEngine } from '../../src/dispatch/engine.js'
 import type { MetricsManager } from '../../src/metrics/manager.js'
+import type { SessionManager } from '../../src/session/manager.js'
 
 vi.mock('../../src/config.js', () => ({
   loadConfig: vi.fn(),
 }))
 
 import { loadConfig } from '../../src/config.js'
+import { StateManager } from '../../src/tools/state.js'
 import { registerDispatchTools } from '../../src/tools/dispatch-tools.js'
 import type { InvokeConfig } from '../../src/types.js'
 
@@ -17,7 +19,10 @@ type ToolResponse = {
   isError?: boolean
 }
 
-type RegisteredHandler = (args: any) => Promise<ToolResponse>
+type RegisteredTool = {
+  config: { inputSchema: { parse: (input: unknown) => unknown } }
+  handler: (args: any) => Promise<ToolResponse>
+}
 
 function createConfig(overrides: Partial<InvokeConfig> = {}): InvokeConfig {
   const config: InvokeConfig = {
@@ -76,12 +81,23 @@ function createConfig(overrides: Partial<InvokeConfig> = {}): InvokeConfig {
   }
 }
 
-function createTestContext(metricsManager?: MetricsManager) {
-  const handlers = new Map<string, RegisteredHandler>()
-  const dispatchBatch = vi.fn().mockReturnValue('batch-123')
+function createTestContext({
+  metricsManager = { getLimitStatus: vi.fn() } as unknown as MetricsManager,
+  sessionManager,
+}: {
+  metricsManager?: MetricsManager
+  sessionManager?: SessionManager
+} = {}) {
+  const tools = new Map<string, RegisteredTool>()
+  let dispatchedStateManager: unknown
+  const rootStateManager = new StateManager('/tmp/project')
+  const dispatchBatch = vi.fn(function dispatchBatch(this: { stateManager?: unknown }) {
+    dispatchedStateManager = this.stateManager
+    return Promise.resolve('batch-123')
+  })
   const server = {
-    registerTool: vi.fn((name: string, _config: unknown, handler: RegisteredHandler) => {
-      handlers.set(name, handler)
+    registerTool: vi.fn((name: string, config: RegisteredTool['config'], handler: RegisteredTool['handler']) => {
+      tools.set(name, { config, handler })
     }),
   } as unknown as McpServer
 
@@ -94,13 +110,16 @@ function createTestContext(metricsManager?: MetricsManager) {
     getStatus: vi.fn(),
     waitForStatus: vi.fn(),
     cancel: vi.fn(),
+    stateManager: rootStateManager,
   } as unknown as BatchManager
 
-  registerDispatchTools(server, engine, batchManager, '/tmp/project', metricsManager)
+  registerDispatchTools(server, engine, batchManager, '/tmp/project', metricsManager, sessionManager)
 
   return {
-    handlers,
+    tools,
     dispatchBatch,
+    dispatchedStateManager: () => dispatchedStateManager,
+    rootStateManager,
   }
 }
 
@@ -121,12 +140,14 @@ describe('registerDispatchTools', () => {
       },
     }))
 
-    const { handlers, dispatchBatch } = createTestContext()
-    const invokeDispatchBatch = handlers.get('invoke_dispatch_batch')
+    const { tools, dispatchBatch } = createTestContext()
+    const invokeDispatchBatch = tools.get('invoke_dispatch_batch')
 
     expect(invokeDispatchBatch).toBeDefined()
+    expect(invokeDispatchBatch!.config.inputSchema.parse({ session_id: 'session-1', tasks: [], create_worktrees: false }))
+      .toEqual({ session_id: 'session-1', tasks: [], create_worktrees: false })
 
-    const response = await invokeDispatchBatch!({
+    const response = await invokeDispatchBatch!.handler({
       tasks: [
         { task_id: 'task-1', role: 'builder', subrole: 'parallel', task_context: {} },
         { task_id: 'task-2', role: 'builder', subrole: 'fallback', task_context: {} },
@@ -201,8 +222,8 @@ describe('registerDispatchTools', () => {
 
     vi.mocked(loadConfig).mockResolvedValue(config)
 
-    const { handlers } = createTestContext(metricsManager)
-    const response = await handlers.get('invoke_dispatch_batch')!({
+    const { tools } = createTestContext({ metricsManager })
+    const response = await tools.get('invoke_dispatch_batch')!.handler({
       tasks: [
         { task_id: 'task-1', role: 'builder', subrole: 'parallel', task_context: {} },
       ],
@@ -236,8 +257,8 @@ describe('registerDispatchTools', () => {
       },
     }))
 
-    const { handlers } = createTestContext(metricsManager)
-    const response = await handlers.get('invoke_dispatch_batch')!({
+    const { tools } = createTestContext({ metricsManager })
+    const response = await tools.get('invoke_dispatch_batch')!.handler({
       tasks: [
         { task_id: 'task-1', role: 'builder', subrole: 'parallel', task_context: {} },
       ],
@@ -264,8 +285,8 @@ describe('registerDispatchTools', () => {
       },
     }))
 
-    const { handlers } = createTestContext(metricsManager)
-    const response = await handlers.get('invoke_dispatch_batch')!({
+    const { tools } = createTestContext({ metricsManager })
+    const response = await tools.get('invoke_dispatch_batch')!.handler({
       tasks: [
         { task_id: 'task-1', role: 'builder', subrole: 'parallel', task_context: {} },
       ],
@@ -276,5 +297,35 @@ describe('registerDispatchTools', () => {
 
     const payload = JSON.parse(response.content[0].text)
     expect(payload).not.toHaveProperty('warning')
+  })
+
+  it('uses a session-scoped state manager when session_id is provided', async () => {
+    vi.mocked(loadConfig).mockResolvedValue(createConfig())
+    const sessionManager = {
+      resolve: vi.fn().mockReturnValue('/tmp/validated/session-9'),
+    } as unknown as SessionManager
+
+    const { tools, dispatchBatch, dispatchedStateManager, rootStateManager } = createTestContext({
+      sessionManager,
+    })
+    const response = await tools.get('invoke_dispatch_batch')!.handler({
+      tasks: [
+        { task_id: 'task-1', role: 'builder', subrole: 'parallel', task_context: {} },
+      ],
+      create_worktrees: true,
+      session_id: 'session-9',
+    })
+
+    expect(dispatchBatch).toHaveBeenCalledTimes(1)
+    expect(sessionManager.resolve).toHaveBeenCalledWith('session-9')
+    expect(dispatchedStateManager()).toBeInstanceOf(StateManager)
+    expect(dispatchedStateManager()).not.toBe(rootStateManager)
+    expect((dispatchedStateManager() as { storageDir: string }).storageDir).toBe(
+      '/tmp/validated/session-9'
+    )
+    expect(JSON.parse(response.content[0].text)).toMatchObject({
+      batch_id: 'batch-123',
+      status: 'dispatched',
+    })
   })
 })

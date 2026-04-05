@@ -13,13 +13,15 @@ You are running the review stage. Your job is to dispatch reviewers, present fin
 
 ## Flow
 
+All `invoke_get_state`, `invoke_set_state`, and `invoke_get_metrics` calls in this flow must include `session_id`, and `session_id` equals the pipeline's `pipeline_id`. The tools remain backward-compatible because `session_id` is optional, but do not omit it here.
+
 ### 1. Verify State
 
-Call `invoke_get_state` to verify we're at the review stage.
+Call `invoke_get_state` with `session_id: <pipeline_id>` to verify we're at the review stage.
 
 ### 2. Show Current Usage
 
-Call `invoke_get_metrics` with no stage filter before selecting reviewers. Display the current pipeline usage so the user can see dispatch headroom before review starts. Use `summary` and `limits` to show the current totals, including dispatches used, `max_dispatches` when available, total prompt chars, and total duration.
+Call `invoke_get_metrics` with `session_id: <pipeline_id>` and no stage filter before selecting reviewers. Display the current pipeline usage so the user can see dispatch headroom before review starts. Use `summary` and `limits` to show the current totals, including dispatches used, `max_dispatches` when available, total prompt chars, and total duration.
 
 ### 3. Select Reviewers
 
@@ -72,7 +74,7 @@ AskUserQuestion({
 
 If the user chooses **Triage individually**, present findings grouped by reviewer using `AskUserQuestion` with `multiSelect: true` — selected findings are accepted, unselected are dismissed. Note: `AskUserQuestion` supports max 4 options per question. If there are more than 4 findings, group into multiple questions by reviewer.
 
-After triage, record the review cycle with `invoke_set_state` under `review_cycles`. Save the reviewers, findings, and triage result (`accepted` / `dismissed`). For final review cycles in this stage, include `scope: 'final'`.
+After triage, record the review cycle with `invoke_set_state` using `session_id: <pipeline_id>` under `review_cycles`. Save the reviewers, findings, and triage result (`accepted` / `dismissed`). For final review cycles in this stage, include `scope: 'final'`.
 
 ### 7. Auto-Fix Accepted Findings
 
@@ -119,7 +121,7 @@ After saving the review history, update context.md to record what was built:
    - `mode: "append"`
    - `content: "\n- [finding summary] (deferred from pipeline [id])"`
 
-At pipeline completion, call `invoke_get_metrics` and print a usage summary:
+At pipeline completion, call `invoke_get_metrics` with `session_id: <pipeline_id>` and print a usage summary:
 
 ```
 📊 Pipeline Usage Summary
@@ -143,7 +145,7 @@ Ask the user how to commit the final result:
 
 Execute the chosen commit strategy. Clean up the work branch after squash merge.
 
-Update state:
+Update state via `invoke_set_state` with `session_id: <pipeline_id>`:
 - `current_stage: "complete"`
 
 ## Error Handling

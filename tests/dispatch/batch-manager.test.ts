@@ -1,14 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { BatchManager } from '../../src/dispatch/batch-manager.js'
-import { StateManager } from '../../src/tools/state.js'
 import type { DispatchEngine } from '../../src/dispatch/engine.js'
 import type { WorktreeManager } from '../../src/worktree/manager.js'
-import type { AgentResult } from '../../src/types.js'
-import { mkdir, rm } from 'fs/promises'
-import path from 'path'
-import os from 'os'
-
-const STATE_TEST_DIR = path.join(os.tmpdir(), 'invoke-batch-state-test')
+import type { AgentResult, PipelineState } from '../../src/types.js'
+import type { StateManager } from '../../src/tools/state.js'
 
 const mockResult: AgentResult = {
   role: 'builder',
@@ -42,7 +37,7 @@ describe('BatchManager', () => {
   })
 
   it('dispatches a batch and returns a batch ID immediately', async () => {
-    const batchId = manager.dispatchBatch({
+    const batchId = await manager.dispatchBatch({
       tasks: [
         { taskId: 'task-1', role: 'builder', subrole: 'default', taskContext: { task_description: 'Build X' } },
         { taskId: 'task-2', role: 'builder', subrole: 'default', taskContext: { task_description: 'Build Y' } },
@@ -55,7 +50,7 @@ describe('BatchManager', () => {
   })
 
   it('tracks batch status from running to completed', async () => {
-    const batchId = manager.dispatchBatch({
+    const batchId = await manager.dispatchBatch({
       tasks: [
         { taskId: 'task-1', role: 'builder', subrole: 'default', taskContext: {} },
       ],
@@ -80,7 +75,7 @@ describe('BatchManager', () => {
   })
 
   it('creates worktrees when requested', async () => {
-    manager.dispatchBatch({
+    await manager.dispatchBatch({
       tasks: [
         { taskId: 'task-1', role: 'builder', subrole: 'default', taskContext: {} },
       ],
@@ -97,7 +92,7 @@ describe('BatchManager', () => {
     const neverResolve = new Promise<AgentResult>(() => {})
     vi.mocked(mockEngine.dispatch).mockReturnValue(neverResolve)
 
-    const batchId = manager.dispatchBatch({
+    const batchId = await manager.dispatchBatch({
       tasks: [
         { taskId: 'task-1', role: 'builder', subrole: 'default', taskContext: {} },
       ],
@@ -118,7 +113,7 @@ describe('BatchManager', () => {
     it('returns immediately when batch is already completed', async () => {
       vi.mocked(mockEngine.dispatch).mockResolvedValue(mockResult)
 
-      const batchId = manager.dispatchBatch({
+      const batchId = await manager.dispatchBatch({
         tasks: [
           { taskId: 'task-1', role: 'builder', subrole: 'default', taskContext: {} },
         ],
@@ -150,7 +145,7 @@ describe('BatchManager', () => {
         .mockResolvedValueOnce(mockResult)
         .mockReturnValueOnce(neverResolve)
 
-      const batchId = manager.dispatchBatch({
+      const batchId = await manager.dispatchBatch({
         tasks: [
           { taskId: 'task-1', role: 'builder', subrole: 'default', taskContext: {} },
           { taskId: 'task-2', role: 'builder', subrole: 'default', taskContext: {} },
@@ -169,7 +164,7 @@ describe('BatchManager', () => {
       const neverResolve = new Promise<AgentResult>(() => {})
       vi.mocked(mockEngine.dispatch).mockReturnValue(neverResolve)
 
-      const batchId = manager.dispatchBatch({
+      const batchId = await manager.dispatchBatch({
         tasks: [
           { taskId: 'task-1', role: 'builder', subrole: 'default', taskContext: {} },
         ],
@@ -215,7 +210,7 @@ describe('max_parallel_agents', () => {
       return mockResult
     })
 
-    const batchId = manager.dispatchBatch({
+    const batchId = await manager.dispatchBatch({
       tasks: [
         { taskId: 'task-1', role: 'builder', subrole: 'default', taskContext: {} },
         { taskId: 'task-2', role: 'builder', subrole: 'default', taskContext: {} },
@@ -247,7 +242,7 @@ describe('max_parallel_agents', () => {
       return mockResult
     })
 
-    const batchId = manager.dispatchBatch({
+    const batchId = await manager.dispatchBatch({
       tasks: [
         { taskId: 'task-1', role: 'builder', subrole: 'default', taskContext: {} },
         { taskId: 'task-2', role: 'builder', subrole: 'default', taskContext: {} },
@@ -269,57 +264,117 @@ describe('max_parallel_agents', () => {
 describe('BatchManager with state persistence', () => {
   let stateManager: StateManager
   let statefulManager: BatchManager
+  let persistedState: PipelineState
+  let updateTask: ReturnType<typeof vi.fn>
+  let updateBatch: ReturnType<typeof vi.fn>
 
-  beforeEach(async () => {
+  beforeEach(() => {
     vi.clearAllMocks()
     vi.mocked(mockEngine.dispatch).mockResolvedValue(mockResult)
-    await mkdir(path.join(STATE_TEST_DIR, '.invoke'), { recursive: true })
-    stateManager = new StateManager(STATE_TEST_DIR)
-    await stateManager.initialize('test-pipeline')
-    await stateManager.addBatch({
-      id: 1,
-      status: 'pending',
-      tasks: [
-        { id: 'task-1', status: 'pending' },
+    persistedState = {
+      pipeline_id: 'test-pipeline',
+      started: new Date().toISOString(),
+      last_updated: new Date().toISOString(),
+      current_stage: 'build',
+      batches: [
+        {
+          id: 0,
+          status: 'completed',
+          tasks: [{ id: 'task-0', status: 'completed' }],
+        },
+        {
+          id: 1,
+          status: 'completed',
+          tasks: [{ id: 'task-1', status: 'completed' }],
+        },
       ],
-    })
-    statefulManager = new BatchManager(mockEngine, mockWorktreeManager, stateManager, 0)
+      review_cycles: [],
+    }
+    updateTask = vi.fn().mockResolvedValue(persistedState)
+    updateBatch = vi.fn().mockResolvedValue(persistedState)
+    stateManager = {
+      get: vi.fn().mockResolvedValue(persistedState),
+      updateTask,
+      updateBatch,
+    } as unknown as StateManager
+    statefulManager = new BatchManager(mockEngine, mockWorktreeManager, stateManager)
   })
 
-  afterEach(async () => {
-    await rm(STATE_TEST_DIR, { recursive: true, force: true })
+  afterEach(() => {
+    vi.restoreAllMocks()
   })
 
-  it('persists task status transitions to state.json', async () => {
-    statefulManager.dispatchBatch({
+  it('persists task status transitions using the derived batch index', async () => {
+    const batchId = await statefulManager.dispatchBatch({
       tasks: [
-        { taskId: 'task-1', role: 'builder', subrole: 'default', taskContext: {} },
+        { taskId: 'task-2', role: 'builder', subrole: 'default', taskContext: {} },
       ],
       createWorktrees: false,
     })
 
-    await vi.waitFor(async () => {
-      const state = await stateManager.get()
-      const task = state!.batches[0].tasks.find(t => t.id === 'task-1')
-      expect(task!.status).toBe('completed')
+    await vi.waitFor(() => {
+      expect(updateTask).toHaveBeenCalledTimes(2)
     }, { timeout: 3000 })
 
-    const state = await stateManager.get()
-    expect(state!.batches[0].tasks[0].result_summary).toBeTruthy()
-    expect(state!.batches[0].tasks[0].result_status).toBe('success')
+    expect((statefulManager as any).batches.get(batchId).batchIndex).toBe(2)
+    expect(updateTask.mock.calls.map(([batchIndex]) => batchIndex)).toEqual([2, 2])
+    expect(updateTask.mock.calls.map(([, taskId]) => taskId)).toEqual(['task-2', 'task-2'])
+    expect(updateTask.mock.calls.map(([, , updates]) => updates.status)).toEqual(['running', 'completed'])
+    expect(updateTask.mock.calls[1][2]).toEqual({
+      status: 'completed',
+      result_summary: mockResult.output.summary,
+      result_status: mockResult.status,
+    })
+  })
+
+  it('derives batch index from persisted state instead of an instance counter', async () => {
+    const batchId = await statefulManager.dispatchBatch({
+      tasks: [
+        { taskId: 'task-2', role: 'builder', subrole: 'default', taskContext: {} },
+      ],
+      createWorktrees: false,
+    })
+
+    await vi.waitFor(() => {
+      expect(updateBatch).toHaveBeenCalledWith(2, { status: 'completed' })
+    }, { timeout: 3000 })
+
+    expect((stateManager.get as any)).toHaveBeenCalledTimes(1)
+    expect((statefulManager as any).batches.get(batchId).batchIndex).toBe(2)
+    expect(updateTask.mock.calls.every(([batchIndex]) => batchIndex === 2)).toBe(true)
+    expect(updateBatch.mock.calls.every(([batchIndex]) => batchIndex === 2)).toBe(true)
   })
 
   it('persists batch completion status', async () => {
-    statefulManager.dispatchBatch({
+    await statefulManager.dispatchBatch({
+      tasks: [
+        { taskId: 'task-2', role: 'builder', subrole: 'default', taskContext: {} },
+      ],
+      createWorktrees: false,
+    })
+
+    await vi.waitFor(() => {
+      expect(updateBatch).toHaveBeenCalledWith(2, { status: 'completed' })
+    }, { timeout: 3000 })
+  })
+
+  it('falls back to the in-memory batch count when state manager is unavailable', async () => {
+    const statelessManager = new BatchManager(mockEngine, mockWorktreeManager)
+
+    const firstBatchId = await statelessManager.dispatchBatch({
       tasks: [
         { taskId: 'task-1', role: 'builder', subrole: 'default', taskContext: {} },
       ],
       createWorktrees: false,
     })
+    const secondBatchId = await statelessManager.dispatchBatch({
+      tasks: [
+        { taskId: 'task-2', role: 'builder', subrole: 'default', taskContext: {} },
+      ],
+      createWorktrees: false,
+    })
 
-    await vi.waitFor(async () => {
-      const state = await stateManager.get()
-      expect(state!.batches[0].status).toBe('completed')
-    }, { timeout: 3000 })
+    expect((statelessManager as any).batches.get(firstBatchId).batchIndex).toBe(0)
+    expect((statelessManager as any).batches.get(secondBatchId).batchIndex).toBe(1)
   })
 })

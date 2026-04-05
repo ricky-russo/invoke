@@ -16,11 +16,10 @@ export class BatchManager {
   constructor(
     private engine: DispatchEngine,
     private worktreeManager: WorktreeManager,
-    private stateManager?: StateManager,
-    private batchIndex: number = 0
+    private stateManager?: StateManager
   ) {}
 
-  dispatchBatch(request: BatchRequest): string {
+  async dispatchBatch(request: BatchRequest): Promise<string> {
     const batchId = randomUUID().slice(0, 8)
     const agents: AgentStatus[] = request.tasks.map(task => ({
       taskId: task.taskId,
@@ -28,7 +27,9 @@ export class BatchManager {
     }))
 
     const abortController = new AbortController()
-    const currentBatchIndex = this.batchIndex++
+    const currentBatchIndex = this.stateManager
+      ? await this.getPersistedBatchIndex()
+      : this.batches.size
     const record: BatchRecord = {
       status: { batchId, status: 'running', agents },
       abortController,
@@ -41,6 +42,11 @@ export class BatchManager {
     this.runBatch(batchId, request, abortController.signal, currentBatchIndex)
 
     return batchId
+  }
+
+  private async getPersistedBatchIndex(): Promise<number> {
+    const state = await this.stateManager?.get()
+    return state ? state.batches.length : 0
   }
 
   getStatus(batchId: string): BatchStatus | null {

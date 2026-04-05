@@ -1,4 +1,5 @@
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
+import { existsSync } from 'fs'
 import { mkdir, mkdtemp, readFile, readdir, rm } from 'fs/promises'
 import os from 'os'
 import path from 'path'
@@ -65,11 +66,14 @@ describe('MetricsManager', () => {
     await rm(testDir, { recursive: true, force: true })
   })
 
-  async function waitForMetricsCount(expectedCount: number): Promise<DispatchMetric[]> {
+  async function waitForMetricsCount(
+    expectedCount: number,
+    targetPath = metricsPath
+  ): Promise<DispatchMetric[]> {
     let parsed: DispatchMetric[] = []
 
     await vi.waitFor(async () => {
-      parsed = JSON.parse(await readFile(metricsPath, 'utf-8')) as DispatchMetric[]
+      parsed = JSON.parse(await readFile(targetPath, 'utf-8')) as DispatchMetric[]
       expect(parsed).toHaveLength(expectedCount)
     }, { timeout: 2000 })
 
@@ -88,6 +92,28 @@ describe('MetricsManager', () => {
     expect(writtenMetrics).toEqual([metric])
 
     const reloadedManager = new MetricsManager(testDir)
+    await expect(reloadedManager.getCurrentPipelineMetrics()).resolves.toEqual([metric])
+  })
+
+  it('writes metrics to the provided session directory and uses session-scoped state', async () => {
+    const sessionDir = path.join(testDir, '.invoke', 'sessions', 'session-1')
+    const sessionMetricsPath = path.join(sessionDir, 'metrics.json')
+    const sessionStateManager = new StateManager(testDir, sessionDir)
+    await sessionStateManager.initialize('session-pipeline-456')
+
+    const manager = new MetricsManager(testDir, sessionDir)
+    const metric = createMetric({
+      pipeline_id: 'session-pipeline-456',
+      started_at: '2026-04-04T12:03:00.000Z',
+    })
+
+    manager.record(metric)
+
+    const writtenMetrics = await waitForMetricsCount(1, sessionMetricsPath)
+    expect(writtenMetrics).toEqual([metric])
+    expect(existsSync(metricsPath)).toBe(false)
+
+    const reloadedManager = new MetricsManager(testDir, sessionDir)
     await expect(reloadedManager.getCurrentPipelineMetrics()).resolves.toEqual([metric])
   })
 
@@ -199,6 +225,35 @@ describe('MetricsManager', () => {
 
     const files = await readdir(path.join(testDir, '.invoke'))
     expect(files.filter(file => file.endsWith('.tmp'))).toHaveLength(0)
+  })
+
+  it('only ensures the metrics directory on the first write', async () => {
+    vi.resetModules()
+    const mkdirSpy = vi.fn().mockResolvedValue(undefined)
+
+    try {
+      vi.doMock('fs/promises', async importOriginal => {
+        const actual = await importOriginal<typeof import('fs/promises')>()
+        return {
+          ...actual,
+          mkdir: mkdirSpy,
+        }
+      })
+
+      const { MetricsManager: MockedMetricsManager } = await import('../../src/metrics/manager.js')
+      const manager = new MockedMetricsManager(testDir)
+
+      manager.record(createMetric({ started_at: '2026-04-04T12:10:00.000Z' }))
+      manager.record(createMetric({ stage: 'review', started_at: '2026-04-04T12:11:00.000Z' }))
+
+      await waitForMetricsCount(2)
+
+      expect(mkdirSpy).toHaveBeenCalledTimes(1)
+      expect(mkdirSpy).toHaveBeenCalledWith(path.join(testDir, '.invoke'), { recursive: true })
+    } finally {
+      vi.doUnmock('fs/promises')
+      vi.resetModules()
+    }
   })
 
   it('catches write errors, logs them, and keeps record synchronous', async () => {

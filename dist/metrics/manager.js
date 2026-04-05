@@ -12,11 +12,12 @@ export class MetricsManager {
     loaded = false;
     loadPromise = null;
     writeChain = Promise.resolve();
-    constructor(projectDir) {
+    constructor(projectDir, sessionDir) {
         this.projectDir = projectDir;
-        this.metricsPath = path.join(projectDir, '.invoke', 'metrics.json');
-        this.tmpPath = path.join(projectDir, '.invoke', 'metrics.json.tmp');
-        this.stateManager = new StateManager(projectDir);
+        const metricsDir = sessionDir ?? path.join(projectDir, '.invoke');
+        this.metricsPath = path.join(metricsDir, 'metrics.json');
+        this.tmpPath = path.join(metricsDir, 'metrics.json.tmp');
+        this.stateManager = new StateManager(projectDir, sessionDir);
         this.beforeExitHandler = () => {
             void this.flushPendingWrites();
         };
@@ -129,7 +130,7 @@ export class MetricsManager {
         this.loaded = true;
     }
     async writeAtomic(metrics) {
-        await mkdir(path.join(this.projectDir, '.invoke'), { recursive: true });
+        await mkdir(path.dirname(this.metricsPath), { recursive: true });
         const content = JSON.stringify(metrics, null, 2) + '\n';
         await writeFile(this.tmpPath, content);
         await rename(this.tmpPath, this.metricsPath);

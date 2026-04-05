@@ -9,7 +9,7 @@ export declare class MetricsManager {
     private loaded;
     private loadPromise;
     private writeChain;
-    constructor(projectDir: string);
+    constructor(projectDir: string, sessionDir?: string);
     record(metric: DispatchMetric): void;
     getCurrentPipelineMetrics(opts?: {
         stage?: string;
