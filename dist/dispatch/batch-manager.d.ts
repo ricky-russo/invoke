@@ -26,5 +26,6 @@ export declare class BatchManager {
     private mergeTaskWorktree;
     private runLayer;
     private runBatch;
+    private stripRawOutput;
 }
 //# sourceMappingURL=batch-manager.d.ts.map

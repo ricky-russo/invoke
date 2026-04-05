@@ -115,6 +115,7 @@ export class BatchManager {
         agent.status = 'error'
       }
     }
+    this.stripRawOutput(record.status.agents)
   }
 
   private isTerminalBatchStatus(status: BatchStatus['status']): boolean {
@@ -193,6 +194,9 @@ export class BatchManager {
     if (record.status.status === nextStatus) return
 
     record.status.status = nextStatus
+    if (this.isTerminalBatchStatus(nextStatus)) {
+      this.stripRawOutput(record.status.agents)
+    }
     await this.persistBatchStatus(record.batchIndex, nextStatus)
   }
 
@@ -349,7 +353,7 @@ export class BatchManager {
         if (signal.aborted) return
 
         agentStatus.status = 'completed'
-        agentStatus.result = result
+        agentStatus.result = cloneAgentResult(result)
         await this.persistTaskStatus(batchIndex, task.taskId, 'completed', result)
         if (request.createWorktrees) {
           await this.mergeTaskWorktree(batchIndex, task.taskId)
@@ -369,7 +373,7 @@ export class BatchManager {
           duration: 0,
         }
         agentStatus.status = 'error'
-        agentStatus.result = errorResult
+        agentStatus.result = cloneAgentResult(errorResult)
         await this.persistTaskStatus(batchIndex, task.taskId, 'error', errorResult)
         await this.updateBatchStatus(record)
       }
@@ -396,8 +400,26 @@ export class BatchManager {
     } catch {
       if (record.status.status !== 'cancelled') {
         record.status.status = 'error'
+        this.stripRawOutput(record.status.agents)
         await this.persistBatchStatus(batchIndex, 'error')
       }
     }
+  }
+
+  private stripRawOutput(agents: AgentStatus[]): void {
+    for (const agent of agents) {
+      if (agent.result) {
+        agent.result.output.raw = undefined
+      }
+    }
+  }
+}
+
+function cloneAgentResult(result: AgentResult): AgentResult {
+  return {
+    ...result,
+    output: {
+      ...result.output,
+    },
   }
 }

@@ -203,16 +203,22 @@ export interface SessionStageComparison {
 export interface SessionComparisonEntry {
     session_id: string;
     total_dispatches: number;
+    success_rate: number;
     total_duration_ms: number;
     total_prompt_chars: number;
     total_estimated_cost_usd: number;
     by_stage: Record<string, SessionStageComparison>;
+    by_provider_model: Record<string, SessionStageComparison>;
 }
 export interface SessionComparisonDelta {
     dispatches: number;
+    dispatches_percentage: string;
     duration_ms: number;
+    duration_ms_percentage: string;
     prompt_chars: number;
+    prompt_chars_percentage: string;
     estimated_cost_usd: number;
+    estimated_cost_usd_percentage: string;
 }
 export interface SessionComparison {
     sessions: SessionComparisonEntry[];

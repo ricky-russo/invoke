@@ -84,7 +84,34 @@ describe('BatchManager', () => {
     const finalStatus = manager.getStatus(batchId)
     expect(finalStatus!.status).toBe('completed')
     expect(finalStatus!.agents[0].status).toBe('completed')
-    expect(finalStatus!.agents[0].result).toEqual(mockResult)
+    expect(finalStatus!.agents[0].result).toEqual({
+      ...mockResult,
+      output: {
+        ...mockResult.output,
+        raw: undefined,
+      },
+    })
+    expect(mockResult.output.raw).toBe('Full output')
+  })
+
+  it('strips raw output after an errored batch reaches terminal status', async () => {
+    vi.mocked(mockEngine.dispatch).mockRejectedValueOnce(new Error('boom'))
+
+    const batchId = await manager.dispatchBatch({
+      tasks: [
+        { taskId: 'task-1', role: 'builder', subrole: 'default', taskContext: {} },
+      ],
+      createWorktrees: false,
+    })
+
+    await vi.waitFor(() => {
+      expect(manager.getStatus(batchId)!.status).toBe('error')
+    }, { timeout: 2000 })
+
+    const finalStatus = manager.getStatus(batchId)
+    expect(finalStatus!.agents[0].status).toBe('error')
+    expect(finalStatus!.agents[0].result?.output.summary).toBe('boom')
+    expect(finalStatus!.agents[0].result?.output.raw).toBeUndefined()
   })
 
   it('creates worktrees when requested', async () => {

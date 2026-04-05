@@ -39301,6 +39301,7 @@ var BatchManager = class {
         agent.status = "error";
       }
     }
+    this.stripRawOutput(record2.status.agents);
   }
   isTerminalBatchStatus(status) {
     return status === "completed" || status === "error" || status === "cancelled";
@@ -39356,6 +39357,9 @@ var BatchManager = class {
     const nextStatus = this.computeBatchStatus(record2.status.agents);
     if (record2.status.status === nextStatus) return;
     record2.status.status = nextStatus;
+    if (this.isTerminalBatchStatus(nextStatus)) {
+      this.stripRawOutput(record2.status.agents);
+    }
     await this.persistBatchStatus(record2.batchIndex, nextStatus);
   }
   async persistTaskStatus(batchIndex, taskId, status, result) {
@@ -39463,7 +39467,7 @@ var BatchManager = class {
         });
         if (signal.aborted) return;
         agentStatus.status = "completed";
-        agentStatus.result = result;
+        agentStatus.result = cloneAgentResult(result);
         await this.persistTaskStatus(batchIndex, task.taskId, "completed", result);
         if (request.createWorktrees) {
           await this.mergeTaskWorktree(batchIndex, task.taskId);
@@ -39483,7 +39487,7 @@ var BatchManager = class {
           duration: 0
         };
         agentStatus.status = "error";
-        agentStatus.result = errorResult;
+        agentStatus.result = cloneAgentResult(errorResult);
         await this.persistTaskStatus(batchIndex, task.taskId, "error", errorResult);
         await this.updateBatchStatus(record2);
       }
@@ -39505,11 +39509,27 @@ var BatchManager = class {
     } catch {
       if (record2.status.status !== "cancelled") {
         record2.status.status = "error";
+        this.stripRawOutput(record2.status.agents);
         await this.persistBatchStatus(batchIndex, "error");
       }
     }
   }
+  stripRawOutput(agents) {
+    for (const agent of agents) {
+      if (agent.result) {
+        agent.result.output.raw = void 0;
+      }
+    }
+  }
 };
+function cloneAgentResult(result) {
+  return {
+    ...result,
+    output: {
+      ...result.output
+    }
+  };
+}
 
 // src/worktree/manager.ts
 import { execSync as execSync2 } from "child_process";

@@ -79,6 +79,7 @@ export class BatchManager {
                 agent.status = 'error';
             }
         }
+        this.stripRawOutput(record.status.agents);
     }
     isTerminalBatchStatus(status) {
         return status === 'completed' || status === 'error' || status === 'cancelled';
@@ -143,6 +144,9 @@ export class BatchManager {
         if (record.status.status === nextStatus)
             return;
         record.status.status = nextStatus;
+        if (this.isTerminalBatchStatus(nextStatus)) {
+            this.stripRawOutput(record.status.agents);
+        }
         await this.persistBatchStatus(record.batchIndex, nextStatus);
     }
     async persistTaskStatus(batchIndex, taskId, status, result) {
@@ -260,7 +264,7 @@ export class BatchManager {
                 if (signal.aborted)
                     return;
                 agentStatus.status = 'completed';
-                agentStatus.result = result;
+                agentStatus.result = cloneAgentResult(result);
                 await this.persistTaskStatus(batchIndex, task.taskId, 'completed', result);
                 if (request.createWorktrees) {
                     await this.mergeTaskWorktree(batchIndex, task.taskId);
@@ -281,7 +285,7 @@ export class BatchManager {
                     duration: 0,
                 };
                 agentStatus.status = 'error';
-                agentStatus.result = errorResult;
+                agentStatus.result = cloneAgentResult(errorResult);
                 await this.persistTaskStatus(batchIndex, task.taskId, 'error', errorResult);
                 await this.updateBatchStatus(record);
             }
@@ -308,9 +312,25 @@ export class BatchManager {
         catch {
             if (record.status.status !== 'cancelled') {
                 record.status.status = 'error';
+                this.stripRawOutput(record.status.agents);
                 await this.persistBatchStatus(batchIndex, 'error');
             }
         }
     }
+    stripRawOutput(agents) {
+        for (const agent of agents) {
+            if (agent.result) {
+                agent.result.output.raw = undefined;
+            }
+        }
+    }
+}
+function cloneAgentResult(result) {
+    return {
+        ...result,
+        output: {
+            ...result.output,
+        },
+    };
 }
 //# sourceMappingURL=batch-manager.js.map

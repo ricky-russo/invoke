@@ -34,9 +34,12 @@ describe('compareSessions', () => {
             }),
             createMetric({
               stage: 'review',
+              provider: 'codex',
+              model: 'gpt-5',
               prompt_size_chars: 80,
               duration_ms: 450,
               estimated_cost_usd: 0.1,
+              status: 'error',
             }),
           ],
         ],
@@ -48,6 +51,7 @@ describe('compareSessions', () => {
         {
           session_id: 'session-a',
           total_dispatches: 2,
+          success_rate: 0.5,
           total_duration_ms: 750,
           total_prompt_chars: 200,
           total_estimated_cost_usd: 0.15,
@@ -59,6 +63,20 @@ describe('compareSessions', () => {
               estimated_cost_usd: 0.05,
             },
             review: {
+              dispatches: 1,
+              duration_ms: 450,
+              prompt_chars: 80,
+              estimated_cost_usd: 0.1,
+            },
+          },
+          by_provider_model: {
+            'claude:opus-4.6': {
+              dispatches: 1,
+              duration_ms: 300,
+              prompt_chars: 120,
+              estimated_cost_usd: 0.05,
+            },
+            'codex:gpt-5': {
               dispatches: 1,
               duration_ms: 450,
               prompt_chars: 80,
@@ -96,8 +114,11 @@ describe('compareSessions', () => {
             }),
             createMetric({
               stage: 'review',
+              provider: 'codex',
+              model: 'gpt-5',
               prompt_size_chars: 60,
               duration_ms: 150,
+              status: 'error',
             }),
           ],
         ],
@@ -108,6 +129,7 @@ describe('compareSessions', () => {
       {
         session_id: 'session-a',
         total_dispatches: 1,
+        success_rate: 1,
         total_duration_ms: 200,
         total_prompt_chars: 100,
         total_estimated_cost_usd: 0.05,
@@ -119,10 +141,19 @@ describe('compareSessions', () => {
             estimated_cost_usd: 0.05,
           },
         },
+        by_provider_model: {
+          'claude:opus-4.6': {
+            dispatches: 1,
+            duration_ms: 200,
+            prompt_chars: 100,
+            estimated_cost_usd: 0.05,
+          },
+        },
       },
       {
         session_id: 'session-b',
         total_dispatches: 2,
+        success_rate: 0.5,
         total_duration_ms: 500,
         total_prompt_chars: 210,
         total_estimated_cost_usd: 0.08,
@@ -140,13 +171,31 @@ describe('compareSessions', () => {
             estimated_cost_usd: 0,
           },
         },
+        by_provider_model: {
+          'claude:opus-4.6': {
+            dispatches: 1,
+            duration_ms: 350,
+            prompt_chars: 150,
+            estimated_cost_usd: 0.08,
+          },
+          'codex:gpt-5': {
+            dispatches: 1,
+            duration_ms: 150,
+            prompt_chars: 60,
+            estimated_cost_usd: 0,
+          },
+        },
       },
     ])
     expect(comparison.delta).toEqual({
       dispatches: 1,
+      dispatches_percentage: '100.0%',
       duration_ms: 300,
+      duration_ms_percentage: '150.0%',
       prompt_chars: 110,
+      prompt_chars_percentage: '110.0%',
       estimated_cost_usd: 0.03,
+      estimated_cost_usd_percentage: '60.0%',
     })
   })
 
@@ -171,10 +220,12 @@ describe('compareSessions', () => {
         {
           session_id: 'session-empty',
           total_dispatches: 0,
+          success_rate: 0,
           total_duration_ms: 0,
           total_prompt_chars: 0,
           total_estimated_cost_usd: 0,
           by_stage: {},
+          by_provider_model: {},
         },
       ],
       delta: null,
