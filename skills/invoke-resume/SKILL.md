@@ -44,7 +44,8 @@ Present the pipeline status clearly, including the last activity timestamp:
 For each batch, show task-level progress:
 
 > **Batch [N]:** [status] — [completed]/[total] tasks
->   • [task-id]: ✅ completed
+>   • [task-id]: ✅ merged
+>   • [task-id]: ✅ completed awaiting merge
 >   • [task-id]: ❌ error — [result_summary]
 >   • [task-id]: ⏳ pending
 
@@ -75,7 +76,7 @@ If "Inspect": check each worktree for uncommitted changes and committed changes 
   - `scope` — invoke-scope picks up at clarifying questions (research may already be done)
   - `plan` — invoke-plan picks up at planner dispatch or plan selection
   - `orchestrate` — invoke-orchestrate picks up at task breakdown
-  - `build` — invoke-build resumes at the **next incomplete batch**. Within a batch, only re-dispatch tasks that are NOT `completed`. Present: "Batch [N]: [M] of [T] tasks already completed. Resuming [T-M] remaining tasks."
+  - `build` — invoke-build resumes at the **next batch with unmerged work or unresolved failures**. Within a batch, never re-dispatch tasks already marked `merged: true`, and never re-dispatch tasks already `completed` but awaiting merge. Only re-dispatch tasks that are both unmerged and incomplete. Present: "Batch [N]: [M] merged, [R] completed awaiting merge, resuming [U] remaining tasks."
   - `review` — invoke-review resumes at reviewer selection
 
 **Redo:**

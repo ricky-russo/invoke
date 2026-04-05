@@ -40858,14 +40858,16 @@ function registerStateTools(server, stateManager, projectDir, sessionManager) {
         strategy: external_exports3.string().optional(),
         batches: external_exports3.array(external_exports3.object({
           id: external_exports3.number(),
-          status: external_exports3.enum(["pending", "in_progress", "completed", "error"]),
+          status: external_exports3.enum(["pending", "in_progress", "partial", "completed", "error"]),
+          merged_tasks: external_exports3.array(external_exports3.string()).optional(),
           tasks: external_exports3.array(external_exports3.object({
             id: external_exports3.string(),
             status: external_exports3.enum(["pending", "dispatched", "running", "completed", "error", "timeout"]),
             worktree_path: external_exports3.string().optional(),
             worktree_branch: external_exports3.string().optional(),
             result_summary: external_exports3.string().optional(),
-            result_status: external_exports3.enum(["success", "error", "timeout"]).optional()
+            result_status: external_exports3.enum(["success", "error", "timeout"]).optional(),
+            merged: external_exports3.boolean().optional()
           }))
         })).optional(),
         review_cycles: external_exports3.array(external_exports3.object({
