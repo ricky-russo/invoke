@@ -278,7 +278,7 @@ export const BugSeveritySchema = z.enum(['critical', 'high', 'medium', 'low'])
 export type BugSeverity = z.infer<typeof BugSeveritySchema>
 
 export const BugEntrySchema = z.object({
-  id: z.string(),
+  id: z.string().regex(/^BUG-\d+$/, 'id must match BUG-NNN format'),
   title: z.string(),
   description: z.string(),
   status: BugStatusSchema,
@@ -287,8 +287,8 @@ export const BugEntrySchema = z.object({
   line: z.number().nullable().optional(),
   labels: z.array(z.string()),
   session_id: z.string().nullable().optional(),
-  created: z.string(),
-  updated: z.string(),
+  created: z.string().datetime({ message: 'created must be ISO 8601 datetime' }),
+  updated: z.string().datetime({ message: 'updated must be ISO 8601 datetime' }),
   resolution: z.string().nullable().optional(),
   resolved_by_session: z.string().nullable().optional(),
 })
