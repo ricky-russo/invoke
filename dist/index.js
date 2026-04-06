@@ -42544,6 +42544,7 @@ var TaskSchema2 = external_exports3.object({
   worktree_path: external_exports3.string().optional(),
   worktree_branch: external_exports3.string().optional(),
   conflict_attempts: external_exports3.number().optional(),
+  conflicting_files: external_exports3.array(external_exports3.string()).optional(),
   result_summary: external_exports3.string().optional(),
   result_status: external_exports3.enum(["success", "error", "timeout"]).optional(),
   merged: external_exports3.boolean().optional()

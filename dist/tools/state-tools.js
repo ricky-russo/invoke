@@ -9,6 +9,7 @@ const TaskSchema = z.object({
     worktree_path: z.string().optional(),
     worktree_branch: z.string().optional(),
     conflict_attempts: z.number().optional(),
+    conflicting_files: z.array(z.string()).optional(),
     result_summary: z.string().optional(),
     result_status: z.enum(['success', 'error', 'timeout']).optional(),
     merged: z.boolean().optional(),

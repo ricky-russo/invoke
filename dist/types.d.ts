@@ -178,6 +178,7 @@ export interface TaskState {
     worktree_path?: string;
     worktree_branch?: string;
     conflict_attempts?: number;
+    conflicting_files?: string[];
     result_summary?: string;
     result_status?: 'success' | 'error' | 'timeout';
     depends_on?: string[];

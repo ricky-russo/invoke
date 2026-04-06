@@ -260,6 +260,51 @@ describe('registerStateTools', () => {
     expect(setStateTool.config.inputSchema.safeParse(input).success).toBe(true)
   })
 
+  it('accepts and persists conflicting_files on a task in invoke_set_state batch_update', async () => {
+    const setStateTool = getTool('invoke_set_state')
+    const input = {
+      session_id: 'session-1',
+      pipeline_id: 'pipeline-123',
+      batch_update: {
+        id: 1,
+        status: 'in_progress' as const,
+        tasks: [
+          {
+            id: 'task-1',
+            status: 'conflict' as const,
+            conflict_attempts: 1,
+            conflicting_files: ['src/foo.ts', 'src/bar.ts'],
+          },
+        ],
+      },
+    }
+
+    expect(setStateTool.config.inputSchema.safeParse(input).success).toBe(true)
+
+    const result = await setStateTool.handler(input)
+    expect(result.isError).toBeUndefined()
+
+    const sessionStateManager = new StateManager(
+      TEST_DIR,
+      sessionManager.resolve('session-1')
+    )
+    const state = await sessionStateManager.get()
+    expect(state?.batches).toEqual([
+      {
+        id: 1,
+        status: 'in_progress',
+        tasks: [
+          {
+            id: 'task-1',
+            status: 'conflict',
+            conflict_attempts: 1,
+            conflicting_files: ['src/foo.ts', 'src/bar.ts'],
+          },
+        ],
+      },
+    ])
+  })
+
   it('updates an existing batch in place without affecting other batches', async () => {
     const sessionStateManager = new StateManager(
       TEST_DIR,

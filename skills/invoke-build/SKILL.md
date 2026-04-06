@@ -150,7 +150,7 @@ Immediately after each successful merge, call `invoke_run_post_merge` with `{ se
 
 Never merge two tasks back-to-back without running `invoke_run_post_merge` and waiting for validation between them. This catches conflicts early.
 
-#### f.1 Conflict Response and Redispatch (R4)
+#### f.1 Conflict Response and Redispatch (R4 + C5 budget)
 
 The `invoke_merge_worktree` tool returns one of two shapes:
 - Success: `{ task_id, status: 'merged' }`
@@ -158,11 +158,15 @@ The `invoke_merge_worktree` tool returns one of two shapes:
 
 If the response is `status: 'conflict'`, do NOT prompt the user for manual resolution. Instead:
 
-1. Read the task's current `conflict_attempts` from state (default 0 if absent). Use `invoke_get_state` with `session_id: <pipeline_id>` and locate the task in `state.batches[i].tasks[j]` by task_id.
+1. Read state via `invoke_get_state` with `session_id: <pipeline_id>`. Locate the batch and task in `state.batches[i].tasks[j]` by task_id. Read the existing `tasks` array — you will need it intact for `batch_update`.
 
-2. If `conflict_attempts < 1`:
-   - Before calling `invoke_set_state` with `batch_update`, read the current state via `invoke_get_state` and locate the batch. Copy the existing `batch.tasks` array, find the conflicted task by id, update its `status` and `conflict_attempts` in place, then pass the FULL updated tasks array as `batch_update.tasks`. Do NOT send a partial array — `invoke_set_state` shallow-replaces the tasks array, so a partial array would drop sibling task state.
-   - Update state via `invoke_set_state` with `session_id: <pipeline_id>` and `batch_update: { id: <batch-id>, status: 'in_progress', tasks: <full updated tasks array with the conflicted task mutated to status: 'conflict', conflict_attempts: <prev + 1>> }`.
+2. Compute the task's NEW `conflict_attempts` = (existing `conflict_attempts` ?? 0) + 1.
+
+3. Compute the C5 BUDGET: read `max_review_cycles` from the `invoke_get_review_cycle_count` response (or fall back to 3 if unavailable). The conflict redispatch budget per task is `max(2, max_review_cycles)` — a task may be auto-redispatched up to that many times before manual escalation.
+
+4. Update state via `invoke_set_state` with `session_id: <pipeline_id>` and `batch_update`. Build the updated `tasks` array by COPYING the existing `batch.tasks` array, finding the conflicted task by id, updating its `status` to `'conflict'`, setting `conflict_attempts` to the new value, AND setting `conflicting_files` to the array from the merge response. Pass the FULL updated tasks array as `batch_update.tasks`. Do NOT send a partial array — `invoke_set_state` shallow-replaces the tasks array, so a partial array would drop sibling task state.
+
+5. If the new `conflict_attempts <= BUDGET` (auto-redispatch is still allowed):
    - Before redispatching, READ the current contents of each conflicting file from the integration worktree using the Read tool with paths like `<merge_target_path>/<file>`. Include each file's content in the redispatched `task_context` under a key like `current_<filename>` so the rebuilt task can apply changes on top of the current state. R4 explicitly requires this — the redispatched builder must see what's already there.
    - Re-dispatch the same builder for the task by calling `invoke_dispatch_batch` with a single task whose `task_context` extends the original with conflict information:
      - `conflicting_files`: the list from the conflict response
@@ -171,18 +175,17 @@ If the response is `status: 'conflict'`, do NOT prompt the user for manual resol
      - `original_task_context`: the original task description
      - `conflict_instructions`: 'Resume your work, but be aware that the following files conflict with the integration target. The current file contents are provided in `current_<filename>` fields — re-implement your changes on top of those contents so your output applies cleanly.'
    - Resume polling for that single-task batch as in step d (use `invoke_get_batch_status` + `invoke_get_task_result` with `session_id`).
-   - When the redispatched builder completes, attempt `invoke_merge_worktree` again. If it succeeds, mark the task `merged: true` and continue.
+   - When the redispatched builder completes, attempt `invoke_merge_worktree` again. If it succeeds, mark the task `merged: true` and continue. If it conflicts again, recurse to step 1 — this loop is bounded by the BUDGET.
 
-3. If `conflict_attempts >= 1` (the redispatch already tried once and conflicted again):
+6. If the new `conflict_attempts > BUDGET` (auto-redispatch budget exhausted per C5):
    - Use `AskUserQuestion` to escalate:
      ```
      AskUserQuestion({
        questions: [{
-         question: 'Task [task_id] has conflicted twice. What should I do?',
+         question: 'Task [task_id] has exhausted the auto-redispatch budget ([N] attempts). What should I do?',
          header: 'Conflict',
          multiSelect: false,
          options: [
-           { label: 'Retry', description: 'Run another auto-redispatch round with fresh conflict context' },
            { label: 'Skip', description: 'Skip this task for the current batch and continue with other tasks' },
            { label: 'Abort', description: 'Stop the entire batch' }
          ]
@@ -190,11 +193,11 @@ If the response is `status: 'conflict'`, do NOT prompt the user for manual resol
      })
      ```
    - Honor the user's choice:
-     - **Retry**: reset the redispatch budget for one more attempt and run the same auto-redispatch flow as item 2 (read current batch tasks via `invoke_get_state`, send the full updated tasks array via `batch_update`, read current contents of conflicting files from `merge_target_path`, redispatch with the conflict context, poll, and re-attempt `invoke_merge_worktree`). If that redispatch merges, mark the task `merged: true` and continue. If it conflicts again, present this same Retry/Skip/Abort prompt — the user can keep retrying or eventually choose Skip or Abort.
      - **Skip**: mark the task with status `error` and a `result_summary` explaining the conflict; do NOT mark it merged. Continue with other tasks in the batch.
      - **Abort**: stop the entire batch.
+   - Do NOT offer a Retry option — C5 forbids unbounded redispatch.
 
-**The conflict redispatch counts as a normal builder dispatch and is automatically tracked by metrics.** No special wiring needed for C5.
+**The conflict redispatch counts as a normal builder dispatch and is automatically tracked by metrics.** The budget in step 3 enforces C5 by capping how many times a single task can re-enter this loop.
 
 #### g. Update State
 
@@ -255,7 +258,7 @@ After the final build batch completes:
 
 - **Agent timeout**: Present error, offer retry/skip/abort
 - **Agent error**: Present raw output, offer retry/skip/abort
-- **Merge conflict**: Follow the R4 redispatch loop in step f.1 — auto-redispatch once with conflict context, then escalate via `AskUserQuestion` (Retry / Skip / Abort) on a second conflict. Retry resets the redispatch budget for another auto-redispatch round.
+- **Merge conflict**: handled automatically by the R4+C5 redispatch loop in step f.1. If the budget is exhausted, the user is prompted with Skip / Abort (no Retry).
 - **Validation failure**: Present test/lint output, help fix before merging the next task or starting the next batch
 - **User abort**: Clean up worktrees via `invoke_cleanup_worktrees`, ask if they want to keep or discard the work branch
 
