@@ -53,7 +53,46 @@ For each batch, show task-level progress:
 >   • [task-id]: ❌ error — [result_summary]
 >   • [task-id]: ⏳ pending
 
-### 4. Check for Orphaned Worktrees
+### 4. Reattach Session Integration Worktree (R7)
+
+The pipeline may have an integration worktree recorded in `state.work_branch` / `state.work_branch_path`. This step ensures it is valid before proceeding.
+
+**Skip this step entirely** if `state.work_branch` is unset — this is a legacy session with no integration worktree.
+
+If `state.work_branch` is set (with or without `state.work_branch_path`), call:
+
+```
+invoke_session_reattach_worktree({
+  session_id: <pipeline_id>,
+  work_branch: state.work_branch,
+  recorded_path: state.work_branch_path,   // omit if unset
+})
+```
+
+Handle the response by `status`:
+
+- **`reattached`**: Print `Session integration worktree reattached at <work_branch_path>`. The tool has already updated `state.work_branch_path` if the path changed — no further action needed. Continue to step 5.
+
+- **`unrecoverable`**: The worktree directory is gone and the work branch no longer exists. Present:
+
+  ```
+  AskUserQuestion({
+    questions: [{
+      question: 'Session [session_id] has lost its integration worktree and the work branch is also gone. The pipeline cannot be resumed in its current shape.',
+      header: 'Resume failed',
+      multiSelect: false,
+      options: [
+        { label: 'Abort', description: 'Clean up the session and start a fresh pipeline' },
+        { label: 'Force-init new worktree', description: 'Create a fresh integration worktree at the same work_branch (advanced — may lose context)' }
+      ]
+    }]
+  })
+  ```
+
+  - **Abort**: Call `invoke_cleanup_sessions({ session_id: "<pipeline_id>" })`, then inform the user: "Session cleaned up. Use invoke-scope to start a new pipeline."
+  - **Force-init new worktree**: No MCP tool currently exists for this operation. Inform the user: "Automatic re-creation is not yet supported. To recover manually, run `git branch <work_branch> <base_branch>` and then re-run resume. Alternatively, choose Abort to start fresh."
+
+### 5. Check for Orphaned Worktrees
 
 To discover orphaned worktrees, read the pipeline state from `invoke_get_state`. For each batch, check each task's `worktree_path` field. If a `worktree_path` is set and the task is not marked `merged: true`, verify the worktree still exists on disk by running `git worktree list` via Bash and checking if the path appears. Worktrees that exist on disk but have tasks not marked completed are candidates for orphan inspection.
 
@@ -76,7 +115,7 @@ AskUserQuestion({
 
 If "Inspect": check each worktree for uncommitted changes and committed changes via `git -C <worktree_path> status` and `git -C <worktree_path> log --oneline -5`, then present options per worktree.
 
-### 5. Offer Options
+### 6. Offer Options
 
 ```
 AskUserQuestion({
@@ -93,7 +132,7 @@ AskUserQuestion({
 })
 ```
 
-### 6. Handle Choice
+### 7. Handle Choice
 
 **Continue:**
 - Load the appropriate stage skill based on `current_stage` by calling `Skill()`:
