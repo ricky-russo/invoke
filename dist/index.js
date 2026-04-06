@@ -39609,28 +39609,58 @@ import { execSync } from "child_process";
 import { existsSync } from "fs";
 import path4 from "path";
 import os from "os";
-var WorktreeManager = class {
+var CONFLICT_STATUS_PREFIXES = ["UU", "AA", "DD", "AU", "UA", "DU", "UD"];
+var WorktreeManager = class _WorktreeManager {
   constructor(repoDir) {
     this.repoDir = repoDir;
   }
   repoDir;
+  static repoMutex = /* @__PURE__ */ new Map();
+  static mergeTargetMutex = /* @__PURE__ */ new Map();
   worktrees = /* @__PURE__ */ new Map();
+  static async withRepoLock(repoDir, fn) {
+    return _WorktreeManager.runExclusive(_WorktreeManager.repoMutex, repoDir, fn);
+  }
+  static async withMergeTargetLock(targetPath, fn) {
+    return _WorktreeManager.runExclusive(_WorktreeManager.mergeTargetMutex, targetPath, fn);
+  }
+  static async runExclusive(mutex, key, fn) {
+    const prev = mutex.get(key) ?? Promise.resolve();
+    let release;
+    const next = new Promise((resolve) => {
+      release = resolve;
+    });
+    mutex.set(key, next);
+    try {
+      await prev;
+      return await fn();
+    } finally {
+      release();
+      if (mutex.get(key) === next) {
+        mutex.delete(key);
+      }
+    }
+  }
   async create(taskId) {
     const branch = `invoke-wt-${taskId}`;
     const worktreePath = path4.join(os.tmpdir(), `invoke-worktree-${taskId}-${Date.now()}`);
-    execSync(
-      `git worktree add "${worktreePath}" -b "${branch}"`,
-      { cwd: this.repoDir, stdio: "pipe" }
-    );
+    await _WorktreeManager.withRepoLock(this.repoDir, async () => {
+      execSync(
+        `git worktree add "${worktreePath}" -b "${branch}"`,
+        { cwd: this.repoDir, stdio: "pipe" }
+      );
+    });
     const info = { taskId, worktreePath, branch };
     this.worktrees.set(taskId, info);
     return info;
   }
-  async merge(taskId, commitMessage) {
+  async merge(taskId, options) {
     const info = this.worktrees.get(taskId);
     if (!info) {
       throw new Error(`No worktree found for task: ${taskId}`);
     }
+    const mergeTargetPath = options?.mergeTargetPath ?? this.repoDir;
+    const message = options?.commitMessage ?? `feat: ${taskId}`;
     try {
       execSync("git add -A", { cwd: info.worktreePath, stdio: "pipe" });
       execSync(
@@ -39646,24 +39676,46 @@ var WorktreeManager = class {
       } catch {
       }
     }
-    execSync(
-      `git merge --squash "${info.branch}"`,
-      { cwd: this.repoDir, stdio: "pipe" }
-    );
-    const message = commitMessage ?? `feat: ${taskId}`;
-    execSync(
-      `git commit -m "${message.replace(/"/g, '\\"')}"`,
-      { cwd: this.repoDir, stdio: "pipe" }
-    );
+    return _WorktreeManager.withMergeTargetLock(mergeTargetPath, async () => {
+      try {
+        execSync(
+          `git merge --squash "${info.branch}"`,
+          { cwd: mergeTargetPath, stdio: "pipe" }
+        );
+      } catch {
+        const conflictingFiles = this.collectConflictingFiles(mergeTargetPath);
+        execSync("git reset --hard HEAD", { cwd: mergeTargetPath, stdio: "pipe" });
+        execSync("git clean -fd", { cwd: mergeTargetPath, stdio: "pipe" });
+        return { status: "conflict", conflictingFiles, mergeTargetPath };
+      }
+      execSync(
+        `git commit -m "${message.replace(/"/g, '\\"')}"`,
+        { cwd: mergeTargetPath, stdio: "pipe" }
+      );
+      return { status: "merged" };
+    });
+  }
+  collectConflictingFiles(targetPath) {
+    try {
+      const status = execSync("git status --porcelain", {
+        cwd: targetPath,
+        stdio: "pipe"
+      }).toString();
+      return status.split("\n").filter((line) => CONFLICT_STATUS_PREFIXES.some((p) => line.startsWith(p))).map((line) => line.slice(3));
+    } catch {
+      return [];
+    }
   }
   async cleanup(taskId) {
     const info = this.worktrees.get(taskId);
     if (!info) return;
     if (existsSync(info.worktreePath)) {
-      execSync(
-        `git worktree remove "${info.worktreePath}" --force`,
-        { cwd: this.repoDir, stdio: "pipe" }
-      );
+      await _WorktreeManager.withRepoLock(this.repoDir, async () => {
+        execSync(
+          `git worktree remove "${info.worktreePath}" --force`,
+          { cwd: this.repoDir, stdio: "pipe" }
+        );
+      });
     }
     try {
       execSync(
@@ -40712,7 +40764,13 @@ function registerWorktreeTools(server, worktreeManager, config2, projectDir) {
     },
     async ({ task_id, commit_message }) => {
       try {
-        await worktreeManager.merge(task_id, commit_message);
+        const result = await worktreeManager.merge(task_id, { commitMessage: commit_message });
+        if (result.status === "conflict") {
+          return {
+            content: [{ type: "text", text: JSON.stringify({ task_id, ...result }) }],
+            isError: true
+          };
+        }
         await worktreeManager.cleanup(task_id);
         return {
           content: [{ type: "text", text: JSON.stringify({ task_id, status: "merged" }) }]

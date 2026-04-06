@@ -9,30 +9,77 @@ interface WorktreeInfo {
   branch: string
 }
 
+export type MergeResult =
+  | { status: 'merged' }
+  | { status: 'conflict'; conflictingFiles: string[]; mergeTargetPath: string }
+
+const CONFLICT_STATUS_PREFIXES = ['UU', 'AA', 'DD', 'AU', 'UA', 'DU', 'UD']
+
 export class WorktreeManager {
+  private static repoMutex = new Map<string, Promise<void>>()
+  private static mergeTargetMutex = new Map<string, Promise<void>>()
+
   private worktrees = new Map<string, WorktreeInfo>()
 
   constructor(private repoDir: string) {}
+
+  static async withRepoLock<T>(repoDir: string, fn: () => Promise<T>): Promise<T> {
+    return WorktreeManager.runExclusive(WorktreeManager.repoMutex, repoDir, fn)
+  }
+
+  static async withMergeTargetLock<T>(targetPath: string, fn: () => Promise<T>): Promise<T> {
+    return WorktreeManager.runExclusive(WorktreeManager.mergeTargetMutex, targetPath, fn)
+  }
+
+  private static async runExclusive<T>(
+    mutex: Map<string, Promise<void>>,
+    key: string,
+    fn: () => Promise<T>
+  ): Promise<T> {
+    const prev = mutex.get(key) ?? Promise.resolve()
+    let release!: () => void
+    const next = new Promise<void>(resolve => {
+      release = resolve
+    })
+    mutex.set(key, next)
+    try {
+      await prev
+      return await fn()
+    } finally {
+      release()
+      if (mutex.get(key) === next) {
+        mutex.delete(key)
+      }
+    }
+  }
 
   async create(taskId: string): Promise<WorktreeInfo> {
     const branch = `invoke-wt-${taskId}`
     const worktreePath = path.join(os.tmpdir(), `invoke-worktree-${taskId}-${Date.now()}`)
 
-    execSync(
-      `git worktree add "${worktreePath}" -b "${branch}"`,
-      { cwd: this.repoDir, stdio: 'pipe' }
-    )
+    await WorktreeManager.withRepoLock(this.repoDir, async () => {
+      execSync(
+        `git worktree add "${worktreePath}" -b "${branch}"`,
+        { cwd: this.repoDir, stdio: 'pipe' }
+      )
+    })
 
     const info: WorktreeInfo = { taskId, worktreePath, branch }
     this.worktrees.set(taskId, info)
     return info
   }
 
-  async merge(taskId: string, commitMessage?: string): Promise<void> {
+  async merge(
+    taskId: string,
+    options?: { commitMessage?: string; mergeTargetPath?: string }
+  ): Promise<MergeResult> {
     const info = this.worktrees.get(taskId)
     if (!info) {
       throw new Error(`No worktree found for task: ${taskId}`)
     }
+
+    const mergeTargetPath = options?.mergeTargetPath ?? this.repoDir
+    const message = options?.commitMessage ?? `feat: ${taskId}`
 
     // Auto-commit any uncommitted changes in the worktree
     // (agents in sandboxed environments may not be able to commit)
@@ -55,16 +102,42 @@ export class WorktreeManager {
       }
     }
 
-    execSync(
-      `git merge --squash "${info.branch}"`,
-      { cwd: this.repoDir, stdio: 'pipe' }
-    )
+    return WorktreeManager.withMergeTargetLock(mergeTargetPath, async () => {
+      try {
+        execSync(
+          `git merge --squash "${info.branch}"`,
+          { cwd: mergeTargetPath, stdio: 'pipe' }
+        )
+      } catch {
+        const conflictingFiles = this.collectConflictingFiles(mergeTargetPath)
+        // Squash merges do NOT set MERGE_HEAD, so `git merge --abort` is unavailable.
+        // Reset the working tree and clean untracked files instead.
+        execSync('git reset --hard HEAD', { cwd: mergeTargetPath, stdio: 'pipe' })
+        execSync('git clean -fd', { cwd: mergeTargetPath, stdio: 'pipe' })
+        return { status: 'conflict', conflictingFiles, mergeTargetPath }
+      }
 
-    const message = commitMessage ?? `feat: ${taskId}`
-    execSync(
-      `git commit -m "${message.replace(/"/g, '\\"')}"`,
-      { cwd: this.repoDir, stdio: 'pipe' }
-    )
+      execSync(
+        `git commit -m "${message.replace(/"/g, '\\"')}"`,
+        { cwd: mergeTargetPath, stdio: 'pipe' }
+      )
+      return { status: 'merged' }
+    })
+  }
+
+  private collectConflictingFiles(targetPath: string): string[] {
+    try {
+      const status = execSync('git status --porcelain', {
+        cwd: targetPath,
+        stdio: 'pipe',
+      }).toString()
+      return status
+        .split('\n')
+        .filter(line => CONFLICT_STATUS_PREFIXES.some(p => line.startsWith(p)))
+        .map(line => line.slice(3))
+    } catch {
+      return []
+    }
   }
 
   async cleanup(taskId: string): Promise<void> {
@@ -72,10 +145,12 @@ export class WorktreeManager {
     if (!info) return
 
     if (existsSync(info.worktreePath)) {
-      execSync(
-        `git worktree remove "${info.worktreePath}" --force`,
-        { cwd: this.repoDir, stdio: 'pipe' }
-      )
+      await WorktreeManager.withRepoLock(this.repoDir, async () => {
+        execSync(
+          `git worktree remove "${info.worktreePath}" --force`,
+          { cwd: this.repoDir, stdio: 'pipe' }
+        )
+      })
     }
 
     try {

@@ -39,7 +39,13 @@ export function registerWorktreeTools(server: McpServer, worktreeManager: Worktr
     },
     async ({ task_id, commit_message }) => {
       try {
-        await worktreeManager.merge(task_id, commit_message)
+        const result = await worktreeManager.merge(task_id, { commitMessage: commit_message })
+        if (result.status === 'conflict') {
+          return {
+            content: [{ type: 'text', text: JSON.stringify({ task_id, ...result }) }],
+            isError: true,
+          }
+        }
         await worktreeManager.cleanup(task_id)
         return {
           content: [{ type: 'text', text: JSON.stringify({ task_id, status: 'merged' }) }],

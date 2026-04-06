@@ -85,7 +85,7 @@ describe('WorktreeManager', () => {
     await writeFile(path.join(wt.worktreePath, 'custom-file.ts'), 'export const y = 2')
     execSync('git add . && git commit -m "add custom file"', { cwd: wt.worktreePath })
 
-    await manager.merge('task-custom', 'chore: my custom message')
+    await manager.merge('task-custom', { commitMessage: 'chore: my custom message' })
 
     const log = execSync('git log --oneline -1', { cwd: repoDir }).toString().trim()
     expect(log).toContain('chore: my custom message')
@@ -107,6 +107,139 @@ describe('WorktreeManager', () => {
     expect(active).toHaveLength(2)
     expect(active.map(a => a.taskId)).toContain('task-1')
     expect(active.map(a => a.taskId)).toContain('task-2')
+  })
+})
+
+describe('WorktreeManager merge with custom target', () => {
+  it('merges into a separately-created worktree when mergeTargetPath is provided', async () => {
+    // Create a separate "session" worktree manually (bypassing the manager's task-worktree branch convention)
+    const sessionWorktreePath = path.join(os.tmpdir(), `invoke-session-target-${Date.now()}`)
+    execSync(`git worktree add "${sessionWorktreePath}" -b "session-target"`, {
+      cwd: repoDir,
+      stdio: 'pipe',
+    })
+
+    try {
+      const wt = await manager.create('task-target')
+      await writeFile(path.join(wt.worktreePath, 'target-file.ts'), 'export const t = 1')
+      execSync('git add . && git commit -m "add target file"', { cwd: wt.worktreePath })
+
+      const result = await manager.merge('task-target', { mergeTargetPath: sessionWorktreePath })
+
+      expect(result.status).toBe('merged')
+      // File should be present in the session worktree, NOT in the main repo dir
+      expect(existsSync(path.join(sessionWorktreePath, 'target-file.ts'))).toBe(true)
+      expect(existsSync(path.join(repoDir, 'target-file.ts'))).toBe(false)
+
+      const log = execSync('git log --oneline -1', { cwd: sessionWorktreePath }).toString().trim()
+      expect(log).toContain('feat: task-target')
+    } finally {
+      execSync(`git worktree remove "${sessionWorktreePath}" --force`, {
+        cwd: repoDir,
+        stdio: 'pipe',
+      })
+      execSync('git branch -D "session-target"', { cwd: repoDir, stdio: 'pipe' })
+    }
+  })
+
+  it('returns conflict result and leaves the target clean when squash merge fails', async () => {
+    execSync('git checkout -b conflict-base', { cwd: repoDir })
+    await writeFile(path.join(repoDir, 'shared.ts'), 'export const s = "base"')
+    execSync('git add . && git commit -m "base shared"', { cwd: repoDir })
+
+    // First worktree: changes shared.ts and merges cleanly
+    const wt1 = await manager.create('task-a')
+    await writeFile(path.join(wt1.worktreePath, 'shared.ts'), 'export const s = "from-a"')
+    execSync('git add . && git commit -m "a changes shared"', { cwd: wt1.worktreePath })
+    const r1 = await manager.merge('task-a')
+    expect(r1.status).toBe('merged')
+
+    // Second worktree branched off the original base — its change to shared.ts will conflict
+    const wt2 = await manager.create('task-b')
+    // Reset wt2's branch to the original commit (before task-a's merge)
+    execSync('git reset --hard HEAD~1', { cwd: wt2.worktreePath })
+    await writeFile(path.join(wt2.worktreePath, 'shared.ts'), 'export const s = "from-b"')
+    execSync('git add . && git commit -m "b changes shared"', { cwd: wt2.worktreePath })
+
+    const result = await manager.merge('task-b')
+
+    expect(result.status).toBe('conflict')
+    if (result.status === 'conflict') {
+      expect(result.conflictingFiles).toContain('shared.ts')
+      expect(result.mergeTargetPath).toBe(repoDir)
+    }
+
+    // Target should be fully clean after the reset
+    const status = execSync('git status --porcelain', { cwd: repoDir }).toString().trim()
+    expect(status).toBe('')
+  })
+})
+
+describe('WorktreeManager mutex helpers', () => {
+  it('withRepoLock serializes 3 concurrent calls for the same key', async () => {
+    const events: string[] = []
+    let active = 0
+    let maxActive = 0
+
+    const make = (label: string) =>
+      WorktreeManager.withRepoLock(repoDir, async () => {
+        active++
+        maxActive = Math.max(maxActive, active)
+        events.push(`start:${label}`)
+        await new Promise(resolve => setTimeout(resolve, 20))
+        events.push(`end:${label}`)
+        active--
+        return label
+      })
+
+    const results = await Promise.all([make('a'), make('b'), make('c')])
+
+    expect(results).toEqual(['a', 'b', 'c'])
+    expect(maxActive).toBe(1)
+    expect(events).toEqual([
+      'start:a',
+      'end:a',
+      'start:b',
+      'end:b',
+      'start:c',
+      'end:c',
+    ])
+  })
+
+  it('withMergeTargetLock serializes 3 concurrent merges into the same target', async () => {
+    execSync('git checkout -b mutex-merge-base', { cwd: repoDir })
+
+    const wt1 = await manager.create('mtask-1')
+    await writeFile(path.join(wt1.worktreePath, 'm1.ts'), 'export const a = 1')
+    execSync('git add . && git commit -m "m1"', { cwd: wt1.worktreePath })
+
+    const wt2 = await manager.create('mtask-2')
+    await writeFile(path.join(wt2.worktreePath, 'm2.ts'), 'export const b = 2')
+    execSync('git add . && git commit -m "m2"', { cwd: wt2.worktreePath })
+
+    const wt3 = await manager.create('mtask-3')
+    await writeFile(path.join(wt3.worktreePath, 'm3.ts'), 'export const c = 3')
+    execSync('git add . && git commit -m "m3"', { cwd: wt3.worktreePath })
+
+    const results = await Promise.all([
+      manager.merge('mtask-1'),
+      manager.merge('mtask-2'),
+      manager.merge('mtask-3'),
+    ])
+
+    for (const r of results) {
+      expect(r.status).toBe('merged')
+    }
+
+    // All three files should be present in the main repo dir
+    expect(existsSync(path.join(repoDir, 'm1.ts'))).toBe(true)
+    expect(existsSync(path.join(repoDir, 'm2.ts'))).toBe(true)
+    expect(existsSync(path.join(repoDir, 'm3.ts'))).toBe(true)
+
+    // We should see exactly 3 new commits beyond the initial state
+    const log = execSync('git log --oneline', { cwd: repoDir }).toString().trim().split('\n')
+    const featCommits = log.filter(line => line.includes('feat: mtask-'))
+    expect(featCommits).toHaveLength(3)
   })
 })
 
