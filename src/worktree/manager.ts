@@ -1,8 +1,9 @@
 import { execFileSync } from 'child_process'
-import { existsSync, realpathSync } from 'fs'
+import { existsSync } from 'fs'
 import path from 'path'
 import os from 'os'
 import { withMergeTargetLock, withRepoLock, withTaskLock } from './repo-lock.js'
+import { isSafeSessionWorktreeTarget } from './trusted-session-helpers.js'
 
 interface WorktreeInfo {
   taskId: string
@@ -15,49 +16,6 @@ export type MergeResult =
   | { status: 'conflict'; conflictingFiles: string[]; mergeTargetPath: string }
 
 const CONFLICT_STATUS_PREFIXES = ['UU', 'AA', 'DD', 'AU', 'UA', 'DU', 'UD']
-
-function resolveGitCommonDir(cwd: string): string {
-  const canonicalCwd = realpathSync(cwd)
-  const commonDir = execFileSync('git', ['rev-parse', '--git-common-dir'], {
-    cwd: canonicalCwd,
-    stdio: 'pipe',
-  })
-    .toString()
-    .trim()
-
-  return realpathSync(path.resolve(canonicalCwd, commonDir))
-}
-
-function isSafeSessionWorktreeTarget(targetPath: string, repoDir: string): boolean {
-  let canonicalTarget: string
-  let canonicalTmp: string
-
-  try {
-    canonicalTarget = realpathSync(targetPath)
-  } catch {
-    return false
-  }
-
-  try {
-    canonicalTmp = realpathSync(os.tmpdir())
-  } catch {
-    canonicalTmp = os.tmpdir()
-  }
-
-  if (canonicalTarget !== canonicalTmp && !canonicalTarget.startsWith(canonicalTmp + path.sep)) {
-    return false
-  }
-
-  if (!path.basename(canonicalTarget).startsWith('invoke-session-')) {
-    return false
-  }
-
-  try {
-    return resolveGitCommonDir(canonicalTarget) === resolveGitCommonDir(repoDir)
-  } catch {
-    return false
-  }
-}
 
 function git(cwd: string, args: string[]): string {
   return execFileSync('git', args, { cwd, stdio: 'pipe' }).toString()

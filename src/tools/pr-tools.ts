@@ -1,63 +1,12 @@
 import { execFileSync } from 'child_process'
 import { realpathSync } from 'fs'
-import os from 'os'
-import path from 'path'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
 import { loadConfig } from '../config.js'
 import { checkCliExists } from '../config-validator.js'
 import type { SessionManager } from '../session/manager.js'
+import { isSafeSessionWorkBranchPath } from '../worktree/trusted-session-helpers.js'
 import { StateManager } from './state.js'
-
-function resolveGitCommonDir(cwd: string): string {
-  const canonicalCwd = realpathSync(cwd)
-  const commonDir = execFileSync('git', ['rev-parse', '--git-common-dir'], {
-    cwd: canonicalCwd,
-    stdio: 'pipe',
-  })
-    .toString()
-    .trim()
-
-  return realpathSync(path.resolve(canonicalCwd, commonDir))
-}
-
-function isSafeSessionWorkBranchPath(
-  workBranchPath: string | undefined,
-  repoDir: string
-): workBranchPath is string {
-  if (!workBranchPath || !path.isAbsolute(workBranchPath)) {
-    return false
-  }
-
-  let canonicalTarget: string
-  let canonicalTmp: string
-
-  try {
-    canonicalTarget = realpathSync(workBranchPath)
-  } catch {
-    return false
-  }
-
-  try {
-    canonicalTmp = realpathSync(os.tmpdir())
-  } catch {
-    canonicalTmp = os.tmpdir()
-  }
-
-  if (canonicalTarget !== canonicalTmp && !canonicalTarget.startsWith(canonicalTmp + path.sep)) {
-    return false
-  }
-
-  if (!path.basename(canonicalTarget).startsWith('invoke-session-')) {
-    return false
-  }
-
-  try {
-    return resolveGitCommonDir(canonicalTarget) === resolveGitCommonDir(repoDir)
-  } catch {
-    return false
-  }
-}
 
 function isSafeWorkBranch(
   workBranch: string | undefined,
