@@ -153,6 +153,8 @@ export interface PipelineState {
     last_updated: string;
     current_stage: 'scope' | 'plan' | 'orchestrate' | 'build' | 'review' | 'complete';
     work_branch?: string;
+    base_branch?: string;
+    work_branch_path?: string;
     spec?: string;
     plan?: string;
     tasks?: string;
@@ -169,9 +171,10 @@ export interface BatchState {
 }
 export interface TaskState {
     id: string;
-    status: 'pending' | 'dispatched' | 'running' | 'completed' | 'error' | 'timeout';
+    status: 'pending' | 'dispatched' | 'running' | 'completed' | 'error' | 'timeout' | 'conflict';
     worktree_path?: string;
     worktree_branch?: string;
+    conflict_attempts?: number;
     result_summary?: string;
     result_status?: 'success' | 'error' | 'timeout';
     depends_on?: string[];
