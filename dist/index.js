@@ -40280,21 +40280,19 @@ function registerConfigTools(server, projectDir) {
 init_zod();
 init_config();
 function registerDispatchTools(server, engine, batchManager, projectDir, metricsManager, sessionManager) {
-  function resolveBatchManager(sessionId) {
+  async function resolveBatchManager(sessionId) {
     if (!sessionId) {
       return batchManager;
     }
     if (!sessionManager) {
       throw new Error("Session manager is required for session-scoped dispatch");
     }
+    const sessionDir = sessionManager.exists(sessionId) ? sessionManager.resolve(sessionId) : await sessionManager.create(sessionId);
     return Object.assign(
       Object.create(Object.getPrototypeOf(batchManager)),
       batchManager,
       {
-        stateManager: new StateManager(
-          projectDir,
-          sessionManager.resolve(sessionId)
-        )
+        stateManager: new StateManager(projectDir, sessionDir)
       }
     );
   }
@@ -40380,7 +40378,7 @@ function registerDispatchTools(server, engine, batchManager, projectDir, metrics
         }
       }
       const maxParallel = config2?.settings?.max_parallel_agents;
-      const activeBatchManager = resolveBatchManager(session_id);
+      const activeBatchManager = await resolveBatchManager(session_id);
       const batchId = await activeBatchManager.dispatchBatch({
         tasks: tasks.map((t) => ({
           taskId: t.task_id,
@@ -40957,11 +40955,18 @@ function registerStateTools(server, stateManager, projectDir, sessionManager) {
     async (updates) => {
       try {
         const { session_id, ...stateUpdates } = updates;
-        const scopedStateManager = await resolveWritableStateManager(session_id);
+        let resolvedSessionId = session_id;
+        if (!resolvedSessionId) {
+          const globalState = await stateManager.get();
+          if (!globalState) {
+            resolvedSessionId = stateUpdates.pipeline_id ?? `pipeline-${Date.now()}`;
+          }
+        }
+        const scopedStateManager = await resolveWritableStateManager(resolvedSessionId);
         let state = await scopedStateManager.get();
         if (!state) {
           state = await scopedStateManager.initialize(
-            stateUpdates.pipeline_id ?? `pipeline-${Date.now()}`
+            resolvedSessionId ?? `pipeline-${Date.now()}`
           );
         }
         const updated = await scopedStateManager.update(stateUpdates);

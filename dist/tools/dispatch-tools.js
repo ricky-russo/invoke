@@ -2,15 +2,18 @@ import { z } from 'zod';
 import { loadConfig } from '../config.js';
 import { StateManager } from './state.js';
 export function registerDispatchTools(server, engine, batchManager, projectDir, metricsManager, sessionManager) {
-    function resolveBatchManager(sessionId) {
+    async function resolveBatchManager(sessionId) {
         if (!sessionId) {
             return batchManager;
         }
         if (!sessionManager) {
             throw new Error('Session manager is required for session-scoped dispatch');
         }
+        const sessionDir = sessionManager.exists(sessionId)
+            ? sessionManager.resolve(sessionId)
+            : await sessionManager.create(sessionId);
         return Object.assign(Object.create(Object.getPrototypeOf(batchManager)), batchManager, {
-            stateManager: new StateManager(projectDir, sessionManager.resolve(sessionId)),
+            stateManager: new StateManager(projectDir, sessionDir),
         });
     }
     server.registerTool('invoke_dispatch', {
@@ -95,7 +98,7 @@ export function registerDispatchTools(server, engine, batchManager, projectDir, 
             }
         }
         const maxParallel = config?.settings?.max_parallel_agents;
-        const activeBatchManager = resolveBatchManager(session_id);
+        const activeBatchManager = await resolveBatchManager(session_id);
         const batchId = await activeBatchManager.dispatchBatch({
             tasks: tasks.map(t => ({
                 taskId: t.task_id,

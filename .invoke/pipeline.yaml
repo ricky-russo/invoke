@@ -180,13 +180,21 @@ strategies:
 settings:
     default_strategy: tdd
     agent_timeout: 300
-    commit_style: per-batch
+    commit_style: one-commit
     work_branch_prefix: invoke/work
     default_provider_mode: parallel
     max_review_cycles: 3
+    stale_session_days: 7
     # Commands to run after merging worktrees (e.g., regenerate lockfiles):
     # post_merge_commands:
     #   - composer install
     #   - npm install
     # Maximum agents to run in parallel per batch (0 or omit for unlimited):
-    # max_parallel_agents: 4
+    max_parallel_agents: 4
+    review_tiers:
+        - name: critical
+          reviewers: [spec-compliance, security]
+        - name: quality
+          reviewers: [code-quality, performance]
+        - name: polish
+          reviewers: [ux, accessibility]

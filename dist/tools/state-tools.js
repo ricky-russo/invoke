@@ -86,10 +86,20 @@ export function registerStateTools(server, stateManager, projectDir, sessionMana
     }, async (updates) => {
         try {
             const { session_id, ...stateUpdates } = updates;
-            const scopedStateManager = await resolveWritableStateManager(session_id);
+            let resolvedSessionId = session_id;
+            // When initializing a new pipeline without an explicit session_id,
+            // auto-create a session directory so the pipeline_id can be used
+            // as a session_id by other tools (e.g. invoke_dispatch_batch).
+            if (!resolvedSessionId) {
+                const globalState = await stateManager.get();
+                if (!globalState) {
+                    resolvedSessionId = stateUpdates.pipeline_id ?? `pipeline-${Date.now()}`;
+                }
+            }
+            const scopedStateManager = await resolveWritableStateManager(resolvedSessionId);
             let state = await scopedStateManager.get();
             if (!state) {
-                state = await scopedStateManager.initialize(stateUpdates.pipeline_id ?? `pipeline-${Date.now()}`);
+                state = await scopedStateManager.initialize(resolvedSessionId ?? `pipeline-${Date.now()}`);
             }
             const updated = await scopedStateManager.update(stateUpdates);
             return {
