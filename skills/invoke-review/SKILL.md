@@ -268,7 +268,35 @@ Get this data from `invoke_get_metrics`: use `summary.total_dispatches`, `summar
 
 Present the commit strategy using `AskUserQuestion` as defined in the invoke-messaging standard (Commit Strategy pattern). Use `multiSelect: false` with options: Per batch (Recommended), One commit, Per task, Custom.
 
-Execute the chosen commit strategy. Clean up the work branch after squash merge.
+Execute the chosen commit strategy. The session work branch is preserved at pipeline completion. It will only be removed when the user explicitly cleans up the session via invoke_cleanup_sessions, where they will be prompted to keep or delete the branch.
+
+### PR Offer (R5)
+
+If `state.work_branch` is set (the session was initialized with a per-session work branch via invoke-scope's invoke_session_init_worktree call), offer to push and optionally create a PR. Skip this step entirely if `state.work_branch` is unset (legacy sessions).
+
+Use `AskUserQuestion`:
+
+```
+AskUserQuestion({
+  questions: [{
+    question: 'Pipeline complete. Push the session work branch and open a PR?',
+    header: 'PR offer',
+    multiSelect: false,
+    options: [
+      { label: 'Create PR (Recommended)', description: 'Push to origin and open a PR via gh against the original base branch' },
+      { label: 'Push only', description: 'Push the branch to origin without creating a PR — the compare URL will be printed' },
+      { label: 'Skip', description: 'Do not push or create a PR' }
+    ]
+  }]
+})
+```
+
+If the user picks Create PR or Push only, call `invoke_pr_create` with:
+- `session_id: <pipeline_id>`
+- `base_branch: <state.base_branch>` (read from state, set during invoke-scope)
+- `mode: 'create_pr'` or `'push_only'` accordingly
+
+The tool detects gh availability and degrades gracefully — if gh is missing or unauthenticated, it falls back to push + printing a compare URL. Print the response (pr_url or compare_url) to the user.
 
 After all review cycles complete and the user approves the final result, update state with `current_stage: "complete"` via `invoke_set_state` with `session_id: <pipeline_id>`.
 
@@ -295,3 +323,27 @@ When the pipeline completes (all review cycles pass or the user approves the fin
 - Let the user make all triage decisions — never auto-dismiss findings
 - In tiered review, `critical` gates `quality`, and `quality` completes before optional `polish`
 - In fallback review, the loop continues until the user is satisfied, not until reviewers find zero issues
+
+## Session Cleanup (R6)
+
+When the user invokes session cleanup (via /invoke-manage or by explicit request to clean up old sessions), the cleanup flow MUST prompt for each session whose work_branch is set:
+
+1. List sessions to clean up via `invoke_list_sessions` (status: `'complete'` or `'stale'`).
+2. For EACH session whose `state.work_branch` is set, ask the user via `AskUserQuestion`:
+   ```
+   AskUserQuestion({
+     questions: [{
+       question: 'Cleaning up session [session_id]. Keep the work branch [work_branch]?',
+       header: 'Keep branch',
+       multiSelect: false,
+       options: [
+         { label: 'Keep (Recommended)', description: 'Remove the worktree but preserve the branch in case you want to revisit it' },
+         { label: 'Delete', description: 'Remove both the worktree and the branch (git branch -D)' }
+       ]
+     }]
+   })
+   ```
+3. Call `invoke_cleanup_sessions` with `session_id: <id>` and `delete_work_branch: <true|false>` based on the user's answer.
+4. Repeat for each session.
+
+For sessions WITHOUT `state.work_branch` (legacy), call `invoke_cleanup_sessions` without the `delete_work_branch` flag (the underlying tool ignores it for legacy sessions).
