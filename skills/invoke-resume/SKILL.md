@@ -59,38 +59,39 @@ The pipeline may have an integration worktree recorded in `state.work_branch` / 
 
 **Skip this step entirely** if `state.work_branch` is unset — this is a legacy session with no integration worktree.
 
-If `state.work_branch` is set (with or without `state.work_branch_path`), call:
+If `state.work_branch` is set, call:
 
 ```
 invoke_session_reattach_worktree({
   session_id: <pipeline_id>,
   work_branch: state.work_branch,
-  recorded_path: state.work_branch_path,   // omit if unset
 })
 ```
 
+Do NOT pass `recorded_path` — omitting it lets the tool handle both R7 case 1 (worktree directory exists) and R7 case 3 (directory missing but branch still exists, tool recreates the worktree at a fresh tmpdir) automatically.
+
 Handle the response by `status`:
 
-- **`reattached`**: Print `Session integration worktree reattached at <work_branch_path>`. The tool has already updated `state.work_branch_path` if the path changed — no further action needed. Continue to step 5.
+- **`reattached`**: Print `Session integration worktree reattached at <work_branch_path>`. The tool has already updated `state.work_branch_path` if it had to recreate the worktree — no further action needed. Continue to step 5.
 
-- **`unrecoverable`**: The worktree directory is gone and the work branch no longer exists. Present:
+- **`unrecoverable`**: The work branch itself no longer exists in this repository (R7 case 4 — both worktree directory and branch are gone). Present:
 
   ```
   AskUserQuestion({
     questions: [{
-      question: 'Session [session_id] has lost its integration worktree and the work branch is also gone. The pipeline cannot be resumed in its current shape.',
+      question: 'Session [session_id]: the work branch [work_branch] no longer exists in this repository. The pipeline cannot be resumed.',
       header: 'Resume failed',
       multiSelect: false,
       options: [
-        { label: 'Abort', description: 'Clean up the session and start a fresh pipeline' },
-        { label: 'Force-init new worktree', description: 'Create a fresh integration worktree at the same work_branch (advanced — may lose context)' }
+        { label: 'Abort and start fresh', description: 'Clean up the session and use invoke-scope to begin a new pipeline' },
+        { label: 'Cancel', description: 'Leave the session in place — you may want to investigate the missing branch manually' }
       ]
     }]
   })
   ```
 
-  - **Abort**: Call `invoke_cleanup_sessions({ session_id: "<pipeline_id>" })`, then inform the user: "Session cleaned up. Use invoke-scope to start a new pipeline."
-  - **Force-init new worktree**: No MCP tool currently exists for this operation. Inform the user: "Automatic re-creation is not yet supported. To recover manually, run `git branch <work_branch> <base_branch>` and then re-run resume. Alternatively, choose Abort to start fresh."
+  - **Abort and start fresh**: Call `invoke_cleanup_sessions({ session_id: "<pipeline_id>" })`, then inform the user: "Session cleaned up. Use invoke-scope to start a new pipeline."
+  - **Cancel**: Do nothing. Exit the resume flow and inform the user the session has been left in place for manual investigation.
 
 ### 5. Check for Orphaned Worktrees
 
