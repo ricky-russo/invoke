@@ -60,7 +60,29 @@ describe('SessionManager', () => {
     )
   })
 
-  it.each(['', '.', '..', '../evil', 'nested/path', 'nested\\path'])(
+  it.each(['session-1', 'Session_2', 's.third-4'])(
+    'accepts allow-listed session IDs: %p',
+    async sessionId => {
+      const sessionDir = await manager.create(sessionId)
+
+      expect(sessionDir).toBe(path.join(projectDir, '.invoke', 'sessions', sessionId))
+      expect(manager.resolve(sessionId)).toBe(sessionDir)
+      expect(manager.exists(sessionId)).toBe(true)
+    }
+  )
+
+  it.each([
+    '',
+    '.',
+    '..',
+    '../evil',
+    'nested/path',
+    'nested\\path',
+    'session*1',
+    'session 1',
+    '.session',
+    '-session',
+  ])(
     'rejects invalid session IDs: %p',
     async sessionId => {
       await expect(manager.create(sessionId)).rejects.toThrow(`Invalid session ID: '${sessionId}'`)

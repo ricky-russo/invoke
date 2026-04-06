@@ -84,7 +84,7 @@ export function registerStateTools(server, stateManager, projectDir, sessionMana
     server.registerTool('invoke_get_state', {
         description: 'Get the current pipeline state.',
         inputSchema: z.object({
-            session_id: z.string().optional(),
+            session_id: z.string().regex(SESSION_ID_PATTERN, 'invalid session id format').optional(),
         }),
     }, async ({ session_id }) => {
         try {
@@ -157,7 +157,7 @@ export function registerStateTools(server, stateManager, projectDir, sessionMana
     server.registerTool('invoke_get_review_cycle_count', {
         description: 'Get the number of recorded review cycles, optionally filtered to a batch, plus the configured max review cycle limit when available.',
         inputSchema: z.object({
-            session_id: z.string().optional(),
+            session_id: z.string().regex(SESSION_ID_PATTERN, 'invalid session id format').optional(),
             batch_id: z.number().optional(),
         }),
     }, async ({ session_id, batch_id }) => {

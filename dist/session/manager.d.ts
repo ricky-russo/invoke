@@ -19,7 +19,6 @@ export declare class SessionManager {
     private getLegacyMetricsPath;
     private readState;
     private readSessionInfo;
-    private validateSessionId;
     private isStateStale;
     private isMissingFileError;
 }

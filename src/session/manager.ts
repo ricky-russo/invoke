@@ -2,6 +2,7 @@ import { existsSync } from 'fs'
 import { mkdir, readFile, readdir, rename, rm } from 'fs/promises'
 import path from 'path'
 import type { PipelineState, SessionInfo } from '../types.js'
+import { validateSessionId } from '../worktree/session-id-validator.js'
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000
 
@@ -15,14 +16,14 @@ export class SessionManager {
   }
 
   async create(sessionId: string): Promise<string> {
-    this.validateSessionId(sessionId)
+    validateSessionId(sessionId)
     const sessionDir = this.getSessionDir(sessionId)
     await mkdir(sessionDir, { recursive: true })
     return sessionDir
   }
 
   resolve(sessionId: string): string {
-    this.validateSessionId(sessionId)
+    validateSessionId(sessionId)
     const sessionDir = this.getSessionDir(sessionId)
     if (!existsSync(sessionDir)) {
       throw new Error(`Session '${sessionId}' does not exist`)
@@ -48,7 +49,7 @@ export class SessionManager {
   }
 
   async isStale(sessionId: string, staleDays = 7): Promise<boolean> {
-    this.validateSessionId(sessionId)
+    validateSessionId(sessionId)
     const state = await this.readState(sessionId)
     return this.isStateStale(state, staleDays)
   }
@@ -63,7 +64,7 @@ export class SessionManager {
     const sessionId = state.pipeline_id
 
     try {
-      this.validateSessionId(sessionId)
+      validateSessionId(sessionId)
     } catch {
       return { migrated: false }
     }
@@ -96,12 +97,12 @@ export class SessionManager {
   }
 
   async cleanup(sessionId: string): Promise<void> {
-    this.validateSessionId(sessionId)
+    validateSessionId(sessionId)
     await rm(this.getSessionDir(sessionId), { recursive: true, force: true })
   }
 
   exists(sessionId: string): boolean {
-    this.validateSessionId(sessionId)
+    validateSessionId(sessionId)
     return existsSync(this.getSessionDir(sessionId))
   }
 
@@ -145,18 +146,6 @@ export class SessionManager {
           : this.isStateStale(state, staleDays)
             ? 'stale'
             : 'active',
-    }
-  }
-
-  private validateSessionId(sessionId: string): void {
-    if (
-      !sessionId ||
-      sessionId === '.' ||
-      sessionId === '..' ||
-      sessionId.includes('/') ||
-      sessionId.includes('\\')
-    ) {
-      throw new Error(`Invalid session ID: '${sessionId}'`)
     }
   }
 

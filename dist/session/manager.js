@@ -1,6 +1,7 @@
 import { existsSync } from 'fs';
 import { mkdir, readFile, readdir, rename, rm } from 'fs/promises';
 import path from 'path';
+import { validateSessionId } from '../worktree/session-id-validator.js';
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 export class SessionManager {
     invokeDir;
@@ -10,13 +11,13 @@ export class SessionManager {
         this.sessionsDir = path.join(this.invokeDir, 'sessions');
     }
     async create(sessionId) {
-        this.validateSessionId(sessionId);
+        validateSessionId(sessionId);
         const sessionDir = this.getSessionDir(sessionId);
         await mkdir(sessionDir, { recursive: true });
         return sessionDir;
     }
     resolve(sessionId) {
-        this.validateSessionId(sessionId);
+        validateSessionId(sessionId);
         const sessionDir = this.getSessionDir(sessionId);
         if (!existsSync(sessionDir)) {
             throw new Error(`Session '${sessionId}' does not exist`);
@@ -36,7 +37,7 @@ export class SessionManager {
             .sort((left, right) => left.session_id.localeCompare(right.session_id));
     }
     async isStale(sessionId, staleDays = 7) {
-        this.validateSessionId(sessionId);
+        validateSessionId(sessionId);
         const state = await this.readState(sessionId);
         return this.isStateStale(state, staleDays);
     }
@@ -48,7 +49,7 @@ export class SessionManager {
         const state = JSON.parse(await readFile(legacyStatePath, 'utf-8'));
         const sessionId = state.pipeline_id;
         try {
-            this.validateSessionId(sessionId);
+            validateSessionId(sessionId);
         }
         catch {
             return { migrated: false };
@@ -78,11 +79,11 @@ export class SessionManager {
         return { migrated: true, sessionId };
     }
     async cleanup(sessionId) {
-        this.validateSessionId(sessionId);
+        validateSessionId(sessionId);
         await rm(this.getSessionDir(sessionId), { recursive: true, force: true });
     }
     exists(sessionId) {
-        this.validateSessionId(sessionId);
+        validateSessionId(sessionId);
         return existsSync(this.getSessionDir(sessionId));
     }
     getSessionDir(sessionId) {
@@ -119,15 +120,6 @@ export class SessionManager {
                     ? 'stale'
                     : 'active',
         };
-    }
-    validateSessionId(sessionId) {
-        if (!sessionId ||
-            sessionId === '.' ||
-            sessionId === '..' ||
-            sessionId.includes('/') ||
-            sessionId.includes('\\')) {
-            throw new Error(`Invalid session ID: '${sessionId}'`);
-        }
     }
     isStateStale(state, staleDays = 7) {
         return Date.now() - new Date(state.last_updated).getTime() > staleDays * MS_PER_DAY;

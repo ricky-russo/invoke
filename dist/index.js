@@ -40468,13 +40468,13 @@ var SessionManager = class {
     this.sessionsDir = path7.join(this.invokeDir, "sessions");
   }
   async create(sessionId) {
-    this.validateSessionId(sessionId);
+    validateSessionId(sessionId);
     const sessionDir = this.getSessionDir(sessionId);
     await mkdir2(sessionDir, { recursive: true });
     return sessionDir;
   }
   resolve(sessionId) {
-    this.validateSessionId(sessionId);
+    validateSessionId(sessionId);
     const sessionDir = this.getSessionDir(sessionId);
     if (!existsSync4(sessionDir)) {
       throw new Error(`Session '${sessionId}' does not exist`);
@@ -40492,7 +40492,7 @@ var SessionManager = class {
     return sessions.filter((session) => session !== null).sort((left, right) => left.session_id.localeCompare(right.session_id));
   }
   async isStale(sessionId, staleDays = 7) {
-    this.validateSessionId(sessionId);
+    validateSessionId(sessionId);
     const state = await this.readState(sessionId);
     return this.isStateStale(state, staleDays);
   }
@@ -40504,7 +40504,7 @@ var SessionManager = class {
     const state = JSON.parse(await readFile4(legacyStatePath, "utf-8"));
     const sessionId = state.pipeline_id;
     try {
-      this.validateSessionId(sessionId);
+      validateSessionId(sessionId);
     } catch {
       return { migrated: false };
     }
@@ -40531,11 +40531,11 @@ var SessionManager = class {
     return { migrated: true, sessionId };
   }
   async cleanup(sessionId) {
-    this.validateSessionId(sessionId);
+    validateSessionId(sessionId);
     await rm(this.getSessionDir(sessionId), { recursive: true, force: true });
   }
   exists(sessionId) {
-    this.validateSessionId(sessionId);
+    validateSessionId(sessionId);
     return existsSync4(this.getSessionDir(sessionId));
   }
   getSessionDir(sessionId) {
@@ -40568,11 +40568,6 @@ var SessionManager = class {
       last_updated: state.last_updated,
       status: state.current_stage === "complete" ? "complete" : this.isStateStale(state, staleDays) ? "stale" : "active"
     };
-  }
-  validateSessionId(sessionId) {
-    if (!sessionId || sessionId === "." || sessionId === ".." || sessionId.includes("/") || sessionId.includes("\\")) {
-      throw new Error(`Invalid session ID: '${sessionId}'`);
-    }
   }
   isStateStale(state, staleDays = 7) {
     return Date.now() - new Date(state.last_updated).getTime() > staleDays * MS_PER_DAY;
@@ -42558,7 +42553,7 @@ function registerStateTools(server, stateManager, projectDir, sessionManager) {
     {
       description: "Get the current pipeline state.",
       inputSchema: external_exports3.object({
-        session_id: external_exports3.string().optional()
+        session_id: external_exports3.string().regex(SESSION_ID_PATTERN, "invalid session id format").optional()
       })
     },
     async ({ session_id }) => {
@@ -42640,7 +42635,7 @@ function registerStateTools(server, stateManager, projectDir, sessionManager) {
     {
       description: "Get the number of recorded review cycles, optionally filtered to a batch, plus the configured max review cycle limit when available.",
       inputSchema: external_exports3.object({
-        session_id: external_exports3.string().optional(),
+        session_id: external_exports3.string().regex(SESSION_ID_PATTERN, "invalid session id format").optional(),
         batch_id: external_exports3.number().optional()
       })
     },

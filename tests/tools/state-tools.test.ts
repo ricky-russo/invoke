@@ -772,6 +772,17 @@ describe('registerStateTools', () => {
     }
   })
 
+  it('rejects malformed session_id in invoke_get_state at schema time', async () => {
+    const getStateTool = getTool('invoke_get_state')
+    const input = { session_id: 'session;rm -rf /' }
+
+    expect(getStateTool.config.inputSchema.safeParse(input).success).toBe(false)
+
+    const result = await getStateTool.handler(input)
+    expect(result.isError).toBe(true)
+    expect(result.content[0].text).toBe('invalid session id format')
+  })
+
   it('returns session-scoped state when session_id is provided to invoke_get_state', async () => {
     const resolveSpy = vi.spyOn(sessionManager, 'resolve')
     const sessionStateManager = new StateManager(TEST_DIR, await sessionManager.create('session-1'))
