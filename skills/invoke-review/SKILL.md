@@ -93,16 +93,33 @@ AskUserQuestion({
     multiSelect: false,
     options: [
       { label: "Fix all", description: "Accept all findings and dispatch fix agents" },
-      { label: "Dismiss all", description: "Dismiss all findings and proceed" },
-      { label: "Triage individually", description: "Review each finding and choose accept or dismiss" }
+      { label: "Dismiss all", description: "Dismiss all findings — treats them as not actually a problem, nothing logged" },
+      { label: "Defer all (log as bugs)", description: "Accept all findings as real but log as bugs for later — no fix agents dispatched now" },
+      { label: "Triage individually", description: "Review each finding and choose fix, defer, or dismiss" }
     ]
   }]
 })
 ```
 
-If the user chooses **Triage individually**, present findings grouped by reviewer using `AskUserQuestion` with `multiSelect: true` — selected findings are accepted, unselected are dismissed. Note: `AskUserQuestion` supports max 4 options per question. If there are more than 4 findings, group into multiple questions by reviewer.
+If the user chooses **Triage individually**, present findings grouped by reviewer using `AskUserQuestion` with `multiSelect: true` — selected findings are accepted for fixing. Note: `AskUserQuestion` supports max 4 options per question. If there are more than 4 findings, group into multiple questions by reviewer.
 
-After triage, record the review cycle with `invoke_set_state` using `session_id: <pipeline_id>` under `review_cycles`. Save the reviewers, findings, and triage result (`accepted` / `dismissed`). For tiered review cycles, include `tier: "<tier name>"` on the `ReviewCycle`. In fallback mode, leave `tier` unset. For final review cycles in this stage, include `scope: 'final'`.
+After the user selects which findings to fix, if any findings were not selected, ask a follow-up via `AskUserQuestion`:
+
+```
+AskUserQuestion({
+  questions: [{
+    question: "For the [N] findings you didn't select to fix — defer them (log as bugs for later) or dismiss them (treat as not a problem)?",
+    header: "Unselected findings",
+    multiSelect: false,
+    options: [
+      { label: "Defer (log as bugs)", description: "Agree they are real issues — log as bugs to fix later" },
+      { label: "Dismiss", description: "Treat as not actually a problem — no follow-up needed" }
+    ]
+  }]
+})
+```
+
+After triage, record the review cycle with `invoke_set_state` using `session_id: <pipeline_id>` under `review_cycles`. Save the reviewers, findings, and triage result (`accepted` / `deferred` / `dismissed`). For tiered review cycles, include `tier: "<tier name>"` on the `ReviewCycle`. In fallback mode, leave `tier` unset. For final review cycles in this stage, include `scope: 'final'`.
 
 Each entry in `review_cycles` follows this schema:
 
@@ -126,6 +143,7 @@ Each entry in `review_cycles` follows this schema:
   ],
   "triaged": {
     "accepted": ["<finding-id>"],
+    "deferred": ["<finding-id>"],
     "dismissed": ["<finding-id>"]
   }
 }
@@ -135,15 +153,17 @@ Each entry in `review_cycles` follows this schema:
 
 ### Deferred Findings as Bugs
 
-After the user completes triage, if any findings were dismissed or deferred:
+After the user completes triage, if any findings were **deferred** (the user agreed they are real issues but chose not to fix them now), automatically log each one as a bug:
 
-1. Ask via `AskUserQuestion`: "Want to log [N] deferred findings as bugs for later?"
-2. If yes, for each deferred finding call `invoke_report_bug` with:
-   - `title` from the finding issue
-   - `description` from the suggestion
-   - `severity` from the finding severity
+1. For each deferred finding, call `invoke_report_bug` with:
+   - `title` from `finding.issue`
+   - `description` from `finding.suggestion`
+   - `severity` from `finding.severity`
    - `file`/`line` from the finding location
-3. Confirm: "Logged [N] bugs"
+   - `session_id` from the current pipeline
+2. Confirm: "Logged [N] bugs for later: [BUG-NNN, BUG-NNN, ...]"
+
+**Dismissed findings are not logged as bugs.** Dismissal means the finding is not actually a problem and requires no follow-up.
 
 ### 7. Auto-Fix Accepted Findings
 
