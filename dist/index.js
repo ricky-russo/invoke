@@ -291,10 +291,10 @@ function mergeDefs(...defs) {
 function cloneDef(schema) {
   return mergeDefs(schema._zod.def);
 }
-function getElementAtPath(obj, path18) {
-  if (!path18)
+function getElementAtPath(obj, path21) {
+  if (!path21)
     return obj;
-  return path18.reduce((acc, key) => acc?.[key], obj);
+  return path21.reduce((acc, key) => acc?.[key], obj);
 }
 function promiseAllObject(promisesObj) {
   const keys = Object.keys(promisesObj);
@@ -606,11 +606,11 @@ function aborted(x, startIndex = 0) {
   }
   return false;
 }
-function prefixIssues(path18, issues) {
+function prefixIssues(path21, issues) {
   return issues.map((iss) => {
     var _a2;
     (_a2 = iss).path ?? (_a2.path = []);
-    iss.path.unshift(path18);
+    iss.path.unshift(path21);
     return iss;
   });
 }
@@ -852,7 +852,7 @@ function formatError(error48, mapper = (issue2) => issue2.message) {
 }
 function treeifyError(error48, mapper = (issue2) => issue2.message) {
   const result = { errors: [] };
-  const processError = (error49, path18 = []) => {
+  const processError = (error49, path21 = []) => {
     var _a2, _b;
     for (const issue2 of error49.issues) {
       if (issue2.code === "invalid_union" && issue2.errors.length) {
@@ -862,7 +862,7 @@ function treeifyError(error48, mapper = (issue2) => issue2.message) {
       } else if (issue2.code === "invalid_element") {
         processError({ issues: issue2.issues }, issue2.path);
       } else {
-        const fullpath = [...path18, ...issue2.path];
+        const fullpath = [...path21, ...issue2.path];
         if (fullpath.length === 0) {
           result.errors.push(mapper(issue2));
           continue;
@@ -894,8 +894,8 @@ function treeifyError(error48, mapper = (issue2) => issue2.message) {
 }
 function toDotPath(_path) {
   const segs = [];
-  const path18 = _path.map((seg) => typeof seg === "object" ? seg.key : seg);
-  for (const seg of path18) {
+  const path21 = _path.map((seg) => typeof seg === "object" ? seg.key : seg);
+  for (const seg of path21) {
     if (typeof seg === "number")
       segs.push(`[${seg}]`);
     else if (typeof seg === "symbol")
@@ -13589,13 +13589,13 @@ function resolveRef(ref, ctx) {
   if (!ref.startsWith("#")) {
     throw new Error("External $ref is not supported, only local refs (#/...) are allowed");
   }
-  const path18 = ref.slice(1).split("/").filter(Boolean);
-  if (path18.length === 0) {
+  const path21 = ref.slice(1).split("/").filter(Boolean);
+  if (path21.length === 0) {
     return ctx.rootSchema;
   }
   const defsKey = ctx.version === "draft-2020-12" ? "$defs" : "definitions";
-  if (path18[0] === defsKey) {
-    const key = path18[1];
+  if (path21[0] === defsKey) {
+    const key = path21[1];
     if (!key || !ctx.defs[key]) {
       throw new Error(`Reference not found: ${ref}`);
     }
@@ -17539,8 +17539,8 @@ var require_utils = __commonJS({
       }
       return ind;
     }
-    function removeDotSegments(path18) {
-      let input = path18;
+    function removeDotSegments(path21) {
+      let input = path21;
       const output = [];
       let nextSlash = -1;
       let len = 0;
@@ -17739,8 +17739,8 @@ var require_schemes = __commonJS({
         wsComponent.secure = void 0;
       }
       if (wsComponent.resourceName) {
-        const [path18, query] = wsComponent.resourceName.split("?");
-        wsComponent.path = path18 && path18 !== "/" ? path18 : void 0;
+        const [path21, query] = wsComponent.resourceName.split("?");
+        wsComponent.path = path21 && path21 !== "/" ? path21 : void 0;
         wsComponent.query = query;
         wsComponent.resourceName = void 0;
       }
@@ -21200,17 +21200,17 @@ var require_visit = __commonJS({
     visit.BREAK = BREAK;
     visit.SKIP = SKIP;
     visit.REMOVE = REMOVE;
-    function visit_(key, node, visitor, path18) {
-      const ctrl = callVisitor(key, node, visitor, path18);
+    function visit_(key, node, visitor, path21) {
+      const ctrl = callVisitor(key, node, visitor, path21);
       if (identity.isNode(ctrl) || identity.isPair(ctrl)) {
-        replaceNode(key, path18, ctrl);
-        return visit_(key, ctrl, visitor, path18);
+        replaceNode(key, path21, ctrl);
+        return visit_(key, ctrl, visitor, path21);
       }
       if (typeof ctrl !== "symbol") {
         if (identity.isCollection(node)) {
-          path18 = Object.freeze(path18.concat(node));
+          path21 = Object.freeze(path21.concat(node));
           for (let i = 0; i < node.items.length; ++i) {
-            const ci = visit_(i, node.items[i], visitor, path18);
+            const ci = visit_(i, node.items[i], visitor, path21);
             if (typeof ci === "number")
               i = ci - 1;
             else if (ci === BREAK)
@@ -21221,13 +21221,13 @@ var require_visit = __commonJS({
             }
           }
         } else if (identity.isPair(node)) {
-          path18 = Object.freeze(path18.concat(node));
-          const ck = visit_("key", node.key, visitor, path18);
+          path21 = Object.freeze(path21.concat(node));
+          const ck = visit_("key", node.key, visitor, path21);
           if (ck === BREAK)
             return BREAK;
           else if (ck === REMOVE)
             node.key = null;
-          const cv = visit_("value", node.value, visitor, path18);
+          const cv = visit_("value", node.value, visitor, path21);
           if (cv === BREAK)
             return BREAK;
           else if (cv === REMOVE)
@@ -21248,17 +21248,17 @@ var require_visit = __commonJS({
     visitAsync.BREAK = BREAK;
     visitAsync.SKIP = SKIP;
     visitAsync.REMOVE = REMOVE;
-    async function visitAsync_(key, node, visitor, path18) {
-      const ctrl = await callVisitor(key, node, visitor, path18);
+    async function visitAsync_(key, node, visitor, path21) {
+      const ctrl = await callVisitor(key, node, visitor, path21);
       if (identity.isNode(ctrl) || identity.isPair(ctrl)) {
-        replaceNode(key, path18, ctrl);
-        return visitAsync_(key, ctrl, visitor, path18);
+        replaceNode(key, path21, ctrl);
+        return visitAsync_(key, ctrl, visitor, path21);
       }
       if (typeof ctrl !== "symbol") {
         if (identity.isCollection(node)) {
-          path18 = Object.freeze(path18.concat(node));
+          path21 = Object.freeze(path21.concat(node));
           for (let i = 0; i < node.items.length; ++i) {
-            const ci = await visitAsync_(i, node.items[i], visitor, path18);
+            const ci = await visitAsync_(i, node.items[i], visitor, path21);
             if (typeof ci === "number")
               i = ci - 1;
             else if (ci === BREAK)
@@ -21269,13 +21269,13 @@ var require_visit = __commonJS({
             }
           }
         } else if (identity.isPair(node)) {
-          path18 = Object.freeze(path18.concat(node));
-          const ck = await visitAsync_("key", node.key, visitor, path18);
+          path21 = Object.freeze(path21.concat(node));
+          const ck = await visitAsync_("key", node.key, visitor, path21);
           if (ck === BREAK)
             return BREAK;
           else if (ck === REMOVE)
             node.key = null;
-          const cv = await visitAsync_("value", node.value, visitor, path18);
+          const cv = await visitAsync_("value", node.value, visitor, path21);
           if (cv === BREAK)
             return BREAK;
           else if (cv === REMOVE)
@@ -21302,23 +21302,23 @@ var require_visit = __commonJS({
       }
       return visitor;
     }
-    function callVisitor(key, node, visitor, path18) {
+    function callVisitor(key, node, visitor, path21) {
       if (typeof visitor === "function")
-        return visitor(key, node, path18);
+        return visitor(key, node, path21);
       if (identity.isMap(node))
-        return visitor.Map?.(key, node, path18);
+        return visitor.Map?.(key, node, path21);
       if (identity.isSeq(node))
-        return visitor.Seq?.(key, node, path18);
+        return visitor.Seq?.(key, node, path21);
       if (identity.isPair(node))
-        return visitor.Pair?.(key, node, path18);
+        return visitor.Pair?.(key, node, path21);
       if (identity.isScalar(node))
-        return visitor.Scalar?.(key, node, path18);
+        return visitor.Scalar?.(key, node, path21);
       if (identity.isAlias(node))
-        return visitor.Alias?.(key, node, path18);
+        return visitor.Alias?.(key, node, path21);
       return void 0;
     }
-    function replaceNode(key, path18, node) {
-      const parent = path18[path18.length - 1];
+    function replaceNode(key, path21, node) {
+      const parent = path21[path21.length - 1];
       if (identity.isCollection(parent)) {
         parent.items[key] = node;
       } else if (identity.isPair(parent)) {
@@ -21926,10 +21926,10 @@ var require_Collection = __commonJS({
     var createNode = require_createNode();
     var identity = require_identity();
     var Node = require_Node();
-    function collectionFromPath(schema, path18, value) {
+    function collectionFromPath(schema, path21, value) {
       let v = value;
-      for (let i = path18.length - 1; i >= 0; --i) {
-        const k = path18[i];
+      for (let i = path21.length - 1; i >= 0; --i) {
+        const k = path21[i];
         if (typeof k === "number" && Number.isInteger(k) && k >= 0) {
           const a = [];
           a[k] = v;
@@ -21948,7 +21948,7 @@ var require_Collection = __commonJS({
         sourceObjects: /* @__PURE__ */ new Map()
       });
     }
-    var isEmptyPath = (path18) => path18 == null || typeof path18 === "object" && !!path18[Symbol.iterator]().next().done;
+    var isEmptyPath = (path21) => path21 == null || typeof path21 === "object" && !!path21[Symbol.iterator]().next().done;
     var Collection = class extends Node.NodeBase {
       constructor(type, schema) {
         super(type);
@@ -21978,11 +21978,11 @@ var require_Collection = __commonJS({
        * be a Pair instance or a `{ key, value }` object, which may not have a key
        * that already exists in the map.
        */
-      addIn(path18, value) {
-        if (isEmptyPath(path18))
+      addIn(path21, value) {
+        if (isEmptyPath(path21))
           this.add(value);
         else {
-          const [key, ...rest] = path18;
+          const [key, ...rest] = path21;
           const node = this.get(key, true);
           if (identity.isCollection(node))
             node.addIn(rest, value);
@@ -21996,8 +21996,8 @@ var require_Collection = __commonJS({
        * Removes a value from the collection.
        * @returns `true` if the item was found and removed.
        */
-      deleteIn(path18) {
-        const [key, ...rest] = path18;
+      deleteIn(path21) {
+        const [key, ...rest] = path21;
         if (rest.length === 0)
           return this.delete(key);
         const node = this.get(key, true);
@@ -22011,8 +22011,8 @@ var require_Collection = __commonJS({
        * scalar values from their surrounding node; to disable set `keepScalar` to
        * `true` (collections are always returned intact).
        */
-      getIn(path18, keepScalar) {
-        const [key, ...rest] = path18;
+      getIn(path21, keepScalar) {
+        const [key, ...rest] = path21;
         const node = this.get(key, true);
         if (rest.length === 0)
           return !keepScalar && identity.isScalar(node) ? node.value : node;
@@ -22030,8 +22030,8 @@ var require_Collection = __commonJS({
       /**
        * Checks if the collection includes a value with the key `key`.
        */
-      hasIn(path18) {
-        const [key, ...rest] = path18;
+      hasIn(path21) {
+        const [key, ...rest] = path21;
         if (rest.length === 0)
           return this.has(key);
         const node = this.get(key, true);
@@ -22041,8 +22041,8 @@ var require_Collection = __commonJS({
        * Sets a value in this collection. For `!!set`, `value` needs to be a
        * boolean to add/remove the item from the set.
        */
-      setIn(path18, value) {
-        const [key, ...rest] = path18;
+      setIn(path21, value) {
+        const [key, ...rest] = path21;
         if (rest.length === 0) {
           this.set(key, value);
         } else {
@@ -24554,9 +24554,9 @@ var require_Document = __commonJS({
           this.contents.add(value);
       }
       /** Adds a value to the document. */
-      addIn(path18, value) {
+      addIn(path21, value) {
         if (assertCollection(this.contents))
-          this.contents.addIn(path18, value);
+          this.contents.addIn(path21, value);
       }
       /**
        * Create a new `Alias` node, ensuring that the target `node` has the required anchor.
@@ -24631,14 +24631,14 @@ var require_Document = __commonJS({
        * Removes a value from the document.
        * @returns `true` if the item was found and removed.
        */
-      deleteIn(path18) {
-        if (Collection.isEmptyPath(path18)) {
+      deleteIn(path21) {
+        if (Collection.isEmptyPath(path21)) {
           if (this.contents == null)
             return false;
           this.contents = null;
           return true;
         }
-        return assertCollection(this.contents) ? this.contents.deleteIn(path18) : false;
+        return assertCollection(this.contents) ? this.contents.deleteIn(path21) : false;
       }
       /**
        * Returns item at `key`, or `undefined` if not found. By default unwraps
@@ -24653,10 +24653,10 @@ var require_Document = __commonJS({
        * scalar values from their surrounding node; to disable set `keepScalar` to
        * `true` (collections are always returned intact).
        */
-      getIn(path18, keepScalar) {
-        if (Collection.isEmptyPath(path18))
+      getIn(path21, keepScalar) {
+        if (Collection.isEmptyPath(path21))
           return !keepScalar && identity.isScalar(this.contents) ? this.contents.value : this.contents;
-        return identity.isCollection(this.contents) ? this.contents.getIn(path18, keepScalar) : void 0;
+        return identity.isCollection(this.contents) ? this.contents.getIn(path21, keepScalar) : void 0;
       }
       /**
        * Checks if the document includes a value with the key `key`.
@@ -24667,10 +24667,10 @@ var require_Document = __commonJS({
       /**
        * Checks if the document includes a value at `path`.
        */
-      hasIn(path18) {
-        if (Collection.isEmptyPath(path18))
+      hasIn(path21) {
+        if (Collection.isEmptyPath(path21))
           return this.contents !== void 0;
-        return identity.isCollection(this.contents) ? this.contents.hasIn(path18) : false;
+        return identity.isCollection(this.contents) ? this.contents.hasIn(path21) : false;
       }
       /**
        * Sets a value in this document. For `!!set`, `value` needs to be a
@@ -24687,13 +24687,13 @@ var require_Document = __commonJS({
        * Sets a value in this document. For `!!set`, `value` needs to be a
        * boolean to add/remove the item from the set.
        */
-      setIn(path18, value) {
-        if (Collection.isEmptyPath(path18)) {
+      setIn(path21, value) {
+        if (Collection.isEmptyPath(path21)) {
           this.contents = value;
         } else if (this.contents == null) {
-          this.contents = Collection.collectionFromPath(this.schema, Array.from(path18), value);
+          this.contents = Collection.collectionFromPath(this.schema, Array.from(path21), value);
         } else if (assertCollection(this.contents)) {
-          this.contents.setIn(path18, value);
+          this.contents.setIn(path21, value);
         }
       }
       /**
@@ -26650,9 +26650,9 @@ var require_cst_visit = __commonJS({
     visit.BREAK = BREAK;
     visit.SKIP = SKIP;
     visit.REMOVE = REMOVE;
-    visit.itemAtPath = (cst, path18) => {
+    visit.itemAtPath = (cst, path21) => {
       let item = cst;
-      for (const [field, index] of path18) {
+      for (const [field, index] of path21) {
         const tok = item?.[field];
         if (tok && "items" in tok) {
           item = tok.items[index];
@@ -26661,23 +26661,23 @@ var require_cst_visit = __commonJS({
       }
       return item;
     };
-    visit.parentCollection = (cst, path18) => {
-      const parent = visit.itemAtPath(cst, path18.slice(0, -1));
-      const field = path18[path18.length - 1][0];
+    visit.parentCollection = (cst, path21) => {
+      const parent = visit.itemAtPath(cst, path21.slice(0, -1));
+      const field = path21[path21.length - 1][0];
       const coll = parent?.[field];
       if (coll && "items" in coll)
         return coll;
       throw new Error("Parent collection not found");
     };
-    function _visit(path18, item, visitor) {
-      let ctrl = visitor(item, path18);
+    function _visit(path21, item, visitor) {
+      let ctrl = visitor(item, path21);
       if (typeof ctrl === "symbol")
         return ctrl;
       for (const field of ["key", "value"]) {
         const token = item[field];
         if (token && "items" in token) {
           for (let i = 0; i < token.items.length; ++i) {
-            const ci = _visit(Object.freeze(path18.concat([[field, i]])), token.items[i], visitor);
+            const ci = _visit(Object.freeze(path21.concat([[field, i]])), token.items[i], visitor);
             if (typeof ci === "number")
               i = ci - 1;
             else if (ci === BREAK)
@@ -26688,10 +26688,10 @@ var require_cst_visit = __commonJS({
             }
           }
           if (typeof ctrl === "function" && field === "key")
-            ctrl = ctrl(item, path18);
+            ctrl = ctrl(item, path21);
         }
       }
-      return typeof ctrl === "function" ? ctrl(item, path18) : ctrl;
+      return typeof ctrl === "function" ? ctrl(item, path21) : ctrl;
     }
     exports.visit = visit;
   }
@@ -29097,8 +29097,8 @@ function getErrorMap() {
 
 // node_modules/zod/v3/helpers/parseUtil.js
 var makeIssue = (params) => {
-  const { data, path: path18, errorMaps, issueData } = params;
-  const fullPath = [...path18, ...issueData.path || []];
+  const { data, path: path21, errorMaps, issueData } = params;
+  const fullPath = [...path21, ...issueData.path || []];
   const fullIssue = {
     ...issueData,
     path: fullPath
@@ -29213,11 +29213,11 @@ var errorUtil;
 
 // node_modules/zod/v3/types.js
 var ParseInputLazyPath = class {
-  constructor(parent, value, path18, key) {
+  constructor(parent, value, path21, key) {
     this._cachedPath = [];
     this.parent = parent;
     this.data = value;
-    this._path = path18;
+    this._path = path21;
     this._key = key;
   }
   get path() {
@@ -41448,6 +41448,9 @@ function registerDispatchTools(server, engine, batchManager, projectDir, metrics
 
 // src/tools/worktree-tools.ts
 init_zod();
+import { realpathSync as realpathSync4 } from "fs";
+import os3 from "os";
+import path13 from "path";
 
 // src/tools/post-merge.ts
 import { execSync } from "child_process";
@@ -41476,17 +41479,43 @@ function runPostMergeCommands(config2, projectDir, cwd) {
 }
 
 // src/tools/worktree-tools.ts
-async function resolveSessionWorkBranchPath(sessionManager, projectDir, sessionId) {
-  if (!sessionId) {
-    return void 0;
+function isSafeSessionWorkBranchPath(workBranchPath) {
+  if (!workBranchPath || !path13.isAbsolute(workBranchPath)) {
+    return false;
   }
+  let canonicalTarget;
+  let canonicalTmp;
+  try {
+    canonicalTarget = realpathSync4(workBranchPath);
+  } catch {
+    return false;
+  }
+  try {
+    canonicalTmp = realpathSync4(os3.tmpdir());
+  } catch {
+    canonicalTmp = os3.tmpdir();
+  }
+  if (canonicalTarget !== canonicalTmp && !canonicalTarget.startsWith(canonicalTmp + path13.sep)) {
+    return false;
+  }
+  return path13.basename(canonicalTarget).startsWith("invoke-session-");
+}
+async function resolveSessionWorkBranchPath(sessionManager, projectDir, sessionId) {
+  if (!sessionId) return void 0;
   if (!projectDir) {
     throw new Error("Project directory is required when session_id is provided");
   }
   const sessionDir = sessionManager.resolve(sessionId);
   const stateManager = new StateManager(projectDir, sessionDir);
   const state = await stateManager.get();
-  return state?.work_branch_path;
+  const workBranchPath = state?.work_branch_path;
+  if (workBranchPath === void 0) return void 0;
+  if (!isSafeSessionWorkBranchPath(workBranchPath)) {
+    throw new Error(
+      `Refusing to use unsafe session work branch path for session '${sessionId}'`
+    );
+  }
+  return realpathSync4(workBranchPath);
 }
 function registerWorktreeTools(server, worktreeManager, sessionManager, config2, projectDir) {
   server.registerTool(
@@ -41577,22 +41606,29 @@ function registerWorktreeTools(server, worktreeManager, sessionManager, config2,
       })
     },
     async ({ session_id }) => {
-      if (!config2 || !projectDir) {
+      try {
+        if (!config2 || !projectDir) {
+          return {
+            content: [{ type: "text", text: "No config available \u2014 post-merge commands not configured." }]
+          };
+        }
+        const commands = config2.settings.post_merge_commands ?? [];
+        if (commands.length === 0) {
+          return {
+            content: [{ type: "text", text: JSON.stringify({ message: "No post_merge_commands configured", commands: [] }) }]
+          };
+        }
+        const cwd = await resolveSessionWorkBranchPath(sessionManager, projectDir, session_id);
+        const result = runPostMergeCommands(config2, projectDir, cwd);
         return {
-          content: [{ type: "text", text: "No config available \u2014 post-merge commands not configured." }]
+          content: [{ type: "text", text: JSON.stringify(result, null, 2) }]
+        };
+      } catch (err) {
+        return {
+          content: [{ type: "text", text: `Post-merge error: ${err instanceof Error ? err.message : String(err)}` }],
+          isError: true
         };
       }
-      const commands = config2.settings.post_merge_commands ?? [];
-      if (commands.length === 0) {
-        return {
-          content: [{ type: "text", text: JSON.stringify({ message: "No post_merge_commands configured", commands: [] }) }]
-        };
-      }
-      const cwd = await resolveSessionWorkBranchPath(sessionManager, projectDir, session_id);
-      const result = runPostMergeCommands(config2, projectDir, cwd);
-      return {
-        content: [{ type: "text", text: JSON.stringify(result, null, 2) }]
-      };
     }
   );
 }
@@ -41600,7 +41636,37 @@ function registerWorktreeTools(server, worktreeManager, sessionManager, config2,
 // src/tools/session-tools.ts
 init_zod();
 init_config();
+import { realpathSync as realpathSync5 } from "fs";
+import os4 from "os";
+import path14 from "path";
 var DEFAULT_STALE_SESSION_DAYS = 7;
+function isSafeSessionWorkBranchPath2(workBranchPath) {
+  if (!workBranchPath || !path14.isAbsolute(workBranchPath)) {
+    return false;
+  }
+  let canonicalTarget;
+  let canonicalTmp;
+  try {
+    canonicalTarget = realpathSync5(workBranchPath);
+  } catch {
+    return false;
+  }
+  try {
+    canonicalTmp = realpathSync5(os4.tmpdir());
+  } catch {
+    canonicalTmp = os4.tmpdir();
+  }
+  if (canonicalTarget !== canonicalTmp && !canonicalTarget.startsWith(canonicalTmp + path14.sep)) {
+    return false;
+  }
+  return path14.basename(canonicalTarget).startsWith("invoke-session-");
+}
+function isSafeWorkBranch(workBranch, sessionId, prefix) {
+  if (!workBranch) {
+    return false;
+  }
+  return workBranch === `${prefix}/${sessionId}`;
+}
 function registerSessionTools(server, sessionManager, projectDir, sessionWorktreeManager) {
   server.registerTool(
     "invoke_list_sessions",
@@ -41687,12 +41753,28 @@ async function cleanupSession(sessionId, sessionManager, sessionWorktreeManager,
     const workBranch = state?.work_branch;
     const workBranchPath = state?.work_branch_path;
     if (workBranch && workBranchPath) {
+      let prefix = "invoke/work";
       try {
-        await sessionWorktreeManager.cleanup(sessionId, workBranch, deleteWorkBranch);
-      } catch (error48) {
+        const config2 = await loadConfig(projectDir);
+        prefix = config2.settings.work_branch_prefix ?? "invoke/work";
+      } catch {
+      }
+      if (!isSafeWorkBranch(workBranch, sessionId, prefix)) {
         console.error(
-          `Failed to clean up session worktree for '${sessionId}': ${error48 instanceof Error ? error48.message : String(error48)}`
+          `Session ${sessionId} has unexpected work_branch '${workBranch}'; skipping branch cleanup.`
         );
+      } else if (!isSafeSessionWorkBranchPath2(workBranchPath)) {
+        console.error(
+          `Session ${sessionId} has unsafe work_branch_path; skipping worktree cleanup.`
+        );
+      } else {
+        try {
+          await sessionWorktreeManager.cleanup(sessionId, workBranch, deleteWorkBranch);
+        } catch (error48) {
+          console.error(
+            `Failed to clean up session worktree for '${sessionId}': ${error48 instanceof Error ? error48.message : String(error48)}`
+          );
+        }
       }
     }
   }
@@ -41943,7 +42025,38 @@ function registerSessionInitTools(server, sessionWorktreeManager, sessionManager
 
 // src/tools/pr-tools.ts
 init_zod();
+init_config();
 import { execFileSync as execFileSync5 } from "child_process";
+import { realpathSync as realpathSync6 } from "fs";
+import os5 from "os";
+import path15 from "path";
+function isSafeSessionWorkBranchPath3(workBranchPath) {
+  if (!workBranchPath || !path15.isAbsolute(workBranchPath)) {
+    return false;
+  }
+  let canonicalTarget;
+  let canonicalTmp;
+  try {
+    canonicalTarget = realpathSync6(workBranchPath);
+  } catch {
+    return false;
+  }
+  try {
+    canonicalTmp = realpathSync6(os5.tmpdir());
+  } catch {
+    canonicalTmp = os5.tmpdir();
+  }
+  if (canonicalTarget !== canonicalTmp && !canonicalTarget.startsWith(canonicalTmp + path15.sep)) {
+    return false;
+  }
+  return path15.basename(canonicalTarget).startsWith("invoke-session-");
+}
+function isSafeWorkBranch2(workBranch, sessionId, prefix) {
+  if (!workBranch) {
+    return false;
+  }
+  return workBranch === `${prefix}/${sessionId}`;
+}
 function registerPrTools(server, sessionManager, projectDir) {
   server.registerTool(
     "invoke_pr_create",
@@ -41967,8 +42080,20 @@ function registerPrTools(server, sessionManager, projectDir) {
             `Session ${session_id} has no work_branch - was it initialized via invoke_session_init_worktree?`
           );
         }
+        const config2 = await loadConfig(projectDir);
+        const workBranchPrefix = config2.settings.work_branch_prefix ?? "invoke/work";
+        if (!isSafeWorkBranch2(state.work_branch, session_id, workBranchPrefix)) {
+          return errorResponse(
+            `Session ${session_id} has an unexpected work_branch \u2014 expected ${workBranchPrefix}/${session_id}`
+          );
+        }
+        if (!isSafeSessionWorkBranchPath3(state.work_branch_path)) {
+          return errorResponse(
+            `Session ${session_id} has an unsafe work_branch_path`
+          );
+        }
         const workBranch = state.work_branch;
-        const cwd = state.work_branch_path;
+        const cwd = realpathSync6(state.work_branch_path);
         const effectiveTitle = title ?? `feat: ${workBranch}`;
         const effectiveBody = body ?? "";
         try {
@@ -42350,7 +42475,7 @@ function registerComparisonTools(server, projectDir, sessionManager) {
 // src/tools/state-tools.ts
 init_zod();
 init_config();
-import path13 from "path";
+import path16 from "path";
 var TaskSchema2 = external_exports3.object({
   id: external_exports3.string(),
   status: external_exports3.enum(["pending", "dispatched", "running", "completed", "error", "timeout", "conflict"]),
@@ -42388,7 +42513,7 @@ var SetStateInputSchema = external_exports3.object({
   work_branch: external_exports3.string().regex(WORK_BRANCH_PATTERN, "invalid work_branch format").optional(),
   base_branch: external_exports3.string().optional(),
   work_branch_path: external_exports3.string().refine(
-    (value) => path13.isAbsolute(value) && path13.basename(value).startsWith("invoke-session-"),
+    (value) => path16.isAbsolute(value) && path16.basename(value).startsWith("invoke-session-"),
     "work_branch_path must be an absolute path with invoke-session- basename"
   ).optional(),
   spec: external_exports3.string().optional(),
@@ -42617,11 +42742,11 @@ init_zod();
 // src/tools/config-manager.ts
 var import_yaml3 = __toESM(require_dist2(), 1);
 import { readFile as readFile9, writeFile as writeFile5 } from "fs/promises";
-import path14 from "path";
+import path17 from "path";
 var ConfigManager = class {
   constructor(projectDir) {
     this.projectDir = projectDir;
-    this.configPath = path14.join(projectDir, ".invoke", "pipeline.yaml");
+    this.configPath = path17.join(projectDir, ".invoke", "pipeline.yaml");
   }
   projectDir;
   configPath;
@@ -42803,11 +42928,11 @@ function buildOperation(input) {
 // src/tools/context.ts
 import { readFile as readFile10, writeFile as writeFile6 } from "fs/promises";
 import { existsSync as existsSync7 } from "fs";
-import path15 from "path";
+import path18 from "path";
 var ContextManager = class {
   constructor(projectDir) {
     this.projectDir = projectDir;
-    this.contextPath = path15.join(projectDir, ".invoke", "context.md");
+    this.contextPath = path18.join(projectDir, ".invoke", "context.md");
   }
   projectDir;
   contextPath;
@@ -43108,13 +43233,13 @@ function logToolError(toolName, error48) {
 // src/defaults-checker.ts
 import { readdir as readdir5 } from "fs/promises";
 import { existsSync as existsSync8 } from "fs";
-import path16 from "path";
+import path19 from "path";
 import { fileURLToPath as fileURLToPath4 } from "url";
-var __dirname4 = path16.dirname(fileURLToPath4(import.meta.url));
-var PACKAGE_ROOT4 = path16.join(__dirname4, "..");
+var __dirname4 = path19.dirname(fileURLToPath4(import.meta.url));
+var PACKAGE_ROOT4 = path19.join(__dirname4, "..");
 async function checkForNewDefaults(projectDir) {
-  const invokeDir = path16.join(projectDir, ".invoke");
-  const defaultsDir = path16.join(PACKAGE_ROOT4, "defaults");
+  const invokeDir = path19.join(projectDir, ".invoke");
+  const defaultsDir = path19.join(PACKAGE_ROOT4, "defaults");
   if (!existsSync8(invokeDir) || !existsSync8(defaultsDir)) {
     return [];
   }
@@ -43126,8 +43251,8 @@ async function scanDir(srcDir, destDir, relativePath, missing) {
   if (!existsSync8(srcDir)) return;
   const entries = await readdir5(srcDir, { withFileTypes: true });
   for (const entry of entries) {
-    const srcPath = path16.join(srcDir, entry.name);
-    const destPath = path16.join(destDir, entry.name);
+    const srcPath = path19.join(srcDir, entry.name);
+    const destPath = path19.join(destDir, entry.name);
     const relPath = relativePath ? `${relativePath}/${entry.name}` : entry.name;
     if (entry.isDirectory()) {
       await scanDir(srcPath, destPath, relPath, missing);
@@ -43140,19 +43265,19 @@ async function scanDir(srcDir, destDir, relativePath, missing) {
   }
 }
 function describeDefault(relPath) {
-  if (relPath.includes("roles/reviewer/")) return `New reviewer: ${path16.basename(relPath, ".md")}`;
-  if (relPath.includes("roles/researcher/")) return `New researcher: ${path16.basename(relPath, ".md")}`;
-  if (relPath.includes("roles/planner/")) return `New planner: ${path16.basename(relPath, ".md")}`;
-  if (relPath.includes("roles/builder/")) return `New builder: ${path16.basename(relPath, ".md")}`;
-  if (relPath.includes("presets/")) return `New preset: ${path16.basename(relPath, path16.extname(relPath))}`;
-  if (relPath.includes("strategies/")) return `New strategy: ${path16.basename(relPath, ".md")}`;
+  if (relPath.includes("roles/reviewer/")) return `New reviewer: ${path19.basename(relPath, ".md")}`;
+  if (relPath.includes("roles/researcher/")) return `New researcher: ${path19.basename(relPath, ".md")}`;
+  if (relPath.includes("roles/planner/")) return `New planner: ${path19.basename(relPath, ".md")}`;
+  if (relPath.includes("roles/builder/")) return `New builder: ${path19.basename(relPath, ".md")}`;
+  if (relPath.includes("presets/")) return `New preset: ${path19.basename(relPath, path19.extname(relPath))}`;
+  if (relPath.includes("strategies/")) return `New strategy: ${path19.basename(relPath, ".md")}`;
   if (relPath === "context-template.md") return "Project context template";
   return `New default: ${relPath}`;
 }
 
 // src/index.ts
 import { writeFile as writeFile7 } from "fs/promises";
-import path17 from "path";
+import path20 from "path";
 async function main() {
   const projectDir = process.cwd();
   const server = new McpServer({
@@ -43177,7 +43302,7 @@ async function main() {
     }
     try {
       await writeFile7(
-        path17.join(projectDir, ".invoke", "validation.json"),
+        path20.join(projectDir, ".invoke", "validation.json"),
         JSON.stringify(validation, null, 2)
       );
     } catch {

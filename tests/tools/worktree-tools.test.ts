@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { realpathSync } from 'fs'
 import { mkdtemp, rm, writeFile } from 'fs/promises'
 import os from 'os'
 import path from 'path'
@@ -61,6 +62,7 @@ describe('registerWorktreeTools', () => {
   let sessionManager: SessionManager
   let registeredTools: Map<string, RegisteredTool>
   let worktreeManager: WorktreeManager
+  let tempDirs: string[]
 
   const registerTool = vi.fn((name: string, config: RegisteredTool['config'], handler: RegisteredTool['handler']) => {
     registeredTools.set(name, { config, handler })
@@ -85,10 +87,17 @@ describe('registerWorktreeTools', () => {
     await writeFile(path.join(sessionDir, 'state.json'), JSON.stringify(state, null, 2) + '\n')
   }
 
+  async function createSafeSessionWorktreePath(sessionId: string): Promise<string> {
+    const worktreePath = await mkdtemp(path.join(os.tmpdir(), `invoke-session-${sessionId}-`))
+    tempDirs.push(worktreePath)
+    return realpathSync(worktreePath)
+  }
+
   beforeEach(async () => {
     projectDir = await mkdtemp(path.join(os.tmpdir(), 'invoke-worktree-tools-'))
     sessionManager = new SessionManager(projectDir)
     registeredTools = new Map()
+    tempDirs = [projectDir]
     registerTool.mockClear()
     postMergeMocks.runPostMergeCommands.mockReset()
     worktreeManager = {
@@ -101,7 +110,9 @@ describe('registerWorktreeTools', () => {
   })
 
   afterEach(async () => {
-    await rm(projectDir, { recursive: true, force: true })
+    await Promise.all(
+      tempDirs.reverse().map(dir => rm(dir, { recursive: true, force: true }))
+    )
   })
 
   it('accepts optional session_id in merge and post-merge schemas', () => {
@@ -121,7 +132,8 @@ describe('registerWorktreeTools', () => {
   })
 
   it('resolves session work_branch_path and passes it as mergeTargetPath', async () => {
-    await writeSessionState('session-1', createState({ work_branch_path: '/tmp/session-worktree' }))
+    const worktreePath = await createSafeSessionWorktreePath('session-1')
+    await writeSessionState('session-1', createState({ work_branch_path: worktreePath }))
     vi.mocked(worktreeManager.merge).mockResolvedValue({ status: 'merged' })
 
     registerWorktreeTools(server, worktreeManager, sessionManager, TEST_CONFIG, projectDir)
@@ -132,7 +144,7 @@ describe('registerWorktreeTools', () => {
     })
 
     expect(worktreeManager.merge).toHaveBeenCalledWith('task-1', {
-      mergeTargetPath: '/tmp/session-worktree',
+      mergeTargetPath: worktreePath,
     })
     expect(worktreeManager.cleanup).toHaveBeenCalledWith('task-1')
     expect(parseResponseText<{ task_id: string; status: string }>(result)).toEqual({
@@ -195,7 +207,8 @@ describe('registerWorktreeTools', () => {
   })
 
   it('runs post-merge commands in the session worktree dir', async () => {
-    await writeSessionState('session-1', createState({ work_branch_path: '/tmp/session-worktree' }))
+    const worktreePath = await createSafeSessionWorktreePath('session-1')
+    await writeSessionState('session-1', createState({ work_branch_path: worktreePath }))
     postMergeMocks.runPostMergeCommands.mockReturnValue({
       commands: [{ command: 'npm install', success: true, output: 'ok' }],
     })
@@ -207,10 +220,41 @@ describe('registerWorktreeTools', () => {
     expect(postMergeMocks.runPostMergeCommands).toHaveBeenCalledWith(
       TEST_CONFIG,
       projectDir,
-      '/tmp/session-worktree'
+      worktreePath
     )
     expect(parseResponseText<{ commands: Array<{ command: string; success: boolean; output: string }> }>(result)).toEqual({
       commands: [{ command: 'npm install', success: true, output: 'ok' }],
     })
+  })
+
+  it('returns an error and does not merge when the session work_branch_path is unsafe', async () => {
+    await writeSessionState('session-unsafe', createState({ work_branch_path: os.homedir() }))
+
+    registerWorktreeTools(server, worktreeManager, sessionManager, TEST_CONFIG, projectDir)
+
+    const result = await getTool('invoke_merge_worktree').handler({
+      task_id: 'task-unsafe',
+      session_id: 'session-unsafe',
+    })
+
+    expect(result.isError).toBe(true)
+    expect(result.content[0].text).toContain(
+      "Merge error: Refusing to use unsafe session work branch path for session 'session-unsafe'"
+    )
+    expect(worktreeManager.merge).not.toHaveBeenCalled()
+  })
+
+  it('returns an error for post-merge when the session work_branch_path is unsafe', async () => {
+    await writeSessionState('session-unsafe', createState({ work_branch_path: os.homedir() }))
+
+    registerWorktreeTools(server, worktreeManager, sessionManager, TEST_CONFIG, projectDir)
+
+    const result = await getTool('invoke_run_post_merge').handler({ session_id: 'session-unsafe' })
+
+    expect(result.isError).toBe(true)
+    expect(result.content[0].text).toContain(
+      "Post-merge error: Refusing to use unsafe session work branch path for session 'session-unsafe'"
+    )
+    expect(postMergeMocks.runPostMergeCommands).not.toHaveBeenCalled()
   })
 })

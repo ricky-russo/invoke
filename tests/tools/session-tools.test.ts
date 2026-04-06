@@ -49,7 +49,7 @@ const TEST_CONFIG: InvokeConfig = {
     default_strategy: 'default',
     agent_timeout: 60,
     commit_style: 'one-commit',
-    work_branch_prefix: 'invoke',
+    work_branch_prefix: 'invoke/sessions',
     stale_session_days: 3,
   },
 }
@@ -164,7 +164,11 @@ describe('registerSessionTools', () => {
   }
 
   async function createSessionWorktreeState(sessionId: string, overrides: Partial<PipelineState> = {}) {
-    const worktree = await sessionWorktreeManager.create(sessionId, 'invoke/sessions', 'main')
+    const worktree = await sessionWorktreeManager.create(
+      sessionId,
+      TEST_CONFIG.settings.work_branch_prefix,
+      'main'
+    )
     await writeSessionState(
       sessionId,
       createState({
@@ -569,6 +573,67 @@ describe('registerSessionTools', () => {
     expect(existsSync(worktree.worktreePath)).toBe(false)
     expect(branchExists(worktree.workBranch)).toBe(false)
     expect(sessionManager.exists(sessionId)).toBe(false)
+  })
+
+  it('skips session worktree cleanup when stored work_branch is malformed', async () => {
+    const sessionId = 'cleanup-malformed-branch'
+    const worktree = await createSessionWorktreeState(sessionId)
+    const cleanupSpy = vi
+      .spyOn(sessionWorktreeManager, 'cleanup')
+      .mockResolvedValue(undefined)
+    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    await writeSessionState(
+      sessionId,
+      createState({
+        work_branch: 'invoke/sessions/other-session',
+        work_branch_path: worktree.worktreePath,
+      })
+    )
+
+    try {
+      const result = await getTool('invoke_cleanup_sessions').handler({
+        session_id: sessionId,
+        delete_work_branch: true,
+      })
+
+      expect(result.isError).toBeUndefined()
+      expect(parseResponseText<string[]>(result)).toEqual([sessionId])
+      expect(cleanupSpy).not.toHaveBeenCalled()
+      expect(consoleErrorSpy).toHaveBeenCalledWith(
+        `Session ${sessionId} has unexpected work_branch 'invoke/sessions/other-session'; skipping branch cleanup.`
+      )
+    } finally {
+      cleanupSpy.mockRestore()
+      consoleErrorSpy.mockRestore()
+    }
+  })
+
+  it('removes the session directory even when worktree cleanup is skipped for malformed branch state', async () => {
+    const sessionId = 'cleanup-malformed-branch-dir'
+    const worktree = await createSessionWorktreeState(sessionId)
+    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    await writeSessionState(
+      sessionId,
+      createState({
+        work_branch: 'invoke/sessions/unexpected',
+        work_branch_path: worktree.worktreePath,
+      })
+    )
+
+    try {
+      const result = await getTool('invoke_cleanup_sessions').handler({
+        session_id: sessionId,
+        delete_work_branch: true,
+      })
+
+      expect(result.isError).toBeUndefined()
+      expect(parseResponseText<string[]>(result)).toEqual([sessionId])
+      expect(sessionManager.exists(sessionId)).toBe(false)
+    } finally {
+      consoleErrorSpy.mockRestore()
+    }
   })
 
   it('cleans a legacy session without worktree state', async () => {

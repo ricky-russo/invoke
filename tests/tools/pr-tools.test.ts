@@ -5,9 +5,15 @@ import os from 'os'
 import path from 'path'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+
+vi.mock('../../src/config.js', () => ({
+  loadConfig: vi.fn(),
+}))
+
+import { loadConfig } from '../../src/config.js'
 import { SessionManager } from '../../src/session/manager.js'
 import { registerPrTools } from '../../src/tools/pr-tools.js'
-import type { PipelineState } from '../../src/types.js'
+import type { InvokeConfig, PipelineState } from '../../src/types.js'
 
 type ToolInput = {
   session_id: string
@@ -38,6 +44,17 @@ type GitRepo = {
 }
 
 const ORIGINAL_ENV = { ...process.env }
+const TEST_CONFIG: InvokeConfig = {
+  providers: {},
+  roles: {},
+  strategies: {},
+  settings: {
+    default_strategy: 'default',
+    agent_timeout: 60,
+    commit_style: 'one-commit',
+    work_branch_prefix: 'invoke/sessions',
+  },
+}
 
 function git(cwd: string, args: string[]): string {
   return execFileSync('git', args, { cwd, stdio: 'pipe' }).toString().trim()
@@ -47,8 +64,8 @@ function parseResponseText<T>(result: ToolResult): T {
   return JSON.parse(result.content[0].text) as T
 }
 
-async function createGitRepo(remoteUrl?: string): Promise<GitRepo> {
-  const repoDir = await mkdtemp(path.join(os.tmpdir(), 'invoke-pr-tools-repo-'))
+async function createGitRepoForSession(sessionId: string, remoteUrl?: string): Promise<GitRepo> {
+  const repoDir = await mkdtemp(path.join(os.tmpdir(), `invoke-session-${sessionId}-`))
   const originDir = await mkdtemp(path.join(os.tmpdir(), 'invoke-pr-tools-origin-'))
 
   git(originDir, ['init', '--bare'])
@@ -70,7 +87,7 @@ async function createGitRepo(remoteUrl?: string): Promise<GitRepo> {
 
   git(repoDir, ['push', '-u', 'origin', 'main'])
 
-  const workBranch = 'invoke/sessions/test-session'
+  const workBranch = `${TEST_CONFIG.settings.work_branch_prefix}/${sessionId}`
   git(repoDir, ['switch', '-c', workBranch])
   await writeFile(path.join(repoDir, 'feature.txt'), 'feature work\n')
   git(repoDir, ['add', 'feature.txt'])
@@ -175,6 +192,7 @@ describe('registerPrTools', () => {
     registeredTools = new Map()
     tempDirs = [projectDir]
     registerTool.mockClear()
+    vi.mocked(loadConfig).mockResolvedValue(TEST_CONFIG)
     registerPrTools(server, sessionManager, projectDir)
   })
 
@@ -194,12 +212,13 @@ describe('registerPrTools', () => {
   })
 
   it('pushes in push_only mode, returns a GitHub compare URL, and does not invoke gh', async () => {
-    const repo = await createGitRepo('https://github.com/owner/repo.git')
+    const sessionId = 'session-1'
+    const repo = await createGitRepoForSession(sessionId, 'https://github.com/owner/repo.git')
     tempDirs.push(repo.repoDir, repo.originDir)
 
     await writeSessionState(
       sessionManager,
-      'session-1',
+      sessionId,
       createState({
         work_branch: repo.workBranch,
         work_branch_path: repo.repoDir,
@@ -213,7 +232,7 @@ describe('registerPrTools', () => {
     process.env.GH_LOG_FILE = ghLogFile
 
     const result = await getTool('invoke_pr_create').handler({
-      session_id: 'session-1',
+      session_id: sessionId,
       base_branch: 'main',
       mode: 'push_only',
     })
@@ -232,12 +251,13 @@ describe('registerPrTools', () => {
   })
 
   it('falls back to push plus compare URL when gh is missing', async () => {
-    const repo = await createGitRepo('git@github.com:owner/repo.git')
+    const sessionId = 'session-2'
+    const repo = await createGitRepoForSession(sessionId, 'git@github.com:owner/repo.git')
     tempDirs.push(repo.repoDir, repo.originDir)
 
     await writeSessionState(
       sessionManager,
-      'session-2',
+      sessionId,
       createState({
         work_branch: repo.workBranch,
         work_branch_path: repo.repoDir,
@@ -249,7 +269,7 @@ describe('registerPrTools', () => {
     process.env.PATH = binDir
 
     const result = await getTool('invoke_pr_create').handler({
-      session_id: 'session-2',
+      session_id: sessionId,
       base_branch: 'main',
       mode: 'create_pr',
     })
@@ -267,12 +287,13 @@ describe('registerPrTools', () => {
   })
 
   it('creates a PR when gh is available, authenticated, and no PR exists', async () => {
-    const repo = await createGitRepo('https://github.com/owner/repo.git')
+    const sessionId = 'session-3'
+    const repo = await createGitRepoForSession(sessionId, 'https://github.com/owner/repo.git')
     tempDirs.push(repo.repoDir, repo.originDir)
 
     await writeSessionState(
       sessionManager,
-      'session-3',
+      sessionId,
       createState({
         work_branch: repo.workBranch,
         work_branch_path: repo.repoDir,
@@ -288,7 +309,7 @@ describe('registerPrTools', () => {
     process.env.GH_PR_CREATE_OUTPUT = 'https://github.com/owner/repo/pull/42\n'
 
     const result = await getTool('invoke_pr_create').handler({
-      session_id: 'session-3',
+      session_id: sessionId,
       base_branch: 'main',
       title: 'feat: add feature',
       body: 'Body from tool',
@@ -307,12 +328,13 @@ describe('registerPrTools', () => {
   })
 
   it('falls back to push plus compare URL when gh is present but unauthenticated', async () => {
-    const repo = await createGitRepo('https://github.com/owner/repo.git')
+    const sessionId = 'session-unauth'
+    const repo = await createGitRepoForSession(sessionId, 'https://github.com/owner/repo.git')
     tempDirs.push(repo.repoDir, repo.originDir)
 
     await writeSessionState(
       sessionManager,
-      'session-unauth',
+      sessionId,
       createState({
         work_branch: repo.workBranch,
         work_branch_path: repo.repoDir,
@@ -325,7 +347,7 @@ describe('registerPrTools', () => {
     process.env.GH_AUTH_STATUS_EXIT_CODE = '1'
 
     const result = await getTool('invoke_pr_create').handler({
-      session_id: 'session-unauth',
+      session_id: sessionId,
       base_branch: 'main',
       mode: 'create_pr',
     })
@@ -343,12 +365,13 @@ describe('registerPrTools', () => {
   })
 
   it('returns an existing PR URL when gh pr view succeeds', async () => {
-    const repo = await createGitRepo('https://github.com/owner/repo.git')
+    const sessionId = 'session-4'
+    const repo = await createGitRepoForSession(sessionId, 'https://github.com/owner/repo.git')
     tempDirs.push(repo.repoDir, repo.originDir)
 
     await writeSessionState(
       sessionManager,
-      'session-4',
+      sessionId,
       createState({
         work_branch: repo.workBranch,
         work_branch_path: repo.repoDir,
@@ -365,7 +388,7 @@ describe('registerPrTools', () => {
     process.env.GH_PR_CREATE_OUTPUT = 'https://github.com/owner/repo/pull/99\n'
 
     const result = await getTool('invoke_pr_create').handler({
-      session_id: 'session-4',
+      session_id: sessionId,
       base_branch: 'main',
       mode: 'create_pr',
     })
@@ -397,7 +420,8 @@ describe('registerPrTools', () => {
   })
 
   it('returns an error when git push fails', async () => {
-    const repoDir = await mkdtemp(path.join(os.tmpdir(), 'invoke-pr-tools-no-origin-'))
+    const sessionId = 'session-6'
+    const repoDir = await mkdtemp(path.join(os.tmpdir(), `invoke-session-${sessionId}-`))
     tempDirs.push(repoDir)
 
     git(repoDir, ['init'])
@@ -407,13 +431,13 @@ describe('registerPrTools', () => {
     await writeFile(path.join(repoDir, 'README.md'), '# Test repo\n')
     git(repoDir, ['add', 'README.md'])
     git(repoDir, ['commit', '-m', 'initial commit'])
-    git(repoDir, ['switch', '-c', 'invoke/sessions/test-session'])
+    git(repoDir, ['switch', '-c', `${TEST_CONFIG.settings.work_branch_prefix}/${sessionId}`])
 
     await writeSessionState(
       sessionManager,
-      'session-6',
+      sessionId,
       createState({
-        work_branch: 'invoke/sessions/test-session',
+        work_branch: `${TEST_CONFIG.settings.work_branch_prefix}/${sessionId}`,
         work_branch_path: repoDir,
       })
     )
@@ -423,7 +447,7 @@ describe('registerPrTools', () => {
     process.env.PATH = binDir
 
     const result = await getTool('invoke_pr_create').handler({
-      session_id: 'session-6',
+      session_id: sessionId,
       base_branch: 'main',
       mode: 'push_only',
     })
@@ -433,12 +457,13 @@ describe('registerPrTools', () => {
   })
 
   it('returns null compare_url for a non-GitHub remote', async () => {
-    const repo = await createGitRepo('https://gitlab.com/owner/repo.git')
+    const sessionId = 'session-7'
+    const repo = await createGitRepoForSession(sessionId, 'https://gitlab.com/owner/repo.git')
     tempDirs.push(repo.repoDir, repo.originDir)
 
     await writeSessionState(
       sessionManager,
-      'session-7',
+      sessionId,
       createState({
         work_branch: repo.workBranch,
         work_branch_path: repo.repoDir,
@@ -450,7 +475,7 @@ describe('registerPrTools', () => {
     process.env.PATH = binDir
 
     const result = await getTool('invoke_pr_create').handler({
-      session_id: 'session-7',
+      session_id: sessionId,
       base_branch: 'main',
       mode: 'push_only',
     })
@@ -464,5 +489,56 @@ describe('registerPrTools', () => {
       gh_available: false,
       pr_url: null,
     })
+  })
+
+  it('returns an error when the session work_branch_path is unsafe', async () => {
+    const sessionId = 'session-unsafe-path'
+
+    await writeSessionState(
+      sessionManager,
+      sessionId,
+      createState({
+        work_branch: `${TEST_CONFIG.settings.work_branch_prefix}/${sessionId}`,
+        work_branch_path: projectDir,
+      })
+    )
+
+    const result = await getTool('invoke_pr_create').handler({
+      session_id: sessionId,
+      base_branch: 'main',
+      mode: 'push_only',
+    })
+
+    expect(result.isError).toBe(true)
+    expect(result.content[0].text).toBe(
+      `Session ${sessionId} has an unsafe work_branch_path`
+    )
+  })
+
+  it('returns an error when the session work_branch does not match the expected prefix and session id', async () => {
+    const sessionId = 'session-bad-branch'
+    const repo = await createGitRepoForSession(sessionId, 'https://github.com/owner/repo.git')
+    tempDirs.push(repo.repoDir, repo.originDir)
+
+    await writeSessionState(
+      sessionManager,
+      sessionId,
+      createState({
+        work_branch: 'invoke/sessions/other-session',
+        work_branch_path: repo.repoDir,
+      })
+    )
+
+    const result = await getTool('invoke_pr_create').handler({
+      session_id: sessionId,
+      base_branch: 'main',
+      mode: 'push_only',
+    })
+
+    expect(result.isError).toBe(true)
+    expect(result.content[0].text).toBe(
+      `Session ${sessionId} has an unexpected work_branch — expected ${TEST_CONFIG.settings.work_branch_prefix}/${sessionId}`
+    )
+    expect(git(repo.originDir, ['branch', '--list', repo.workBranch])).toBe('')
   })
 })

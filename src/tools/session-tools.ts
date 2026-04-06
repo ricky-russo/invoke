@@ -1,3 +1,6 @@
+import { realpathSync } from 'fs'
+import os from 'os'
+import path from 'path'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
 import { loadConfig } from '../config.js'
@@ -13,6 +16,45 @@ import type {
 import type { SessionWorktreeManager } from '../worktree/session-worktree.js'
 
 const DEFAULT_STALE_SESSION_DAYS = 7
+
+function isSafeSessionWorkBranchPath(workBranchPath: string | undefined): workBranchPath is string {
+  if (!workBranchPath || !path.isAbsolute(workBranchPath)) {
+    return false
+  }
+
+  let canonicalTarget: string
+  let canonicalTmp: string
+
+  try {
+    canonicalTarget = realpathSync(workBranchPath)
+  } catch {
+    return false
+  }
+
+  try {
+    canonicalTmp = realpathSync(os.tmpdir())
+  } catch {
+    canonicalTmp = os.tmpdir()
+  }
+
+  if (canonicalTarget !== canonicalTmp && !canonicalTarget.startsWith(canonicalTmp + path.sep)) {
+    return false
+  }
+
+  return path.basename(canonicalTarget).startsWith('invoke-session-')
+}
+
+function isSafeWorkBranch(
+  workBranch: string | undefined,
+  sessionId: string,
+  prefix: string
+): workBranch is string {
+  if (!workBranch) {
+    return false
+  }
+
+  return workBranch === `${prefix}/${sessionId}`
+}
 
 export function registerSessionTools(
   server: McpServer,
@@ -125,12 +167,31 @@ async function cleanupSession(
     const workBranchPath = state?.work_branch_path
 
     if (workBranch && workBranchPath) {
+      let prefix = 'invoke/work'
+
       try {
-        await sessionWorktreeManager.cleanup(sessionId, workBranch, deleteWorkBranch)
-      } catch (error) {
+        const config = await loadConfig(projectDir)
+        prefix = config.settings.work_branch_prefix ?? 'invoke/work'
+      } catch {
+        // Fall back to the default prefix if config cannot be read.
+      }
+
+      if (!isSafeWorkBranch(workBranch, sessionId, prefix)) {
         console.error(
-          `Failed to clean up session worktree for '${sessionId}': ${error instanceof Error ? error.message : String(error)}`
+          `Session ${sessionId} has unexpected work_branch '${workBranch}'; skipping branch cleanup.`
         )
+      } else if (!isSafeSessionWorkBranchPath(workBranchPath)) {
+        console.error(
+          `Session ${sessionId} has unsafe work_branch_path; skipping worktree cleanup.`
+        )
+      } else {
+        try {
+          await sessionWorktreeManager.cleanup(sessionId, workBranch, deleteWorkBranch)
+        } catch (error) {
+          console.error(
+            `Failed to clean up session worktree for '${sessionId}': ${error instanceof Error ? error.message : String(error)}`
+          )
+        }
       }
     }
   }

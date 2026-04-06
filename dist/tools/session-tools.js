@@ -1,8 +1,40 @@
+import { realpathSync } from 'fs';
+import os from 'os';
+import path from 'path';
 import { z } from 'zod';
 import { loadConfig } from '../config.js';
 import { MetricsManager } from '../metrics/manager.js';
 import { StateManager } from './state.js';
 const DEFAULT_STALE_SESSION_DAYS = 7;
+function isSafeSessionWorkBranchPath(workBranchPath) {
+    if (!workBranchPath || !path.isAbsolute(workBranchPath)) {
+        return false;
+    }
+    let canonicalTarget;
+    let canonicalTmp;
+    try {
+        canonicalTarget = realpathSync(workBranchPath);
+    }
+    catch {
+        return false;
+    }
+    try {
+        canonicalTmp = realpathSync(os.tmpdir());
+    }
+    catch {
+        canonicalTmp = os.tmpdir();
+    }
+    if (canonicalTarget !== canonicalTmp && !canonicalTarget.startsWith(canonicalTmp + path.sep)) {
+        return false;
+    }
+    return path.basename(canonicalTarget).startsWith('invoke-session-');
+}
+function isSafeWorkBranch(workBranch, sessionId, prefix) {
+    if (!workBranch) {
+        return false;
+    }
+    return workBranch === `${prefix}/${sessionId}`;
+}
 export function registerSessionTools(server, sessionManager, projectDir, sessionWorktreeManager) {
     server.registerTool('invoke_list_sessions', {
         description: 'List all pipeline sessions.',
@@ -76,11 +108,27 @@ async function cleanupSession(sessionId, sessionManager, sessionWorktreeManager,
         const workBranch = state?.work_branch;
         const workBranchPath = state?.work_branch_path;
         if (workBranch && workBranchPath) {
+            let prefix = 'invoke/work';
             try {
-                await sessionWorktreeManager.cleanup(sessionId, workBranch, deleteWorkBranch);
+                const config = await loadConfig(projectDir);
+                prefix = config.settings.work_branch_prefix ?? 'invoke/work';
             }
-            catch (error) {
-                console.error(`Failed to clean up session worktree for '${sessionId}': ${error instanceof Error ? error.message : String(error)}`);
+            catch {
+                // Fall back to the default prefix if config cannot be read.
+            }
+            if (!isSafeWorkBranch(workBranch, sessionId, prefix)) {
+                console.error(`Session ${sessionId} has unexpected work_branch '${workBranch}'; skipping branch cleanup.`);
+            }
+            else if (!isSafeSessionWorkBranchPath(workBranchPath)) {
+                console.error(`Session ${sessionId} has unsafe work_branch_path; skipping worktree cleanup.`);
+            }
+            else {
+                try {
+                    await sessionWorktreeManager.cleanup(sessionId, workBranch, deleteWorkBranch);
+                }
+                catch (error) {
+                    console.error(`Failed to clean up session worktree for '${sessionId}': ${error instanceof Error ? error.message : String(error)}`);
+                }
             }
         }
     }

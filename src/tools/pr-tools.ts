@@ -1,9 +1,52 @@
 import { execFileSync } from 'child_process'
+import { realpathSync } from 'fs'
+import os from 'os'
+import path from 'path'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
+import { loadConfig } from '../config.js'
 import { checkCliExists } from '../config-validator.js'
 import type { SessionManager } from '../session/manager.js'
 import { StateManager } from './state.js'
+
+function isSafeSessionWorkBranchPath(workBranchPath: string | undefined): workBranchPath is string {
+  if (!workBranchPath || !path.isAbsolute(workBranchPath)) {
+    return false
+  }
+
+  let canonicalTarget: string
+  let canonicalTmp: string
+
+  try {
+    canonicalTarget = realpathSync(workBranchPath)
+  } catch {
+    return false
+  }
+
+  try {
+    canonicalTmp = realpathSync(os.tmpdir())
+  } catch {
+    canonicalTmp = os.tmpdir()
+  }
+
+  if (canonicalTarget !== canonicalTmp && !canonicalTarget.startsWith(canonicalTmp + path.sep)) {
+    return false
+  }
+
+  return path.basename(canonicalTarget).startsWith('invoke-session-')
+}
+
+function isSafeWorkBranch(
+  workBranch: string | undefined,
+  sessionId: string,
+  prefix: string
+): workBranch is string {
+  if (!workBranch) {
+    return false
+  }
+
+  return workBranch === `${prefix}/${sessionId}`
+}
 
 export function registerPrTools(
   server: McpServer,
@@ -34,8 +77,22 @@ export function registerPrTools(
           )
         }
 
+        const config = await loadConfig(projectDir)
+        const workBranchPrefix = config.settings.work_branch_prefix ?? 'invoke/work'
+
+        if (!isSafeWorkBranch(state.work_branch, session_id, workBranchPrefix)) {
+          return errorResponse(
+            `Session ${session_id} has an unexpected work_branch — expected ${workBranchPrefix}/${session_id}`
+          )
+        }
+        if (!isSafeSessionWorkBranchPath(state.work_branch_path)) {
+          return errorResponse(
+            `Session ${session_id} has an unsafe work_branch_path`
+          )
+        }
+
         const workBranch = state.work_branch
-        const cwd = state.work_branch_path
+        const cwd = realpathSync(state.work_branch_path)
         const effectiveTitle = title ?? `feat: ${workBranch}`
         const effectiveBody = body ?? ''
 

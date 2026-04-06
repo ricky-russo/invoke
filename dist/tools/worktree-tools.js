@@ -1,17 +1,48 @@
+import { realpathSync } from 'fs';
+import os from 'os';
+import path from 'path';
 import { z } from 'zod';
 import { runPostMergeCommands } from './post-merge.js';
 import { StateManager } from './state.js';
-async function resolveSessionWorkBranchPath(sessionManager, projectDir, sessionId) {
-    if (!sessionId) {
-        return undefined;
+function isSafeSessionWorkBranchPath(workBranchPath) {
+    if (!workBranchPath || !path.isAbsolute(workBranchPath)) {
+        return false;
     }
+    let canonicalTarget;
+    let canonicalTmp;
+    try {
+        canonicalTarget = realpathSync(workBranchPath);
+    }
+    catch {
+        return false;
+    }
+    try {
+        canonicalTmp = realpathSync(os.tmpdir());
+    }
+    catch {
+        canonicalTmp = os.tmpdir();
+    }
+    if (canonicalTarget !== canonicalTmp && !canonicalTarget.startsWith(canonicalTmp + path.sep)) {
+        return false;
+    }
+    return path.basename(canonicalTarget).startsWith('invoke-session-');
+}
+async function resolveSessionWorkBranchPath(sessionManager, projectDir, sessionId) {
+    if (!sessionId)
+        return undefined;
     if (!projectDir) {
         throw new Error('Project directory is required when session_id is provided');
     }
     const sessionDir = sessionManager.resolve(sessionId);
     const stateManager = new StateManager(projectDir, sessionDir);
     const state = await stateManager.get();
-    return state?.work_branch_path;
+    const workBranchPath = state?.work_branch_path;
+    if (workBranchPath === undefined)
+        return undefined;
+    if (!isSafeSessionWorkBranchPath(workBranchPath)) {
+        throw new Error(`Refusing to use unsafe session work branch path for session '${sessionId}'`);
+    }
+    return realpathSync(workBranchPath);
 }
 export function registerWorktreeTools(server, worktreeManager, sessionManager, config, projectDir) {
     server.registerTool('invoke_create_worktree', {
@@ -89,22 +120,30 @@ export function registerWorktreeTools(server, worktreeManager, sessionManager, c
             session_id: z.string().optional().describe('Session ID used to resolve the session worktree cwd'),
         }),
     }, async ({ session_id }) => {
-        if (!config || !projectDir) {
+        try {
+            if (!config || !projectDir) {
+                return {
+                    content: [{ type: 'text', text: 'No config available — post-merge commands not configured.' }],
+                };
+            }
+            const commands = config.settings.post_merge_commands ?? [];
+            if (commands.length === 0) {
+                return {
+                    content: [{ type: 'text', text: JSON.stringify({ message: 'No post_merge_commands configured', commands: [] }) }],
+                };
+            }
+            const cwd = await resolveSessionWorkBranchPath(sessionManager, projectDir, session_id);
+            const result = runPostMergeCommands(config, projectDir, cwd);
             return {
-                content: [{ type: 'text', text: 'No config available — post-merge commands not configured.' }],
+                content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
             };
         }
-        const commands = config.settings.post_merge_commands ?? [];
-        if (commands.length === 0) {
+        catch (err) {
             return {
-                content: [{ type: 'text', text: JSON.stringify({ message: 'No post_merge_commands configured', commands: [] }) }],
+                content: [{ type: 'text', text: `Post-merge error: ${err instanceof Error ? err.message : String(err)}` }],
+                isError: true,
             };
         }
-        const cwd = await resolveSessionWorkBranchPath(sessionManager, projectDir, session_id);
-        const result = runPostMergeCommands(config, projectDir, cwd);
-        return {
-            content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
-        };
     });
 }
 //# sourceMappingURL=worktree-tools.js.map
