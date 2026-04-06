@@ -161,12 +161,15 @@ If the response is `status: 'conflict'`, do NOT prompt the user for manual resol
 1. Read the task's current `conflict_attempts` from state (default 0 if absent). Use `invoke_get_state` with `session_id: <pipeline_id>` and locate the task in `state.batches[i].tasks[j]` by task_id.
 
 2. If `conflict_attempts < 1`:
-   - Update state via `invoke_set_state` with `session_id: <pipeline_id>` and `batch_update: { id: <batch-id>, status: 'in_progress', tasks: [{ id: <task-id>, status: 'conflict', conflict_attempts: <prev + 1>, ...other existing fields }] }`.
+   - Before calling `invoke_set_state` with `batch_update`, read the current state via `invoke_get_state` and locate the batch. Copy the existing `batch.tasks` array, find the conflicted task by id, update its `status` and `conflict_attempts` in place, then pass the FULL updated tasks array as `batch_update.tasks`. Do NOT send a partial array — `invoke_set_state` shallow-replaces the tasks array, so a partial array would drop sibling task state.
+   - Update state via `invoke_set_state` with `session_id: <pipeline_id>` and `batch_update: { id: <batch-id>, status: 'in_progress', tasks: <full updated tasks array with the conflicted task mutated to status: 'conflict', conflict_attempts: <prev + 1>> }`.
+   - Before redispatching, READ the current contents of each conflicting file from the integration worktree using the Read tool with paths like `<merge_target_path>/<file>`. Include each file's content in the redispatched `task_context` under a key like `current_<filename>` so the rebuilt task can apply changes on top of the current state. R4 explicitly requires this — the redispatched builder must see what's already there.
    - Re-dispatch the same builder for the task by calling `invoke_dispatch_batch` with a single task whose `task_context` extends the original with conflict information:
      - `conflicting_files`: the list from the conflict response
      - `merge_target_path`: the merge target path from the conflict response
+     - `current_<filename>`: one entry per conflicting file containing the file's current contents read from `<merge_target_path>/<file>`
      - `original_task_context`: the original task description
-     - `conflict_instructions`: 'Resume your work, but be aware that the following files conflict with the integration target. Read those files in the merge target before re-implementing your changes so your output applies cleanly.'
+     - `conflict_instructions`: 'Resume your work, but be aware that the following files conflict with the integration target. The current file contents are provided in `current_<filename>` fields — re-implement your changes on top of those contents so your output applies cleanly.'
    - Resume polling for that single-task batch as in step d (use `invoke_get_batch_status` + `invoke_get_task_result` with `session_id`).
    - When the redispatched builder completes, attempt `invoke_merge_worktree` again. If it succeeds, mark the task `merged: true` and continue.
 
@@ -179,14 +182,17 @@ If the response is `status: 'conflict'`, do NOT prompt the user for manual resol
          header: 'Conflict',
          multiSelect: false,
          options: [
-           { label: 'Manual fix', description: 'Pause the pipeline so you can resolve the conflict by hand and tell me when to continue' },
+           { label: 'Retry', description: 'Run another auto-redispatch round with fresh conflict context' },
            { label: 'Skip', description: 'Skip this task for the current batch and continue with other tasks' },
            { label: 'Abort', description: 'Stop the entire batch' }
          ]
        }]
      })
      ```
-   - Honor the user's choice. For 'Skip', mark the task with status `error` and `result_summary` explaining the conflict; do NOT mark it merged.
+   - Honor the user's choice:
+     - **Retry**: reset the redispatch budget for one more attempt and run the same auto-redispatch flow as item 2 (read current batch tasks via `invoke_get_state`, send the full updated tasks array via `batch_update`, read current contents of conflicting files from `merge_target_path`, redispatch with the conflict context, poll, and re-attempt `invoke_merge_worktree`). If that redispatch merges, mark the task `merged: true` and continue. If it conflicts again, present this same Retry/Skip/Abort prompt — the user can keep retrying or eventually choose Skip or Abort.
+     - **Skip**: mark the task with status `error` and a `result_summary` explaining the conflict; do NOT mark it merged. Continue with other tasks in the batch.
+     - **Abort**: stop the entire batch.
 
 **The conflict redispatch counts as a normal builder dispatch and is automatically tracked by metrics.** No special wiring needed for C5.
 
@@ -249,7 +255,7 @@ After the final build batch completes:
 
 - **Agent timeout**: Present error, offer retry/skip/abort
 - **Agent error**: Present raw output, offer retry/skip/abort
-- **Merge conflict**: Follow the R4 redispatch loop in step f.1 — auto-redispatch once with conflict context, then escalate via `AskUserQuestion` (Manual fix / Skip / Abort) on a second conflict
+- **Merge conflict**: Follow the R4 redispatch loop in step f.1 — auto-redispatch once with conflict context, then escalate via `AskUserQuestion` (Retry / Skip / Abort) on a second conflict. Retry resets the redispatch budget for another auto-redispatch round.
 - **Validation failure**: Present test/lint output, help fix before merging the next task or starting the next batch
 - **User abort**: Clean up worktrees via `invoke_cleanup_worktrees`, ask if they want to keep or discard the work branch
 
