@@ -215,6 +215,7 @@ export interface ReviewCycle {
   triaged?: {
     accepted: Finding[]
     dismissed: Finding[]
+    deferred?: Finding[]
   }
 }
 
