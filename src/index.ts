@@ -94,7 +94,7 @@ async function main() {
   registerComparisonTools(server, projectDir, sessionManager)
   registerStateTools(server, stateManager, projectDir, sessionManager)
   registerArtifactTools(server, artifactManager)
-  registerWorktreeTools(server, worktreeManager, config, projectDir)
+  registerWorktreeTools(server, worktreeManager, sessionManager, config, projectDir)
   registerConfigTools(server, projectDir)
   registerConfigUpdateTools(server, projectDir)
   registerContextTools(server, contextManager)

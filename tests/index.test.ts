@@ -297,11 +297,19 @@ describe('index bootstrap', () => {
     const stateManager = mocks.stateManagerInstances[0]
     const metricsManager = mocks.metricsManagerInstances[0]
     const bugManager = mocks.bugManagerInstances[0]
+    const worktreeManager = mocks.worktreeManagerInstances[0]
 
     expect(sessionManager.projectDir).toBe(process.cwd())
     expect(sessionManager.migrate).toHaveBeenCalledTimes(1)
     expect(mocks.registerSessionTools).toHaveBeenCalledWith(server, sessionManager, process.cwd())
     expect(mocks.registerComparisonTools).toHaveBeenCalledWith(server, process.cwd(), sessionManager)
+    expect(mocks.registerWorktreeTools).toHaveBeenCalledWith(
+      server,
+      worktreeManager,
+      sessionManager,
+      TEST_CONFIG,
+      process.cwd()
+    )
     expect(mocks.registerSessionTools.mock.invocationCallOrder[0])
       .toBeLessThan(mocks.registerStateTools.mock.invocationCallOrder[0])
     expect(sessionManager.migrate.mock.invocationCallOrder[0])

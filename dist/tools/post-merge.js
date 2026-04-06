@@ -1,11 +1,12 @@
 import { execSync } from 'child_process';
-export function runPostMergeCommands(config, projectDir) {
+export function runPostMergeCommands(config, projectDir, cwd) {
     const commands = config.settings.post_merge_commands ?? [];
     const results = [];
+    const commandCwd = cwd ?? projectDir;
     for (const command of commands) {
         try {
             const output = execSync(command, {
-                cwd: projectDir,
+                cwd: commandCwd,
                 stdio: 'pipe',
                 timeout: 60000,
             }).toString();

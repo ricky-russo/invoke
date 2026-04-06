@@ -1,10 +1,36 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
+import type { SessionManager } from '../session/manager.js'
 import type { WorktreeManager } from '../worktree/manager.js'
 import type { InvokeConfig } from '../types.js'
 import { runPostMergeCommands } from './post-merge.js'
+import { StateManager } from './state.js'
 
-export function registerWorktreeTools(server: McpServer, worktreeManager: WorktreeManager, config?: InvokeConfig, projectDir?: string): void {
+async function resolveSessionWorkBranchPath(
+  sessionManager: SessionManager,
+  projectDir: string | undefined,
+  sessionId?: string
+): Promise<string | undefined> {
+  if (!sessionId) {
+    return undefined
+  }
+  if (!projectDir) {
+    throw new Error('Project directory is required when session_id is provided')
+  }
+
+  const sessionDir = sessionManager.resolve(sessionId)
+  const stateManager = new StateManager(projectDir, sessionDir)
+  const state = await stateManager.get()
+  return state?.work_branch_path
+}
+
+export function registerWorktreeTools(
+  server: McpServer,
+  worktreeManager: WorktreeManager,
+  sessionManager: SessionManager,
+  config?: InvokeConfig,
+  projectDir?: string
+): void {
   server.registerTool(
     'invoke_create_worktree',
     {
@@ -35,15 +61,28 @@ export function registerWorktreeTools(server: McpServer, worktreeManager: Worktr
       inputSchema: z.object({
         task_id: z.string().describe('Task ID of the worktree to merge'),
         commit_message: z.string().optional().describe('Commit message for the squash merge (defaults to "feat: <task_id>")'),
+        session_id: z.string().optional().describe('Session ID used to resolve a per-session merge target'),
       }),
     },
-    async ({ task_id, commit_message }) => {
+    async ({ task_id, commit_message, session_id }) => {
       try {
-        const result = await worktreeManager.merge(task_id, { commitMessage: commit_message })
+        const mergeTargetPath = await resolveSessionWorkBranchPath(sessionManager, projectDir, session_id)
+        const options = {
+          ...(commit_message !== undefined ? { commitMessage: commit_message } : {}),
+          ...(mergeTargetPath ? { mergeTargetPath } : {}),
+        }
+        const result = await worktreeManager.merge(task_id, Object.keys(options).length > 0 ? options : undefined)
         if (result.status === 'conflict') {
           return {
-            content: [{ type: 'text', text: JSON.stringify({ task_id, ...result }) }],
-            isError: true,
+            content: [{
+              type: 'text',
+              text: JSON.stringify({
+                task_id,
+                status: 'conflict',
+                conflicting_files: result.conflictingFiles,
+                merge_target_path: result.mergeTargetPath,
+              }),
+            }],
           }
         }
         await worktreeManager.cleanup(task_id)
@@ -78,9 +117,11 @@ export function registerWorktreeTools(server: McpServer, worktreeManager: Worktr
     'invoke_run_post_merge',
     {
       description: 'Run configured post-merge commands (e.g., composer install, npm install) to regenerate lockfiles after worktree merges.',
-      inputSchema: z.object({}),
+      inputSchema: z.object({
+        session_id: z.string().optional().describe('Session ID used to resolve the session worktree cwd'),
+      }),
     },
-    async () => {
+    async ({ session_id }) => {
       if (!config || !projectDir) {
         return {
           content: [{ type: 'text', text: 'No config available — post-merge commands not configured.' }],
@@ -93,7 +134,8 @@ export function registerWorktreeTools(server: McpServer, worktreeManager: Worktr
         }
       }
 
-      const result = runPostMergeCommands(config, projectDir)
+      const cwd = await resolveSessionWorkBranchPath(sessionManager, projectDir, session_id)
+      const result = runPostMergeCommands(config, projectDir, cwd)
       return {
         content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
       }

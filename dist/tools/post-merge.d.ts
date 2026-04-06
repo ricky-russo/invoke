@@ -6,5 +6,5 @@ export interface PostMergeResult {
         output: string;
     }[];
 }
-export declare function runPostMergeCommands(config: InvokeConfig, projectDir: string): PostMergeResult;
+export declare function runPostMergeCommands(config: InvokeConfig, projectDir: string, cwd?: string): PostMergeResult;
 //# sourceMappingURL=post-merge.d.ts.map

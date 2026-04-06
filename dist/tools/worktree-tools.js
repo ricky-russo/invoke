@@ -1,6 +1,19 @@
 import { z } from 'zod';
 import { runPostMergeCommands } from './post-merge.js';
-export function registerWorktreeTools(server, worktreeManager, config, projectDir) {
+import { StateManager } from './state.js';
+async function resolveSessionWorkBranchPath(sessionManager, projectDir, sessionId) {
+    if (!sessionId) {
+        return undefined;
+    }
+    if (!projectDir) {
+        throw new Error('Project directory is required when session_id is provided');
+    }
+    const sessionDir = sessionManager.resolve(sessionId);
+    const stateManager = new StateManager(projectDir, sessionDir);
+    const state = await stateManager.get();
+    return state?.work_branch_path;
+}
+export function registerWorktreeTools(server, worktreeManager, sessionManager, config, projectDir) {
     server.registerTool('invoke_create_worktree', {
         description: 'Create an isolated git worktree for a build task.',
         inputSchema: z.object({
@@ -25,14 +38,27 @@ export function registerWorktreeTools(server, worktreeManager, config, projectDi
         inputSchema: z.object({
             task_id: z.string().describe('Task ID of the worktree to merge'),
             commit_message: z.string().optional().describe('Commit message for the squash merge (defaults to "feat: <task_id>")'),
+            session_id: z.string().optional().describe('Session ID used to resolve a per-session merge target'),
         }),
-    }, async ({ task_id, commit_message }) => {
+    }, async ({ task_id, commit_message, session_id }) => {
         try {
-            const result = await worktreeManager.merge(task_id, { commitMessage: commit_message });
+            const mergeTargetPath = await resolveSessionWorkBranchPath(sessionManager, projectDir, session_id);
+            const options = {
+                ...(commit_message !== undefined ? { commitMessage: commit_message } : {}),
+                ...(mergeTargetPath ? { mergeTargetPath } : {}),
+            };
+            const result = await worktreeManager.merge(task_id, Object.keys(options).length > 0 ? options : undefined);
             if (result.status === 'conflict') {
                 return {
-                    content: [{ type: 'text', text: JSON.stringify({ task_id, ...result }) }],
-                    isError: true,
+                    content: [{
+                            type: 'text',
+                            text: JSON.stringify({
+                                task_id,
+                                status: 'conflict',
+                                conflicting_files: result.conflictingFiles,
+                                merge_target_path: result.mergeTargetPath,
+                            }),
+                        }],
                 };
             }
             await worktreeManager.cleanup(task_id);
@@ -59,8 +85,10 @@ export function registerWorktreeTools(server, worktreeManager, config, projectDi
     });
     server.registerTool('invoke_run_post_merge', {
         description: 'Run configured post-merge commands (e.g., composer install, npm install) to regenerate lockfiles after worktree merges.',
-        inputSchema: z.object({}),
-    }, async () => {
+        inputSchema: z.object({
+            session_id: z.string().optional().describe('Session ID used to resolve the session worktree cwd'),
+        }),
+    }, async ({ session_id }) => {
         if (!config || !projectDir) {
             return {
                 content: [{ type: 'text', text: 'No config available — post-merge commands not configured.' }],
@@ -72,7 +100,8 @@ export function registerWorktreeTools(server, worktreeManager, config, projectDi
                 content: [{ type: 'text', text: JSON.stringify({ message: 'No post_merge_commands configured', commands: [] }) }],
             };
         }
-        const result = runPostMergeCommands(config, projectDir);
+        const cwd = await resolveSessionWorkBranchPath(sessionManager, projectDir, session_id);
+        const result = runPostMergeCommands(config, projectDir, cwd);
         return {
             content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
         };

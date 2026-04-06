@@ -40725,13 +40725,14 @@ init_zod();
 
 // src/tools/post-merge.ts
 import { execSync } from "child_process";
-function runPostMergeCommands(config2, projectDir) {
+function runPostMergeCommands(config2, projectDir, cwd) {
   const commands = config2.settings.post_merge_commands ?? [];
   const results = [];
+  const commandCwd = cwd ?? projectDir;
   for (const command of commands) {
     try {
       const output = execSync(command, {
-        cwd: projectDir,
+        cwd: commandCwd,
         stdio: "pipe",
         timeout: 6e4
       }).toString();
@@ -40749,7 +40750,19 @@ function runPostMergeCommands(config2, projectDir) {
 }
 
 // src/tools/worktree-tools.ts
-function registerWorktreeTools(server, worktreeManager, config2, projectDir) {
+async function resolveSessionWorkBranchPath(sessionManager, projectDir, sessionId) {
+  if (!sessionId) {
+    return void 0;
+  }
+  if (!projectDir) {
+    throw new Error("Project directory is required when session_id is provided");
+  }
+  const sessionDir = sessionManager.resolve(sessionId);
+  const stateManager = new StateManager(projectDir, sessionDir);
+  const state = await stateManager.get();
+  return state?.work_branch_path;
+}
+function registerWorktreeTools(server, worktreeManager, sessionManager, config2, projectDir) {
   server.registerTool(
     "invoke_create_worktree",
     {
@@ -40778,16 +40791,29 @@ function registerWorktreeTools(server, worktreeManager, config2, projectDir) {
       description: "Merge a completed worktree back into the work branch.",
       inputSchema: external_exports3.object({
         task_id: external_exports3.string().describe("Task ID of the worktree to merge"),
-        commit_message: external_exports3.string().optional().describe('Commit message for the squash merge (defaults to "feat: <task_id>")')
+        commit_message: external_exports3.string().optional().describe('Commit message for the squash merge (defaults to "feat: <task_id>")'),
+        session_id: external_exports3.string().optional().describe("Session ID used to resolve a per-session merge target")
       })
     },
-    async ({ task_id, commit_message }) => {
+    async ({ task_id, commit_message, session_id }) => {
       try {
-        const result = await worktreeManager.merge(task_id, { commitMessage: commit_message });
+        const mergeTargetPath = await resolveSessionWorkBranchPath(sessionManager, projectDir, session_id);
+        const options = {
+          ...commit_message !== void 0 ? { commitMessage: commit_message } : {},
+          ...mergeTargetPath ? { mergeTargetPath } : {}
+        };
+        const result = await worktreeManager.merge(task_id, Object.keys(options).length > 0 ? options : void 0);
         if (result.status === "conflict") {
           return {
-            content: [{ type: "text", text: JSON.stringify({ task_id, ...result }) }],
-            isError: true
+            content: [{
+              type: "text",
+              text: JSON.stringify({
+                task_id,
+                status: "conflict",
+                conflicting_files: result.conflictingFiles,
+                merge_target_path: result.mergeTargetPath
+              })
+            }]
           };
         }
         await worktreeManager.cleanup(task_id);
@@ -40820,9 +40846,11 @@ function registerWorktreeTools(server, worktreeManager, config2, projectDir) {
     "invoke_run_post_merge",
     {
       description: "Run configured post-merge commands (e.g., composer install, npm install) to regenerate lockfiles after worktree merges.",
-      inputSchema: external_exports3.object({})
+      inputSchema: external_exports3.object({
+        session_id: external_exports3.string().optional().describe("Session ID used to resolve the session worktree cwd")
+      })
     },
-    async () => {
+    async ({ session_id }) => {
       if (!config2 || !projectDir) {
         return {
           content: [{ type: "text", text: "No config available \u2014 post-merge commands not configured." }]
@@ -40834,7 +40862,8 @@ function registerWorktreeTools(server, worktreeManager, config2, projectDir) {
           content: [{ type: "text", text: JSON.stringify({ message: "No post_merge_commands configured", commands: [] }) }]
         };
       }
-      const result = runPostMergeCommands(config2, projectDir);
+      const cwd = await resolveSessionWorkBranchPath(sessionManager, projectDir, session_id);
+      const result = runPostMergeCommands(config2, projectDir, cwd);
       return {
         content: [{ type: "text", text: JSON.stringify(result, null, 2) }]
       };
@@ -41939,7 +41968,7 @@ async function main() {
   registerComparisonTools(server, projectDir, sessionManager);
   registerStateTools(server, stateManager, projectDir, sessionManager);
   registerArtifactTools(server, artifactManager);
-  registerWorktreeTools(server, worktreeManager, config2, projectDir);
+  registerWorktreeTools(server, worktreeManager, sessionManager, config2, projectDir);
   registerConfigTools(server, projectDir);
   registerConfigUpdateTools(server, projectDir);
   registerContextTools(server, contextManager);

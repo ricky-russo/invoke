@@ -5,14 +5,19 @@ export interface PostMergeResult {
   commands: { command: string; success: boolean; output: string }[]
 }
 
-export function runPostMergeCommands(config: InvokeConfig, projectDir: string): PostMergeResult {
+export function runPostMergeCommands(
+  config: InvokeConfig,
+  projectDir: string,
+  cwd?: string
+): PostMergeResult {
   const commands = config.settings.post_merge_commands ?? []
   const results: PostMergeResult['commands'] = []
+  const commandCwd = cwd ?? projectDir
 
   for (const command of commands) {
     try {
       const output = execSync(command, {
-        cwd: projectDir,
+        cwd: commandCwd,
         stdio: 'pipe',
         timeout: 60000,
       }).toString()
