@@ -213,7 +213,7 @@ describe('SessionWorktreeManager', () => {
     expect(reattached).toBeNull()
   })
 
-  it('returns null from reattach when the branch exists but is not checked out in a matching worktree', async () => {
+  it('returns null from reattach when the branch exists but is not checked out at the recorded path', async () => {
     const sessionId = 'reattach-wrong-branch'
     const workBranchPrefix = 'invoke/sessions'
     const targetWorkBranch = buildWorkBranch(workBranchPrefix, sessionId)
@@ -226,9 +226,27 @@ describe('SessionWorktreeManager', () => {
       { cwd: repoDir, stdio: 'pipe' }
     )
 
-    const reattached = await manager.reattach(sessionId, targetWorkBranch)
+    const reattached = await manager.reattach(sessionId, targetWorkBranch, wrongPath)
 
     expect(reattached).toBeNull()
+  })
+
+  it('reattaches after cleanup with deleteBranch=false by recreating the worktree', async () => {
+    const sessionId = 'reattach-after-cleanup'
+    const created = await manager.create(sessionId, 'invoke/sessions', 'main')
+
+    await manager.cleanup(sessionId, created.workBranch, false)
+
+    expect(existsSync(created.worktreePath)).toBe(false)
+    expect(branchExists(created.workBranch)).toBe(true)
+
+    const reattached = await manager.reattach(sessionId, created.workBranch)
+
+    expect(reattached).not.toBeNull()
+    expect(reattached?.sessionId).toBe(sessionId)
+    expect(reattached?.workBranch).toBe(created.workBranch)
+    expect(existsSync(reattached!.worktreePath)).toBe(true)
+    expect(git('git branch --show-current', reattached!.worktreePath)).toBe(created.workBranch)
   })
 
   it('cleans up the worktree and keeps the branch when deleteBranch is false', async () => {
@@ -281,7 +299,7 @@ describe('SessionWorktreeManager', () => {
       sessionId: listedByBranchId,
       worktreePath: normalizePath(listedByBranchPath),
       workBranch: listedByBranch,
-      baseBranch: '',
+      baseBranch: null,
     })
     expect(listed.find(info => info.workBranch === unrelatedBranch)).toBeUndefined()
   })
