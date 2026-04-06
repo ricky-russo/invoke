@@ -6,6 +6,9 @@ export function registerStateTools(server, stateManager, projectDir, sessionMana
         if (!sessionId) {
             return stateManager;
         }
+        if (!sessionManager.exists(sessionId)) {
+            return stateManager;
+        }
         return new StateManager(projectDir, sessionManager.resolve(sessionId));
     }
     async function resolveWritableStateManager(sessionId) {

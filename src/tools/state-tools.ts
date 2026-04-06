@@ -15,6 +15,10 @@ export function registerStateTools(
       return stateManager
     }
 
+    if (!sessionManager.exists(sessionId)) {
+      return stateManager
+    }
+
     return new StateManager(projectDir, sessionManager.resolve(sessionId))
   }
 
