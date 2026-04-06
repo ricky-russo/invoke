@@ -44,12 +44,20 @@ Note: `AskUserQuestion` supports max 4 options per question. If there are more t
 
 ### 4. Start Fix Pipeline
 
-For each selected bug:
+All selected bugs are fixed in **ONE pipeline**, regardless of how many bugs were selected. Do not start a separate pipeline per bug.
 
-1. Call `invoke_update_bug` with `bug_id: <id>` and `status: 'in_progress'`.
-2. Compose a single task description combining the details of all selected bugs — title, description, file/line when available, and severity for each.
-3. Invoke the `invoke-scope` skill with the composed task description using `Skill({ skill: "invoke:invoke-scope" })`.
-4. The scope skill will create a pipeline. Once pipeline state exists, call `invoke_set_state` with `session_id: <pipeline_id>` and `bug_ids: [<selected bug IDs>]` to associate the bugs with this pipeline.
+1. Compose a single task description that lists all selected bugs, e.g.:
+   ```
+   Fix the following bugs:
+   - BUG-001: Token not invalidated (src/auth/session.ts:42) [HIGH]
+   - BUG-002: Duplicate validation logic (src/api/users.ts:30) [MEDIUM]
+   ```
+   Include title, description, file/line when available, and severity for each bug.
+2. Invoke the `invoke-scope` skill **once** with the composed description using `Skill({ skill: "invoke:invoke-scope" })`. This starts the single pipeline.
+3. Once `invoke-scope` returns successfully and a `session_id` is established, call `invoke_set_state` with `session_id: <pipeline_id>` and `bug_ids: [<list of all selected bug IDs>]` to associate the bugs with this pipeline.
+4. Only after `invoke_set_state` succeeds, call `invoke_update_bug` for **each** selected bug with `status: 'in_progress'`. This is the commitment point — marking bugs in progress signals they are actively being worked in this pipeline.
+
+> **On failure:** If `invoke-scope` is cancelled, returns an error, or the pipeline aborts before step 4 completes, skip the `invoke_update_bug` calls. The bugs remain `open` and can be selected again in a future run.
 
 ## Quick Log Flow
 
