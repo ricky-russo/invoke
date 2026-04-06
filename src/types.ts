@@ -178,6 +178,7 @@ export interface PipelineState {
   work_branch?: string
   spec?: string
   plan?: string
+  tasks?: string
   strategy?: string
   batches: BatchState[]
   review_cycles: ReviewCycle[]

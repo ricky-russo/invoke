@@ -55,6 +55,7 @@ export function registerStateTools(server, stateManager, projectDir, sessionMana
             work_branch: z.string().optional(),
             spec: z.string().optional(),
             plan: z.string().optional(),
+            tasks: z.string().optional(),
             strategy: z.string().optional(),
             batches: z.array(z.object({
                 id: z.number(),
@@ -82,6 +83,7 @@ export function registerStateTools(server, stateManager, projectDir, sessionMana
                     dismissed: z.array(z.any()),
                 }).optional(),
             })).optional(),
+            bug_ids: z.array(z.string()).optional(),
         }),
     }, async (updates) => {
         try {

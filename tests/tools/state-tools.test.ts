@@ -149,6 +149,7 @@ describe('registerStateTools', () => {
     const input = {
       session_id: 'session-1',
       pipeline_id: 'pipeline-123',
+      tasks: 'plans/2026-04-06-auth-middleware-tasks.json',
       batches: [
         {
           id: 1,
@@ -180,6 +181,7 @@ describe('registerStateTools', () => {
       sessionManager.resolve('session-1')
     )
     const state = await sessionStateManager.get()
+    expect(state?.tasks).toBe('plans/2026-04-06-auth-middleware-tasks.json')
     expect(state?.batches).toEqual([
       {
         id: 1,

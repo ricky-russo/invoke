@@ -149,6 +149,7 @@ The format:
 
 Call `invoke_set_state` with `session_id: <pipeline_id>` and:
 - `current_stage: "build"`
+- `tasks: "plans/YYYY-MM-DD-<slug>-tasks.json"`
 - `strategy: "<chosen strategy>"`
 
 After updating state, invoke the build stage by calling `Skill({ skill: "invoke:invoke-build" })`.

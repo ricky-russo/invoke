@@ -17,7 +17,7 @@ All `invoke_get_state`, `invoke_set_state`, `invoke_get_metrics`, and `invoke_ge
 
 ### 1. Verify State
 
-Call `invoke_get_state` with `session_id: <pipeline_id>` to verify we're at the build stage. Read the task breakdown from `invoke_read_artifact` with `stage: "plans"`, `filename: "tasks.json"`.
+Call `invoke_get_state` with `session_id: <pipeline_id>` to verify we're at the build stage. Read the task breakdown from `invoke_read_artifact` with `stage: "plans"` and the filename from `state.tasks` (for example, `state.tasks.replace('plans/', '')`).
 
 If build is resuming from existing state, inspect the saved batch/task records before dispatching anything:
 - A task with `merged: true` is already finished. Never re-dispatch it.

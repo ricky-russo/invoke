@@ -41025,6 +41025,7 @@ function registerStateTools(server, stateManager, projectDir, sessionManager) {
         work_branch: external_exports3.string().optional(),
         spec: external_exports3.string().optional(),
         plan: external_exports3.string().optional(),
+        tasks: external_exports3.string().optional(),
         strategy: external_exports3.string().optional(),
         batches: external_exports3.array(external_exports3.object({
           id: external_exports3.number(),
@@ -41051,7 +41052,8 @@ function registerStateTools(server, stateManager, projectDir, sessionManager) {
             accepted: external_exports3.array(external_exports3.any()),
             dismissed: external_exports3.array(external_exports3.any())
           }).optional()
-        })).optional()
+        })).optional(),
+        bug_ids: external_exports3.array(external_exports3.string()).optional()
       })
     },
     async (updates) => {
