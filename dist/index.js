@@ -41692,12 +41692,6 @@ function registerWorktreeTools(server, worktreeManager, sessionManager, config2,
 init_zod();
 init_config();
 var DEFAULT_STALE_SESSION_DAYS = 7;
-function isSafeWorkBranch2(workBranch, sessionId, prefix) {
-  if (!workBranch) {
-    return false;
-  }
-  return workBranch === `${prefix}/${sessionId}`;
-}
 function registerSessionTools(server, sessionManager, projectDir, sessionWorktreeManager) {
   server.registerTool(
     "invoke_list_sessions",
@@ -41739,7 +41733,7 @@ function registerSessionTools(server, sessionManager, projectDir, sessionWorktre
           if (!sessionManager.exists(session_id)) {
             throw new Error(`Session '${session_id}' does not exist`);
           }
-          await cleanupSession(
+          const result = await cleanupSession(
             session_id,
             sessionManager,
             sessionWorktreeManager,
@@ -41747,17 +41741,24 @@ function registerSessionTools(server, sessionManager, projectDir, sessionWorktre
             deleteWorkBranch
           );
           return {
-            content: [{ type: "text", text: JSON.stringify([session_id], null, 2) }]
+            content: [{
+              type: "text",
+              text: JSON.stringify({
+                cleaned: [session_id],
+                warnings: result.skippedBranchCleanup ? [{ session_id, message: `Branch cleanup skipped: ${result.skippedReason}` }] : []
+              }, null, 2)
+            }]
           };
         }
         const sessions = await getSessionsWithStatus(sessionManager, projectDir);
         const filter = status_filter ?? "complete";
         const cleanedSessionIds = [];
+        const warnings = [];
         for (const session of sessions) {
           if (!matchesCleanupFilter(session, filter)) {
             continue;
           }
-          await cleanupSession(
+          const result = await cleanupSession(
             session.session_id,
             sessionManager,
             sessionWorktreeManager,
@@ -41765,9 +41766,18 @@ function registerSessionTools(server, sessionManager, projectDir, sessionWorktre
             deleteWorkBranch
           );
           cleanedSessionIds.push(session.session_id);
+          if (result.skippedBranchCleanup) {
+            warnings.push({
+              session_id: session.session_id,
+              message: `Branch cleanup skipped: ${result.skippedReason}`
+            });
+          }
         }
         return {
-          content: [{ type: "text", text: JSON.stringify(cleanedSessionIds, null, 2) }]
+          content: [{
+            type: "text",
+            text: JSON.stringify({ cleaned: cleanedSessionIds, warnings }, null, 2)
+          }]
         };
       } catch (err) {
         return {
@@ -41779,6 +41789,7 @@ function registerSessionTools(server, sessionManager, projectDir, sessionWorktre
   );
 }
 async function cleanupSession(sessionId, sessionManager, sessionWorktreeManager, projectDir, deleteWorkBranch) {
+  let result = {};
   if (sessionWorktreeManager) {
     const state = await readSessionState(sessionId, sessionManager, projectDir);
     const workBranch = state?.work_branch;
@@ -41790,26 +41801,40 @@ async function cleanupSession(sessionId, sessionManager, sessionWorktreeManager,
         prefix = config2.settings.work_branch_prefix ?? "invoke/work";
       } catch {
       }
-      if (!isSafeWorkBranch2(workBranch, sessionId, prefix)) {
+      if (!isSafeWorkBranch(workBranch, sessionId, prefix)) {
         console.error(
           `Session ${sessionId} has unexpected work_branch '${workBranch}'; skipping branch cleanup.`
         );
+        result = {
+          skippedBranchCleanup: true,
+          skippedReason: `unexpected work_branch '${workBranch}'`
+        };
       } else if (!isSafeSessionWorkBranchPath(workBranchPath, projectDir)) {
         console.error(
           `Session ${sessionId} has unsafe work_branch_path; skipping worktree cleanup.`
         );
+        result = {
+          skippedBranchCleanup: true,
+          skippedReason: "unsafe work_branch_path"
+        };
       } else {
         try {
           await sessionWorktreeManager.cleanup(sessionId, workBranch, deleteWorkBranch);
         } catch (error48) {
+          const message = error48 instanceof Error ? error48.message : String(error48);
           console.error(
-            `Failed to clean up session worktree for '${sessionId}': ${error48 instanceof Error ? error48.message : String(error48)}`
+            `Failed to clean up session worktree for '${sessionId}': ${message}`
           );
+          result = {
+            skippedBranchCleanup: true,
+            skippedReason: `session worktree cleanup failed: ${message}`
+          };
         }
       }
     }
   }
   await sessionManager.cleanup(sessionId);
+  return result;
 }
 async function readSessionState(sessionId, sessionManager, projectDir) {
   let sessionDir;

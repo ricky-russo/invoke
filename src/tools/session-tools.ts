@@ -10,21 +10,17 @@ import type {
   SessionInfo,
   SessionMetricsSummary,
 } from '../types.js'
-import { isSafeSessionWorkBranchPath } from '../worktree/trusted-session-helpers.js'
+import {
+  isSafeSessionWorkBranchPath,
+  isSafeWorkBranch,
+} from '../worktree/trusted-session-helpers.js'
 import type { SessionWorktreeManager } from '../worktree/session-worktree.js'
 
 const DEFAULT_STALE_SESSION_DAYS = 7
 
-function isSafeWorkBranch(
-  workBranch: string | undefined,
-  sessionId: string,
-  prefix: string
-): workBranch is string {
-  if (!workBranch) {
-    return false
-  }
-
-  return workBranch === `${prefix}/${sessionId}`
+type CleanupSessionResult = {
+  skippedBranchCleanup?: boolean
+  skippedReason?: string
 }
 
 export function registerSessionTools(
@@ -81,7 +77,7 @@ export function registerSessionTools(
             throw new Error(`Session '${session_id}' does not exist`)
           }
 
-          await cleanupSession(
+          const result = await cleanupSession(
             session_id,
             sessionManager,
             sessionWorktreeManager,
@@ -89,20 +85,29 @@ export function registerSessionTools(
             deleteWorkBranch
           )
           return {
-            content: [{ type: 'text', text: JSON.stringify([session_id], null, 2) }],
+            content: [{
+              type: 'text',
+              text: JSON.stringify({
+                cleaned: [session_id],
+                warnings: result.skippedBranchCleanup
+                  ? [{ session_id, message: `Branch cleanup skipped: ${result.skippedReason}` }]
+                  : [],
+              }, null, 2),
+            }],
           }
         }
 
         const sessions = await getSessionsWithStatus(sessionManager, projectDir)
         const filter = status_filter ?? 'complete'
         const cleanedSessionIds: string[] = []
+        const warnings: Array<{ session_id: string; message: string }> = []
 
         for (const session of sessions) {
           if (!matchesCleanupFilter(session, filter)) {
             continue
           }
 
-          await cleanupSession(
+          const result = await cleanupSession(
             session.session_id,
             sessionManager,
             sessionWorktreeManager,
@@ -110,10 +115,19 @@ export function registerSessionTools(
             deleteWorkBranch
           )
           cleanedSessionIds.push(session.session_id)
+          if (result.skippedBranchCleanup) {
+            warnings.push({
+              session_id: session.session_id,
+              message: `Branch cleanup skipped: ${result.skippedReason}`,
+            })
+          }
         }
 
         return {
-          content: [{ type: 'text', text: JSON.stringify(cleanedSessionIds, null, 2) }],
+          content: [{
+            type: 'text',
+            text: JSON.stringify({ cleaned: cleanedSessionIds, warnings }, null, 2),
+          }],
         }
       } catch (err) {
         return {
@@ -131,7 +145,9 @@ async function cleanupSession(
   sessionWorktreeManager: SessionWorktreeManager | undefined,
   projectDir: string,
   deleteWorkBranch: boolean
-): Promise<void> {
+): Promise<CleanupSessionResult> {
+  let result: CleanupSessionResult = {}
+
   if (sessionWorktreeManager) {
     const state = await readSessionState(sessionId, sessionManager, projectDir)
     const workBranch = state?.work_branch
@@ -151,23 +167,37 @@ async function cleanupSession(
         console.error(
           `Session ${sessionId} has unexpected work_branch '${workBranch}'; skipping branch cleanup.`
         )
+        result = {
+          skippedBranchCleanup: true,
+          skippedReason: `unexpected work_branch '${workBranch}'`,
+        }
       } else if (!isSafeSessionWorkBranchPath(workBranchPath, projectDir)) {
         console.error(
           `Session ${sessionId} has unsafe work_branch_path; skipping worktree cleanup.`
         )
+        result = {
+          skippedBranchCleanup: true,
+          skippedReason: 'unsafe work_branch_path',
+        }
       } else {
         try {
           await sessionWorktreeManager.cleanup(sessionId, workBranch, deleteWorkBranch)
         } catch (error) {
+          const message = error instanceof Error ? error.message : String(error)
           console.error(
-            `Failed to clean up session worktree for '${sessionId}': ${error instanceof Error ? error.message : String(error)}`
+            `Failed to clean up session worktree for '${sessionId}': ${message}`
           )
+          result = {
+            skippedBranchCleanup: true,
+            skippedReason: `session worktree cleanup failed: ${message}`,
+          }
         }
       }
     }
   }
 
   await sessionManager.cleanup(sessionId)
+  return result
 }
 
 async function readSessionState(

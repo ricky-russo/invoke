@@ -233,9 +233,9 @@ When the user wants to clean up old or completed sessions (e.g., 'clean up old s
         }]
       })
       ```
-      Then call `invoke_cleanup_sessions({ session_id: <id>, delete_work_branch: <true|false> })` based on the answer.
-   d. If `state.work_branch` is NOT set (legacy session), call `invoke_cleanup_sessions({ session_id: <id> })` without the `delete_work_branch` flag.
-4. Report the cleaned sessions back to the user.
+      Then call `invoke_cleanup_sessions({ session_id: <id>, delete_work_branch: <true|false> })` based on the answer. The tool returns `{ cleaned, warnings }`; if `warnings` is non-empty, tell the user branch cleanup was skipped and include the warning message.
+   d. If `state.work_branch` is NOT set (legacy session), call `invoke_cleanup_sessions({ session_id: <id> })` without the `delete_work_branch` flag. This also returns `{ cleaned, warnings }`; surface any warning messages.
+4. Report the cleaned sessions back to the user. If any cleanup call returned warnings, include them in the report.
 
 ### Edit Settings
 

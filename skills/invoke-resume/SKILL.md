@@ -90,7 +90,7 @@ Handle the response by `status`:
   })
   ```
 
-  - **Abort and start fresh**: Call `invoke_cleanup_sessions({ session_id: "<pipeline_id>" })`, then inform the user: "Session cleaned up. Use invoke-scope to start a new pipeline."
+  - **Abort and start fresh**: Call `invoke_cleanup_sessions({ session_id: "<pipeline_id>" })`. The tool returns `{ cleaned, warnings }`; if `warnings` is non-empty, tell the user the session was removed but branch cleanup was skipped and include the warning message. Otherwise inform the user: "Session cleaned up. Use invoke-scope to start a new pipeline."
   - **Cancel**: Do nothing. Exit the resume flow and inform the user the session has been left in place for manual investigation.
 
 ### 5. Check for Orphaned Worktrees
@@ -159,4 +159,4 @@ After clearing the appropriate fields, re-invoke the stage skill using the same 
 
 1. Call `invoke_cleanup_worktrees({})` to remove all worktrees.
 2. Call `invoke_cleanup_sessions({ session_id: "<pipeline_id>" })` to remove the session.
-3. Inform the user: "Pipeline cleaned up. Ready to start fresh — use invoke-scope to begin a new pipeline."
+3. Inspect the `{ cleaned, warnings }` response. If `warnings` is non-empty, inform the user the session was removed but branch cleanup was skipped and include the warning message. Otherwise inform the user: "Pipeline cleaned up. Ready to start fresh — use invoke-scope to begin a new pipeline."

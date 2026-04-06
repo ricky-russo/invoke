@@ -41,6 +41,11 @@ type RegisteredTool = {
   }>
 }
 
+type CleanupResponse = {
+  cleaned: string[]
+  warnings: Array<{ session_id: string; message: string }>
+}
+
 const TEST_CONFIG: InvokeConfig = {
   providers: {},
   roles: {},
@@ -512,7 +517,10 @@ describe('registerSessionTools', () => {
     const result = await getTool('invoke_cleanup_sessions').handler({})
 
     expect(result.isError).toBeUndefined()
-    expect(parseResponseText<string[]>(result)).toEqual(['session-complete'])
+    expect(parseResponseText<CleanupResponse>(result)).toEqual({
+      cleaned: ['session-complete'],
+      warnings: [],
+    })
     expect(sessionManager.exists('session-active')).toBe(true)
     expect(sessionManager.exists('session-complete')).toBe(false)
     expect(sessionManager.exists('session-stale')).toBe(true)
@@ -524,7 +532,10 @@ describe('registerSessionTools', () => {
     const result = await getTool('invoke_cleanup_sessions').handler({ session_id: 'session-active' })
 
     expect(result.isError).toBeUndefined()
-    expect(parseResponseText<string[]>(result)).toEqual(['session-active'])
+    expect(parseResponseText<CleanupResponse>(result)).toEqual({
+      cleaned: ['session-active'],
+      warnings: [],
+    })
     expect(sessionManager.exists('session-active')).toBe(false)
   })
 
@@ -539,10 +550,10 @@ describe('registerSessionTools', () => {
     const result = await getTool('invoke_cleanup_sessions').handler({ status_filter: 'all' })
 
     expect(result.isError).toBeUndefined()
-    expect(parseResponseText<string[]>(result)).toEqual([
-      'session-complete',
-      'session-stale',
-    ])
+    expect(parseResponseText<CleanupResponse>(result)).toEqual({
+      cleaned: ['session-complete', 'session-stale'],
+      warnings: [],
+    })
     expect(existsSync(path.join(projectDir, '.invoke', 'sessions', 'session-active'))).toBe(true)
     expect(sessionManager.exists('session-complete')).toBe(false)
     expect(sessionManager.exists('session-stale')).toBe(false)
@@ -558,7 +569,10 @@ describe('registerSessionTools', () => {
     })
 
     expect(result.isError).toBeUndefined()
-    expect(parseResponseText<string[]>(result)).toEqual([sessionId])
+    expect(parseResponseText<CleanupResponse>(result)).toEqual({
+      cleaned: [sessionId],
+      warnings: [],
+    })
     expect(existsSync(worktree.worktreePath)).toBe(false)
     expect(branchExists(worktree.workBranch)).toBe(true)
     expect(sessionManager.exists(sessionId)).toBe(false)
@@ -574,13 +588,16 @@ describe('registerSessionTools', () => {
     })
 
     expect(result.isError).toBeUndefined()
-    expect(parseResponseText<string[]>(result)).toEqual([sessionId])
+    expect(parseResponseText<CleanupResponse>(result)).toEqual({
+      cleaned: [sessionId],
+      warnings: [],
+    })
     expect(existsSync(worktree.worktreePath)).toBe(false)
     expect(branchExists(worktree.workBranch)).toBe(false)
     expect(sessionManager.exists(sessionId)).toBe(false)
   })
 
-  it('skips session worktree cleanup when stored work_branch is malformed', async () => {
+  it('returns a warning and still removes the session directory when stored work_branch is malformed', async () => {
     const sessionId = 'cleanup-malformed-branch'
     const worktree = await createSessionWorktreeState(sessionId)
     const cleanupSpy = vi
@@ -603,40 +620,20 @@ describe('registerSessionTools', () => {
       })
 
       expect(result.isError).toBeUndefined()
-      expect(parseResponseText<string[]>(result)).toEqual([sessionId])
+      expect(parseResponseText<CleanupResponse>(result)).toEqual({
+        cleaned: [sessionId],
+        warnings: [{
+          session_id: sessionId,
+          message: "Branch cleanup skipped: unexpected work_branch 'invoke/sessions/other-session'",
+        }],
+      })
       expect(cleanupSpy).not.toHaveBeenCalled()
       expect(consoleErrorSpy).toHaveBeenCalledWith(
         `Session ${sessionId} has unexpected work_branch 'invoke/sessions/other-session'; skipping branch cleanup.`
       )
-    } finally {
-      cleanupSpy.mockRestore()
-      consoleErrorSpy.mockRestore()
-    }
-  })
-
-  it('removes the session directory even when worktree cleanup is skipped for malformed branch state', async () => {
-    const sessionId = 'cleanup-malformed-branch-dir'
-    const worktree = await createSessionWorktreeState(sessionId)
-    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
-
-    await writeSessionState(
-      sessionId,
-      createState({
-        work_branch: 'invoke/sessions/unexpected',
-        work_branch_path: worktree.worktreePath,
-      })
-    )
-
-    try {
-      const result = await getTool('invoke_cleanup_sessions').handler({
-        session_id: sessionId,
-        delete_work_branch: true,
-      })
-
-      expect(result.isError).toBeUndefined()
-      expect(parseResponseText<string[]>(result)).toEqual([sessionId])
       expect(sessionManager.exists(sessionId)).toBe(false)
     } finally {
+      cleanupSpy.mockRestore()
       consoleErrorSpy.mockRestore()
     }
   })
@@ -649,12 +646,15 @@ describe('registerSessionTools', () => {
     const result = await getTool('invoke_cleanup_sessions').handler({ session_id: sessionId })
 
     expect(result.isError).toBeUndefined()
-    expect(parseResponseText<string[]>(result)).toEqual([sessionId])
+    expect(parseResponseText<CleanupResponse>(result)).toEqual({
+      cleaned: [sessionId],
+      warnings: [],
+    })
     expect(cleanupSpy).not.toHaveBeenCalled()
     expect(sessionManager.exists(sessionId)).toBe(false)
   })
 
-  it('skips branch deletion when work_branch_path points at a session worktree from a different repo', async () => {
+  it('returns a warning and still removes the session directory when work_branch_path is unsafe', async () => {
     const sessionId = 'cleanup-cross-repo-worktree'
     const worktree = await createSessionWorktreeState(sessionId)
     const externalRepoDir = await createGitRepo('invoke-session-tools-external-')
@@ -682,7 +682,13 @@ describe('registerSessionTools', () => {
       })
 
       expect(result.isError).toBeUndefined()
-      expect(parseResponseText<string[]>(result)).toEqual([sessionId])
+      expect(parseResponseText<CleanupResponse>(result)).toEqual({
+        cleaned: [sessionId],
+        warnings: [{
+          session_id: sessionId,
+          message: 'Branch cleanup skipped: unsafe work_branch_path',
+        }],
+      })
       expect(cleanupSpy).not.toHaveBeenCalled()
       expect(consoleErrorSpy).toHaveBeenCalledWith(
         `Session ${sessionId} has unsafe work_branch_path; skipping worktree cleanup.`
@@ -702,7 +708,7 @@ describe('registerSessionTools', () => {
     }
   })
 
-  it('continues cleanup when the session worktree directory was already deleted', async () => {
+  it('returns a warning and still removes the session directory when the recorded worktree directory was already deleted', async () => {
     const sessionId = 'cleanup-missing-worktree-dir'
     const worktree = await createSessionWorktreeState(sessionId)
     await rm(worktree.worktreePath, { recursive: true, force: true })
@@ -711,7 +717,16 @@ describe('registerSessionTools', () => {
       const result = await getTool('invoke_cleanup_sessions').handler({ session_id: sessionId })
 
       expect(result.isError).toBeUndefined()
-      expect(parseResponseText<string[]>(result)).toEqual([sessionId])
+      expect(parseResponseText<CleanupResponse>(result)).toEqual({
+        cleaned: [sessionId],
+        warnings: [{
+          session_id: sessionId,
+          message: 'Branch cleanup skipped: unsafe work_branch_path',
+        }],
+      })
+      expect(consoleErrorSpy).toHaveBeenCalledWith(
+        `Session ${sessionId} has unsafe work_branch_path; skipping worktree cleanup.`
+      )
       expect(sessionManager.exists(sessionId)).toBe(false)
       expect(branchExists(worktree.workBranch)).toBe(true)
     } finally {
