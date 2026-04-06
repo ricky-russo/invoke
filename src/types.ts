@@ -286,7 +286,7 @@ export const BugEntrySchema = z.object({
   file: z.string().nullable().optional(),
   line: z.number().nullable().optional(),
   labels: z.array(z.string()),
-  session_id: z.string().nullable().optional(),
+  reported_by_session: z.string().nullable().optional(),
   created: z.string().datetime({ message: 'created must be ISO 8601 datetime' }),
   updated: z.string().datetime({ message: 'updated must be ISO 8601 datetime' }),
   resolution: z.string().nullable().optional(),

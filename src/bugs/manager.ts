@@ -1,4 +1,4 @@
-import { lstat, mkdir, readFile, writeFile } from 'fs/promises'
+import { lstat, mkdir, readFile, rename, writeFile } from 'fs/promises'
 import path from 'path'
 import { ZodError } from 'zod'
 import { parse, stringify } from 'yaml'
@@ -26,6 +26,13 @@ interface UpdateBugChanges {
   session_id?: string
 }
 
+export class BugNotFoundError extends Error {
+  constructor(public readonly bugId: string) {
+    super(`Bug '${bugId}' not found`)
+    this.name = 'BugNotFoundError'
+  }
+}
+
 export class BugManager {
   private bugsPath: string
 
@@ -48,7 +55,7 @@ export class BugManager {
         file: input.file ?? null,
         line: input.line ?? null,
         labels: [...(input.labels ?? [])],
-        session_id: input.session_id ?? null,
+        reported_by_session: input.session_id ?? null,
         created: now,
         updated: now,
         resolution: null,
@@ -87,19 +94,46 @@ export class BugManager {
       const bug = bugsFile.bugs.find(entry => entry.id === id)
 
       if (!bug) {
-        throw new Error(`Bug '${id}' not found`)
+        throw new BugNotFoundError(id)
       }
+
+      const isResolving = bug.status !== 'resolved' && changes.status === 'resolved'
+      if (isResolving && !changes.session_id) {
+        throw new Error('session_id required when resolving a bug')
+      }
+
+      let nextStatus = bug.status
+      let nextResolution = bug.resolution
+      let nextResolvedBySession = bug.resolved_by_session
 
       if (changes.status !== undefined) {
-        bug.status = changes.status
+        nextStatus = changes.status
       }
       if (changes.resolution !== undefined) {
-        bug.resolution = changes.resolution
-      }
-      if (changes.status === 'resolved' && changes.session_id) {
-        bug.resolved_by_session = changes.session_id
+        nextResolution = changes.resolution
       }
 
+      if (
+        bug.status === 'resolved' &&
+        (changes.status === 'open' || changes.status === 'in_progress')
+      ) {
+        nextResolution = null
+        nextResolvedBySession = null
+      } else if (changes.status === 'resolved' && changes.session_id) {
+        nextResolvedBySession = changes.session_id
+      }
+
+      if (
+        nextStatus === bug.status &&
+        nextResolution === bug.resolution &&
+        nextResolvedBySession === bug.resolved_by_session
+      ) {
+        throw new Error('No changes specified')
+      }
+
+      bug.status = nextStatus
+      bug.resolution = nextResolution
+      bug.resolved_by_session = nextResolvedBySession
       bug.updated = new Date().toISOString()
 
       await this.writeBugsFile(bugsFile)
@@ -144,7 +178,11 @@ export class BugManager {
     await this.assertBugsPathIsNotSymlink()
 
     const validated = this.parseBugsFile(bugsFile)
-    await writeFile(this.bugsPath, stringify(validated))
+    const serialized = stringify(validated)
+    const tmpPath = `${this.bugsPath}.tmp`
+
+    await writeFile(tmpPath, serialized)
+    await rename(tmpPath, this.bugsPath)
   }
 
   private isMissingFileError(error: unknown): error is NodeJS.ErrnoException {

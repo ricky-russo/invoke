@@ -3,7 +3,7 @@ import { mkdir, readFile, rm, symlink, writeFile } from 'fs/promises'
 import path from 'path'
 import { ZodError } from 'zod'
 import { parse } from 'yaml'
-import { BugManager } from '../../src/bugs/manager.js'
+import { BugManager, BugNotFoundError } from '../../src/bugs/manager.js'
 
 const TEST_DIR = path.join(import.meta.dirname, 'fixtures', 'bug-manager-test')
 const BUGS_FILE_PATH = path.join(TEST_DIR, '.invoke', 'bugs.yaml')
@@ -19,7 +19,7 @@ afterEach(async () => {
 })
 
 describe('BugManager', () => {
-  it('report() creates entry with correct fields and auto-generated BUG-001 ID', async () => {
+  it('report() creates entry with correct fields and stores reported_by_session', async () => {
     const bug = await bugManager.report({
       title: 'Crash on startup',
       description: 'Application crashes before rendering the main window.',
@@ -39,7 +39,7 @@ describe('BugManager', () => {
       file: 'src/main.ts',
       line: 42,
       labels: ['startup', 'regression'],
-      session_id: 'session-1',
+      reported_by_session: 'session-1',
       resolution: null,
       resolved_by_session: null,
     })
@@ -51,6 +51,8 @@ describe('BugManager', () => {
 
     expect(parsed.bugs).toHaveLength(1)
     expect(parsed.bugs[0]).toEqual(bug)
+    expect(parsed.bugs[0]).toHaveProperty('reported_by_session', 'session-1')
+    expect(parsed.bugs[0]).not.toHaveProperty('session_id')
   })
 
   it('report() second call generates BUG-002', async () => {
@@ -108,7 +110,7 @@ describe('BugManager', () => {
     })
 
     await bugManager.update(inProgressBug.id, { status: 'in_progress' })
-    await bugManager.update(resolvedBug.id, { status: 'resolved' })
+    await bugManager.update(resolvedBug.id, { status: 'resolved', session_id: 'session-1' })
 
     await expect(bugManager.list()).resolves.toEqual([openBug])
   })
@@ -123,7 +125,7 @@ describe('BugManager', () => {
       description: 'Second bug description.',
     })
 
-    await bugManager.update(second.id, { status: 'resolved' })
+    await bugManager.update(second.id, { status: 'resolved', session_id: 'session-1' })
 
     const bugs = await bugManager.list({ status: 'all' })
 
@@ -229,6 +231,26 @@ describe('BugManager', () => {
     expect(new Date(updated.updated).getTime()).toBeGreaterThan(new Date(bug.updated).getTime())
   })
 
+  it('update() throws when no changes are specified', async () => {
+    const bug = await bugManager.report({
+      title: 'Unchanged bug',
+      description: 'No updates should be applied.',
+    })
+
+    await expect(bugManager.update(bug.id, {})).rejects.toThrow('No changes specified')
+  })
+
+  it('update() requires session_id when resolving a bug', async () => {
+    const bug = await bugManager.report({
+      title: 'Resolvable bug',
+      description: 'Resolving without a session should fail.',
+    })
+
+    await expect(bugManager.update(bug.id, { status: 'resolved' })).rejects.toThrow(
+      'session_id required when resolving a bug'
+    )
+  })
+
   it('update() with resolution + session_id sets resolved_by_session', async () => {
     const bug = await bugManager.report({
       title: 'Fixable bug',
@@ -246,9 +268,28 @@ describe('BugManager', () => {
     expect(updated.resolved_by_session).toBe('session-2')
   })
 
-  it('update() throws for nonexistent bug ID', async () => {
-    await expect(bugManager.update('BUG-999', { status: 'resolved' })).rejects.toThrow(
-      "Bug 'BUG-999' not found"
-    )
+  it('update() clears resolution and resolved_by_session when reopening a resolved bug', async () => {
+    const bug = await bugManager.report({
+      title: 'Reopenable bug',
+      description: 'This bug will be resolved and reopened.',
+    })
+
+    await bugManager.update(bug.id, {
+      status: 'resolved',
+      resolution: 'Fixed by adding a guard clause.',
+      session_id: 'session-2',
+    })
+
+    const reopened = await bugManager.update(bug.id, { status: 'open' })
+
+    expect(reopened.status).toBe('open')
+    expect(reopened.resolution).toBeNull()
+    expect(reopened.resolved_by_session).toBeNull()
+  })
+
+  it('update() throws BugNotFoundError for nonexistent bug ID', async () => {
+    await expect(
+      bugManager.update('BUG-999', { status: 'resolved', session_id: 'session-1' })
+    ).rejects.toBeInstanceOf(BugNotFoundError)
   })
 })
