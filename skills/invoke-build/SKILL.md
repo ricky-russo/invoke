@@ -120,6 +120,14 @@ If a task returns `error` or `timeout`, present the failure and ask what to do w
 
 Failed tasks do NOT block merging successful tasks that are already completed. Other completed tasks can still be merged while you work through failed-task recovery.
 
+#### e.1 Bug Recording
+
+When a build agent fails and the error appears to be a pre-existing bug (not merely a task-specific failure such as a merge conflict or a missing dependency introduced by this pipeline):
+
+1. Ask the user via `AskUserQuestion`: "Agent [task_id] encountered what appears to be a pre-existing bug. Want to log it?"
+2. If yes, call `invoke_report_bug` with `title`, `description` from the error output, a `severity` estimate, `file`/`line` if available in the stack trace or error message, and `session_id` from the current pipeline.
+3. Confirm: "Logged [BUG-NNN]: [title]"
+
 #### f. Merge and Validate Sequentially
 
 When the user chooses to merge a ready task, call `invoke_merge_worktree` for that task only. This merges the worktree branch and cleans up.
@@ -173,6 +181,13 @@ When all batches are done, update state via `invoke_set_state` with `session_id:
 - `current_stage: "review"`
 
 Then invoke `Skill({ skill: "invoke:invoke-review" })` to begin the review stage.
+
+### Bug Resolution
+
+After the final build batch completes:
+
+1. Read pipeline state via `invoke_get_state` with `session_id: <pipeline_id>`.
+2. If `state.bug_ids` is present and non-empty, note them — they will be resolved when the pipeline ultimately completes (after review).
 
 ## Error Handling
 

@@ -133,6 +133,18 @@ Each entry in `review_cycles` follows this schema:
 
 `scope` is only set on final review cycles. `tier` is omitted in fallback mode. `agreed_by` is omitted when there is only one reviewer.
 
+### Deferred Findings as Bugs
+
+After the user completes triage, if any findings were dismissed or deferred:
+
+1. Ask via `AskUserQuestion`: "Want to log [N] deferred findings as bugs for later?"
+2. If yes, for each deferred finding call `invoke_report_bug` with:
+   - `title` from the finding issue
+   - `description` from the suggestion
+   - `severity` from the finding severity
+   - `file`/`line` from the finding location
+3. Confirm: "Logged [N] bugs"
+
 ### 7. Auto-Fix Accepted Findings
 
 **ALWAYS dispatch builder agents for fixes — NEVER fix code directly in the session.** Fixing directly bypasses the pipeline (no worktrees, no state tracking, no validation).
@@ -213,6 +225,17 @@ Present the commit strategy using `AskUserQuestion` as defined in the invoke-mes
 Execute the chosen commit strategy. Clean up the work branch after squash merge.
 
 After all review cycles complete and the user approves the final result, update state with `current_stage: "complete"` via `invoke_set_state` with `session_id: <pipeline_id>`.
+
+### 11. Bug Resolution
+
+When the pipeline completes (all review cycles pass or the user approves the final result):
+
+1. Read `state.bug_ids` via `invoke_get_state` with `session_id: <pipeline_id>`.
+2. If `bug_ids` is present and non-empty, for each `bug_id` call `invoke_update_bug` with:
+   - `status: "resolved"`
+   - `resolution`: brief summary of what was completed in this pipeline
+   - `session_id: <pipeline_id>`
+3. Print: "✅ Resolved bugs: [list of BUG-NNN]"
 
 ## Error Handling
 
