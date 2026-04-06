@@ -31,6 +31,8 @@ Match the user's intent to the correct invoke skill:
 | Resume previous pipeline | `invoke-resume` | "continue", "resume", "where was I", "pick up where I left off" |
 | Manage pipeline config | `invoke-manage` | "add a reviewer", "create a role", "edit strategy", "configure pipeline", "list roles" |
 | Any development/implementation task | `invoke-scope` | Any request that involves writing code, building features, fixing complex bugs, or adding functionality |
+| View or fix tracked bugs | `invoke-bugs` | 'what bugs are outstanding', 'show me bugs', 'any open bugs', 'fix a bug' |
+| Log a bug for later | `invoke-bugs` | 'log this bug', "that's a bug", 'remember this bug', 'track this bug' |
 | Questions about how invoke works | No skill | "how does the build stage work?", "what does invoke-scope do?" |
 
 ## Priority Rules
@@ -40,6 +42,7 @@ Match the user's intent to the correct invoke skill:
 3. **Never use generic planning tools** (EnterPlanMode, brainstorming skills from other plugins) for development work — use `invoke-scope` instead
 4. If the user asks to "build", "implement", "create", "develop", or "add" anything — that is `invoke-scope`
 5. If a session-start hook reports an active pipeline — that is `invoke-resume`
+6. Bug-related phrases ('fix a bug', 'show bugs', 'any open bugs', etc.) route to `invoke-bugs`, NOT `invoke-scope` — `invoke-bugs` presents the bug list and lets the user select; `invoke-scope` is only used after a specific bug has been chosen for implementation
 
 ## Red Flags
 
