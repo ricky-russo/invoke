@@ -27,11 +27,13 @@ If build is resuming from existing state, inspect the saved batch/task records b
 Present resumed batch status in task buckets so the user can see what is already merged vs. still pending:
 > "Batch N: 2 merged, 1 completed awaiting merge, 1 running, 1 failed"
 
-### 2. Create Work Branch
+### 2. Work Branch (per-session integration worktree)
 
-The first time build runs for this pipeline, note the current branch. All build work happens on a temporary work branch — but since agents work in worktrees, the current branch stays clean until merge.
+If `state.work_branch` is set (new sessions initialized via `invoke_session_init_worktree` in invoke-scope), all merges in this build stage will go into the session integration worktree at `state.work_branch_path`. The `invoke_merge_worktree` tool automatically routes there when given `session_id`.
 
-The `invoke_dispatch_batch` tool with `create_worktrees: true` automatically creates git worktrees for each task. Do not manually run `git checkout -b` or create branches — the dispatch tool handles this. The current branch stays clean until worktrees are merged back.
+If `state.work_branch` is NOT set (legacy sessions from before per-session-branches), merges fall through to the user's repoDir HEAD branch — the legacy behavior. R8 of the spec preserves this for backwards compatibility.
+
+Either way, you do NOT manually run `git checkout -b` or create a branch. The dispatch tool creates per-task worktrees, and the merge tool handles routing.
 
 ### 3. Execute Batches
 
@@ -142,13 +144,51 @@ Bug recording applies in two cases:
 
 #### f. Merge and Validate Sequentially
 
-When the user chooses to merge a ready task, call `invoke_merge_worktree` for that task only. This merges the worktree branch and cleans up.
+When the user chooses to merge a ready task, call `invoke_merge_worktree` for that task with `{ task_id, session_id: <pipeline_id> }`. This routes the squash merge into the session integration worktree (or the legacy repoDir for sessions without `state.work_branch`).
 
-If a merge conflict occurs, present it to the user and help resolve it.
-
-Immediately after each successful merge, call `invoke_run_post_merge` before attempting any other merge. The post-merge validation hook will then run automatically (lint, tests). If any post-merge command or validation step fails, present the failure and help fix it before continuing to the next merge.
+Immediately after each successful merge, call `invoke_run_post_merge` with `{ session_id: <pipeline_id> }` before attempting any other merge. The post-merge validation hook will then run automatically (lint, tests). If any post-merge command or validation step fails, present the failure and help fix it before continuing to the next merge.
 
 Never merge two tasks back-to-back without running `invoke_run_post_merge` and waiting for validation between them. This catches conflicts early.
+
+#### f.1 Conflict Response and Redispatch (R4)
+
+The `invoke_merge_worktree` tool returns one of two shapes:
+- Success: `{ task_id, status: 'merged' }`
+- Conflict: `{ task_id, status: 'conflict', conflicting_files: [...], merge_target_path: '...' }`
+
+If the response is `status: 'conflict'`, do NOT prompt the user for manual resolution. Instead:
+
+1. Read the task's current `conflict_attempts` from state (default 0 if absent). Use `invoke_get_state` with `session_id: <pipeline_id>` and locate the task in `state.batches[i].tasks[j]` by task_id.
+
+2. If `conflict_attempts < 1`:
+   - Update state via `invoke_set_state` with `session_id: <pipeline_id>` and `batch_update: { id: <batch-id>, status: 'in_progress', tasks: [{ id: <task-id>, status: 'conflict', conflict_attempts: <prev + 1>, ...other existing fields }] }`.
+   - Re-dispatch the same builder for the task by calling `invoke_dispatch_batch` with a single task whose `task_context` extends the original with conflict information:
+     - `conflicting_files`: the list from the conflict response
+     - `merge_target_path`: the merge target path from the conflict response
+     - `original_task_context`: the original task description
+     - `conflict_instructions`: 'Resume your work, but be aware that the following files conflict with the integration target. Read those files in the merge target before re-implementing your changes so your output applies cleanly.'
+   - Resume polling for that single-task batch as in step d (use `invoke_get_batch_status` + `invoke_get_task_result` with `session_id`).
+   - When the redispatched builder completes, attempt `invoke_merge_worktree` again. If it succeeds, mark the task `merged: true` and continue.
+
+3. If `conflict_attempts >= 1` (the redispatch already tried once and conflicted again):
+   - Use `AskUserQuestion` to escalate:
+     ```
+     AskUserQuestion({
+       questions: [{
+         question: 'Task [task_id] has conflicted twice. What should I do?',
+         header: 'Conflict',
+         multiSelect: false,
+         options: [
+           { label: 'Manual fix', description: 'Pause the pipeline so you can resolve the conflict by hand and tell me when to continue' },
+           { label: 'Skip', description: 'Skip this task for the current batch and continue with other tasks' },
+           { label: 'Abort', description: 'Stop the entire batch' }
+         ]
+       }]
+     })
+     ```
+   - Honor the user's choice. For 'Skip', mark the task with status `error` and `result_summary` explaining the conflict; do NOT mark it merged.
+
+**The conflict redispatch counts as a normal builder dispatch and is automatically tracked by metrics.** No special wiring needed for C5.
 
 #### g. Update State
 
@@ -209,7 +249,7 @@ After the final build batch completes:
 
 - **Agent timeout**: Present error, offer retry/skip/abort
 - **Agent error**: Present raw output, offer retry/skip/abort
-- **Merge conflict**: Present conflicts, help user resolve
+- **Merge conflict**: Follow the R4 redispatch loop in step f.1 — auto-redispatch once with conflict context, then escalate via `AskUserQuestion` (Manual fix / Skip / Abort) on a second conflict
 - **Validation failure**: Present test/lint output, help fix before merging the next task or starting the next batch
 - **User abort**: Clean up worktrees via `invoke_cleanup_worktrees`, ask if they want to keep or discard the work branch
 
