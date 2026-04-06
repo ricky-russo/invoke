@@ -19,8 +19,26 @@ describe('ClaudeParser', () => {
     expect(result.role).toBe('researcher')
     expect(result.subrole).toBe('codebase')
     expect(result.output.summary).toBeTruthy()
+    expect(result.output.report).toBe(output)
     expect(result.output.raw).toBe(output)
     expect(result.duration).toBe(12000)
+  })
+
+  it('preserves full report output for non-researcher roles', () => {
+    const output = 'Implemented the parser fix and updated the tests.'
+
+    const result = parser.parse(output, 0, {
+      role: 'builder',
+      subrole: 'default',
+      provider: 'claude',
+      model: 'opus-4.6',
+      duration: 8000,
+    })
+
+    expect(result.status).toBe('success')
+    expect(result.output.report).toBe(output)
+    expect(result.output.findings).toBeUndefined()
+    expect(result.output.raw).toBe(output)
   })
 
   it('parses non-zero exit code as error', () => {
@@ -63,6 +81,7 @@ describe('ClaudeParser', () => {
 
     expect(result.status).toBe('success')
     expect(result.output.findings).toHaveLength(2)
+    expect(result.output.report).toBe(output)
     expect(result.output.findings![0].severity).toBe('high')
     expect(result.output.findings![0].file).toBe('src/auth/token.ts')
     expect(result.output.findings![0].line).toBe(42)
@@ -82,6 +101,7 @@ describe('ClaudeParser', () => {
 
     expect(result.status).toBe('success')
     expect(result.output.findings).toEqual([])
+    expect(result.output.report).toBe(output)
     expect(result.output.raw).toBe(output)
   })
 })

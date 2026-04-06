@@ -1,3 +1,4 @@
+import { z } from 'zod';
 export interface ProviderConfig {
     cli: string;
     args: string[];
@@ -186,6 +187,7 @@ export interface ReviewCycle {
     triaged?: {
         accepted: Finding[];
         dismissed: Finding[];
+        deferred?: Finding[];
     };
 }
 export interface SessionInfo {
@@ -232,24 +234,69 @@ export interface SessionComparison {
     sessions: SessionComparisonEntry[];
     delta: SessionComparisonDelta | null;
 }
-export type BugStatus = 'open' | 'in_progress' | 'resolved';
-export type BugSeverity = 'critical' | 'high' | 'medium' | 'low';
-export interface BugEntry {
-    id: string;
-    title: string;
-    description: string;
-    status: BugStatus;
-    severity: BugSeverity;
-    file?: string | null;
-    line?: number | null;
-    labels: string[];
-    session_id?: string | null;
-    created: string;
-    updated: string;
-    resolution?: string | null;
-    resolved_by_session?: string | null;
-}
-export interface BugsFile {
-    bugs: BugEntry[];
-}
+export declare const BugStatusSchema: z.ZodEnum<{
+    in_progress: "in_progress";
+    open: "open";
+    resolved: "resolved";
+}>;
+export type BugStatus = z.infer<typeof BugStatusSchema>;
+export declare const BugSeveritySchema: z.ZodEnum<{
+    low: "low";
+    medium: "medium";
+    high: "high";
+    critical: "critical";
+}>;
+export type BugSeverity = z.infer<typeof BugSeveritySchema>;
+export declare const BugEntrySchema: z.ZodObject<{
+    id: z.ZodString;
+    title: z.ZodString;
+    description: z.ZodString;
+    status: z.ZodEnum<{
+        in_progress: "in_progress";
+        open: "open";
+        resolved: "resolved";
+    }>;
+    severity: z.ZodEnum<{
+        low: "low";
+        medium: "medium";
+        high: "high";
+        critical: "critical";
+    }>;
+    file: z.ZodOptional<z.ZodNullable<z.ZodString>>;
+    line: z.ZodOptional<z.ZodNullable<z.ZodNumber>>;
+    labels: z.ZodArray<z.ZodString>;
+    reported_by_session: z.ZodOptional<z.ZodNullable<z.ZodString>>;
+    created: z.ZodString;
+    updated: z.ZodString;
+    resolution: z.ZodOptional<z.ZodNullable<z.ZodString>>;
+    resolved_by_session: z.ZodOptional<z.ZodNullable<z.ZodString>>;
+}, z.core.$strip>;
+export type BugEntry = z.infer<typeof BugEntrySchema>;
+export declare const BugsFileSchema: z.ZodObject<{
+    bugs: z.ZodArray<z.ZodObject<{
+        id: z.ZodString;
+        title: z.ZodString;
+        description: z.ZodString;
+        status: z.ZodEnum<{
+            in_progress: "in_progress";
+            open: "open";
+            resolved: "resolved";
+        }>;
+        severity: z.ZodEnum<{
+            low: "low";
+            medium: "medium";
+            high: "high";
+            critical: "critical";
+        }>;
+        file: z.ZodOptional<z.ZodNullable<z.ZodString>>;
+        line: z.ZodOptional<z.ZodNullable<z.ZodNumber>>;
+        labels: z.ZodArray<z.ZodString>;
+        reported_by_session: z.ZodOptional<z.ZodNullable<z.ZodString>>;
+        created: z.ZodString;
+        updated: z.ZodString;
+        resolution: z.ZodOptional<z.ZodNullable<z.ZodString>>;
+        resolved_by_session: z.ZodOptional<z.ZodNullable<z.ZodString>>;
+    }, z.core.$strip>>;
+}, z.core.$strip>;
+export type BugsFile = z.infer<typeof BugsFileSchema>;
 //# sourceMappingURL=types.d.ts.map

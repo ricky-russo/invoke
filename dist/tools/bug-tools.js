@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { BugNotFoundError } from '../bugs/manager.js';
 export function registerBugTools(server, bugManager) {
     server.registerTool('invoke_report_bug', {
         description: 'Report a bug discovered during a pipeline session.',
@@ -27,10 +28,8 @@ export function registerBugTools(server, bugManager) {
             };
         }
         catch (err) {
-            return {
-                content: [{ type: 'text', text: err instanceof Error ? err.message : String(err) }],
-                isError: true,
-            };
+            logToolError('invoke_report_bug', err);
+            return errorResponse('Failed to report bug');
         }
     });
     server.registerTool('invoke_list_bugs', {
@@ -47,10 +46,8 @@ export function registerBugTools(server, bugManager) {
             };
         }
         catch (err) {
-            return {
-                content: [{ type: 'text', text: err instanceof Error ? err.message : String(err) }],
-                isError: true,
-            };
+            logToolError('invoke_list_bugs', err);
+            return errorResponse('Failed to list bugs');
         }
     });
     server.registerTool('invoke_update_bug', {
@@ -73,11 +70,21 @@ export function registerBugTools(server, bugManager) {
             };
         }
         catch (err) {
-            return {
-                content: [{ type: 'text', text: err instanceof Error ? err.message : String(err) }],
-                isError: true,
-            };
+            logToolError('invoke_update_bug', err);
+            if (err instanceof BugNotFoundError) {
+                return errorResponse(`Bug not found: ${bug_id}`);
+            }
+            return errorResponse('Failed to update bug');
         }
     });
+}
+function errorResponse(message) {
+    return {
+        content: [{ type: 'text', text: message }],
+        isError: true,
+    };
+}
+function logToolError(toolName, error) {
+    console.error(`[bug-tools] ${toolName} failed`, error);
 }
 //# sourceMappingURL=bug-tools.js.map

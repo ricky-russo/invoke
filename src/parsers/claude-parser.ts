@@ -36,7 +36,7 @@ export class ClaudeParser implements Parser {
       output: {
         summary,
         findings: context.role === 'reviewer' ? (findings ?? []) : undefined,
-        report: context.role === 'researcher' ? rawOutput : undefined,
+        report: rawOutput,
         raw: rawOutput,
       },
     }

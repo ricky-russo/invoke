@@ -1,4 +1,4 @@
-import type { BugEntry, BugSeverity, BugStatus } from '../types.js';
+import { type BugEntry, type BugSeverity, type BugStatus } from '../types.js';
 interface ReportBugInput {
     title: string;
     description: string;
@@ -17,6 +17,10 @@ interface UpdateBugChanges {
     resolution?: string;
     session_id?: string;
 }
+export declare class BugNotFoundError extends Error {
+    readonly bugId: string;
+    constructor(bugId: string);
+}
 export declare class BugManager {
     private bugsPath;
     constructor(projectDir: string);
@@ -27,6 +31,8 @@ export declare class BugManager {
     private readBugsFile;
     private writeBugsFile;
     private isMissingFileError;
+    private parseBugsFile;
+    private assertBugsPathIsNotSymlink;
 }
 export {};
 //# sourceMappingURL=manager.d.ts.map

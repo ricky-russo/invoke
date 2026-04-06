@@ -17,6 +17,24 @@ describe('CodexParser', () => {
 
     expect(result.status).toBe('success')
     expect(result.provider).toBe('codex')
+    expect(result.output.report).toBe(output)
+    expect(result.output.raw).toBe(output)
+  })
+
+  it('preserves full report output for non-researcher roles', () => {
+    const output = 'Updated the batch behavior to keep the full builder response.'
+
+    const result = parser.parse(output, 0, {
+      role: 'builder',
+      subrole: 'default',
+      provider: 'codex',
+      model: 'gpt-5.4',
+      duration: 4000,
+    })
+
+    expect(result.status).toBe('success')
+    expect(result.output.report).toBe(output)
+    expect(result.output.findings).toBeUndefined()
     expect(result.output.raw).toBe(output)
   })
 
@@ -58,6 +76,7 @@ describe('CodexParser', () => {
 
     expect(result.status).toBe('success')
     expect(result.output.findings).toHaveLength(2)
+    expect(result.output.report).toBe(output)
     expect(result.output.findings![0].severity).toBe('critical')
     expect(result.output.findings![1].line).toBeUndefined()
   })

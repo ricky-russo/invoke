@@ -35896,7 +35896,7 @@ var Protocol = class {
     const capturedTransport = this._transport;
     const relatedTaskId = request.params?._meta?.[RELATED_TASK_META_KEY]?.taskId;
     if (handler === void 0) {
-      const errorResponse = {
+      const errorResponse2 = {
         jsonrpc: "2.0",
         id: request.id,
         error: {
@@ -35907,11 +35907,11 @@ var Protocol = class {
       if (relatedTaskId && this._taskMessageQueue) {
         this._enqueueTaskMessage(relatedTaskId, {
           type: "error",
-          message: errorResponse,
+          message: errorResponse2,
           timestamp: Date.now()
         }, capturedTransport?.sessionId).catch((error48) => this._onerror(new Error(`Failed to enqueue error response: ${error48}`)));
       } else {
-        capturedTransport?.send(errorResponse).catch((error48) => this._onerror(new Error(`Failed to send an error response: ${error48}`)));
+        capturedTransport?.send(errorResponse2).catch((error48) => this._onerror(new Error(`Failed to send an error response: ${error48}`)));
       }
       return;
     }
@@ -35981,7 +35981,7 @@ var Protocol = class {
       if (abortController.signal.aborted) {
         return;
       }
-      const errorResponse = {
+      const errorResponse2 = {
         jsonrpc: "2.0",
         id: request.id,
         error: {
@@ -35993,11 +35993,11 @@ var Protocol = class {
       if (relatedTaskId && this._taskMessageQueue) {
         await this._enqueueTaskMessage(relatedTaskId, {
           type: "error",
-          message: errorResponse,
+          message: errorResponse2,
           timestamp: Date.now()
         }, capturedTransport?.sessionId);
       } else {
-        await capturedTransport?.send(errorResponse);
+        await capturedTransport?.send(errorResponse2);
       }
     }).catch((error48) => this._onerror(new Error(`Failed to send response: ${error48}`))).finally(() => {
       if (this._requestHandlerAbortControllers.get(request.id) === abortController) {
@@ -38569,7 +38569,7 @@ var ClaudeParser = class {
       output: {
         summary,
         findings: context.role === "reviewer" ? findings ?? [] : void 0,
-        report: context.role === "researcher" ? rawOutput : void 0,
+        report: rawOutput,
         raw: rawOutput
       }
     };
@@ -38637,7 +38637,7 @@ var CodexParser = class {
       output: {
         summary,
         findings: context.role === "reviewer" ? findings ?? [] : void 0,
-        report: context.role === "researcher" ? rawOutput : void 0,
+        report: rawOutput,
         raw: rawOutput
       }
     };
@@ -40120,8 +40120,9 @@ var SessionManager = class {
 };
 
 // src/bugs/manager.ts
+init_zod();
 var import_yaml2 = __toESM(require_dist2(), 1);
-import { mkdir as mkdir4, readFile as readFile6, writeFile as writeFile3 } from "fs/promises";
+import { lstat, mkdir as mkdir4, readFile as readFile6, rename as rename4, writeFile as writeFile3 } from "fs/promises";
 import path8 from "path";
 
 // src/session/lock.ts
@@ -40139,7 +40140,38 @@ async function withLock(filePath, fn) {
   }
 }
 
+// src/types.ts
+init_zod();
+var BugStatusSchema = external_exports3.enum(["open", "in_progress", "resolved"]);
+var BugSeveritySchema = external_exports3.enum(["critical", "high", "medium", "low"]);
+var BugEntrySchema = external_exports3.object({
+  id: external_exports3.string().regex(/^BUG-\d+$/, "id must match BUG-NNN format"),
+  title: external_exports3.string(),
+  description: external_exports3.string(),
+  status: BugStatusSchema,
+  severity: BugSeveritySchema,
+  file: external_exports3.string().nullable().optional(),
+  line: external_exports3.number().nullable().optional(),
+  labels: external_exports3.array(external_exports3.string()),
+  reported_by_session: external_exports3.string().nullable().optional(),
+  created: external_exports3.string().datetime({ message: "created must be ISO 8601 datetime" }),
+  updated: external_exports3.string().datetime({ message: "updated must be ISO 8601 datetime" }),
+  resolution: external_exports3.string().nullable().optional(),
+  resolved_by_session: external_exports3.string().nullable().optional()
+});
+var BugsFileSchema = external_exports3.object({
+  bugs: external_exports3.array(BugEntrySchema)
+});
+
 // src/bugs/manager.ts
+var BugNotFoundError = class extends Error {
+  constructor(bugId) {
+    super(`Bug '${bugId}' not found`);
+    this.bugId = bugId;
+    this.name = "BugNotFoundError";
+  }
+  bugId;
+};
 var BugManager = class {
   bugsPath;
   constructor(projectDir) {
@@ -40159,7 +40191,7 @@ var BugManager = class {
         file: input.file ?? null,
         line: input.line ?? null,
         labels: [...input.labels ?? []],
-        session_id: input.session_id ?? null,
+        reported_by_session: input.session_id ?? null,
         created: now,
         updated: now,
         resolution: null,
@@ -40189,17 +40221,33 @@ var BugManager = class {
       const bugsFile = await this.readBugsFile();
       const bug = bugsFile.bugs.find((entry) => entry.id === id);
       if (!bug) {
-        throw new Error(`Bug '${id}' not found`);
+        throw new BugNotFoundError(id);
       }
+      const isResolving = bug.status !== "resolved" && changes.status === "resolved";
+      if (isResolving && !changes.session_id) {
+        throw new Error("session_id required when resolving a bug");
+      }
+      let nextStatus = bug.status;
+      let nextResolution = bug.resolution;
+      let nextResolvedBySession = bug.resolved_by_session;
       if (changes.status !== void 0) {
-        bug.status = changes.status;
+        nextStatus = changes.status;
       }
       if (changes.resolution !== void 0) {
-        bug.resolution = changes.resolution;
+        nextResolution = changes.resolution;
       }
-      if (changes.status === "resolved" && changes.session_id) {
-        bug.resolved_by_session = changes.session_id;
+      if (bug.status === "resolved" && (changes.status === "open" || changes.status === "in_progress")) {
+        nextResolution = null;
+        nextResolvedBySession = null;
+      } else if (changes.status === "resolved" && changes.session_id) {
+        nextResolvedBySession = changes.session_id;
       }
+      if (nextStatus === bug.status && nextResolution === bug.resolution && nextResolvedBySession === bug.resolved_by_session) {
+        throw new Error("No changes specified");
+      }
+      bug.status = nextStatus;
+      bug.resolution = nextResolution;
+      bug.resolved_by_session = nextResolvedBySession;
       bug.updated = (/* @__PURE__ */ new Date()).toISOString();
       await this.writeBugsFile(bugsFile);
       return bug;
@@ -40216,13 +40264,12 @@ var BugManager = class {
     return `BUG-${String(maxId + 1).padStart(3, "0")}`;
   }
   async readBugsFile() {
+    await this.assertBugsPathIsNotSymlink();
     try {
       const content = await readFile6(this.bugsPath, "utf-8");
       const parsed = (0, import_yaml2.parse)(content);
-      if (!parsed || typeof parsed !== "object" || !Array.isArray(parsed.bugs)) {
-        return { bugs: [] };
-      }
-      return { bugs: parsed.bugs };
+      const cloneSafeParsed = JSON.parse(JSON.stringify(parsed ?? { bugs: [] }));
+      return this.parseBugsFile(cloneSafeParsed);
     } catch (error48) {
       if (this.isMissingFileError(error48)) {
         return { bugs: [] };
@@ -40231,10 +40278,38 @@ var BugManager = class {
     }
   }
   async writeBugsFile(bugsFile) {
-    await writeFile3(this.bugsPath, (0, import_yaml2.stringify)(bugsFile));
+    await this.assertBugsPathIsNotSymlink();
+    const validated = this.parseBugsFile(bugsFile);
+    const serialized = (0, import_yaml2.stringify)(validated);
+    const tmpPath = `${this.bugsPath}.tmp`;
+    await writeFile3(tmpPath, serialized);
+    await rename4(tmpPath, this.bugsPath);
   }
   isMissingFileError(error48) {
     return error48 instanceof Error && "code" in error48 && error48.code === "ENOENT";
+  }
+  parseBugsFile(value) {
+    try {
+      return BugsFileSchema.parse(value);
+    } catch (error48) {
+      if (error48 instanceof ZodError2) {
+        throw new Error(`Invalid bugs.yaml contents: ${error48.message}`, { cause: error48 });
+      }
+      throw error48;
+    }
+  }
+  async assertBugsPathIsNotSymlink() {
+    try {
+      const stats = await lstat(this.bugsPath);
+      if (stats.isSymbolicLink()) {
+        throw new Error("bugs.yaml must not be a symlink");
+      }
+    } catch (error48) {
+      if (this.isMissingFileError(error48)) {
+        return;
+      }
+      throw error48;
+    }
   }
 };
 
@@ -41053,10 +41128,11 @@ function registerStateTools(server, stateManager, projectDir, sessionManager) {
           tier: external_exports3.string().optional(),
           triaged: external_exports3.object({
             accepted: external_exports3.array(external_exports3.any()),
-            dismissed: external_exports3.array(external_exports3.any())
+            dismissed: external_exports3.array(external_exports3.any()),
+            deferred: external_exports3.array(external_exports3.any()).optional()
           }).optional()
         })).optional(),
-        bug_ids: external_exports3.array(external_exports3.string()).optional()
+        bug_ids: external_exports3.array(external_exports3.string().regex(/^BUG-\d+$/, "bug_ids must be BUG-NNN format")).optional()
       })
     },
     async (updates) => {
@@ -41584,10 +41660,8 @@ function registerBugTools(server, bugManager) {
           content: [{ type: "text", text: JSON.stringify(bug, null, 2) }]
         };
       } catch (err) {
-        return {
-          content: [{ type: "text", text: err instanceof Error ? err.message : String(err) }],
-          isError: true
-        };
+        logToolError("invoke_report_bug", err);
+        return errorResponse("Failed to report bug");
       }
     }
   );
@@ -41607,10 +41681,8 @@ function registerBugTools(server, bugManager) {
           content: [{ type: "text", text: JSON.stringify(bugs, null, 2) }]
         };
       } catch (err) {
-        return {
-          content: [{ type: "text", text: err instanceof Error ? err.message : String(err) }],
-          isError: true
-        };
+        logToolError("invoke_list_bugs", err);
+        return errorResponse("Failed to list bugs");
       }
     }
   );
@@ -41636,13 +41708,23 @@ function registerBugTools(server, bugManager) {
           content: [{ type: "text", text: JSON.stringify(bug, null, 2) }]
         };
       } catch (err) {
-        return {
-          content: [{ type: "text", text: err instanceof Error ? err.message : String(err) }],
-          isError: true
-        };
+        logToolError("invoke_update_bug", err);
+        if (err instanceof BugNotFoundError) {
+          return errorResponse(`Bug not found: ${bug_id}`);
+        }
+        return errorResponse("Failed to update bug");
       }
     }
   );
+}
+function errorResponse(message) {
+  return {
+    content: [{ type: "text", text: message }],
+    isError: true
+  };
+}
+function logToolError(toolName, error48) {
+  console.error(`[bug-tools] ${toolName} failed`, error48);
 }
 
 // src/defaults-checker.ts
