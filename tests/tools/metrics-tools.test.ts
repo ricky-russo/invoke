@@ -306,4 +306,29 @@ describe('registerMetricsTools', () => {
     expect(response.content[0].text).toContain('Metrics error: metrics unavailable')
     expect(loadConfig).not.toHaveBeenCalled()
   })
+
+  it('returns a clean error response when session resolution rejects an invalid session_id', async () => {
+    vi.mocked(sessionManager.resolve).mockImplementation(() => {
+      throw new Error('invalid session id format')
+    })
+
+    const { server, tools } = createServer()
+    registerMetricsTools(
+      server,
+      metricsManager as MetricsManager,
+      '/tmp/project',
+      sessionManager as SessionManager
+    )
+
+    const response = await tools.get('invoke_get_metrics')!.handler({
+      session_id: 'session-1;rm -rf /',
+    })
+
+    expect(response.isError).toBe(true)
+    expect(response.content[0].text).toBe('Metrics error: invalid session id format')
+    expect(StateManagerClass).not.toHaveBeenCalled()
+    expect(metricsManager.getMetricsByPipelineId).not.toHaveBeenCalled()
+    expect(metricsManager.summarize).not.toHaveBeenCalled()
+    expect(loadConfig).not.toHaveBeenCalled()
+  })
 })

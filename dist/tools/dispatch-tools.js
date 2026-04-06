@@ -106,100 +106,105 @@ export function registerDispatchTools(server, engine, batchManager, projectDir, 
             session_id: z.string().optional(),
         }),
     }, async ({ tasks, create_worktrees, session_id }) => {
-        const sessionScope = await resolveSessionScope(session_id);
-        const sessionStateManager = sessionScope?.stateManager;
-        let boundPipelineId;
-        if (sessionStateManager) {
-            const state = await sessionStateManager.get();
-            boundPipelineId = state?.pipeline_id ?? null;
-        }
-        // Read current config to report accurate provider info
-        let taskProviders = [];
-        let config;
-        let warning;
         try {
-            config = await loadConfig(projectDir);
-            taskProviders = tasks.map(t => {
-                const roleConfig = config.roles[t.role]?.[t.subrole];
-                return {
-                    task_id: t.task_id,
-                    providers: roleConfig?.providers.map(p => ({
-                        provider: p.provider,
-                        model: p.model,
-                        effort: p.effort,
-                    })) ?? [],
-                    provider_mode: roleConfig?.provider_mode ?? config.settings.default_provider_mode ?? 'parallel',
-                };
-            });
-        }
-        catch {
-            // Config read failed — return without provider info
-        }
-        const estimatedDispatches = taskProviders.reduce((sum, task) => {
-            const mode = task.provider_mode;
-            return sum + (mode === 'parallel' ? task.providers.length : 1);
-        }, 0);
-        if (config?.settings.max_dispatches !== undefined) {
-            const pipelineId = sessionStateManager
-                ? (boundPipelineId ?? null)
-                : ((await new StateManager(projectDir).get())?.pipeline_id ?? null);
-            let limitStatus;
+            const sessionScope = await resolveSessionScope(session_id);
+            const sessionStateManager = sessionScope?.stateManager;
+            let boundPipelineId;
+            if (sessionStateManager) {
+                const state = await sessionStateManager.get();
+                boundPipelineId = state?.pipeline_id ?? null;
+            }
+            // Read current config to report accurate provider info
+            let taskProviders = [];
+            let config;
+            let warning;
             try {
-                // Session-scoped metrics fall back to legacy sessions/<id>/metrics.json when the
-                // migrated root metrics store is still empty. Remove this compatibility path after
-                // legacy session metrics files have been cleaned up.
-                limitStatus = await resolveLimitStatus(config, pipelineId, sessionScope?.sessionDir);
-            }
-            catch (err) {
-                console.error('Failed to evaluate dispatch limit — failing closed', err);
-                return errorResponse('Dispatch blocked: failed to evaluate dispatch limit');
-            }
-            if (limitStatus.at_limit) {
-                const pipelineLabel = pipelineId ? `pipeline ${pipelineId}` : 'active pipeline';
-                return {
-                    content: [{
-                            type: 'text',
-                            text: `Dispatch blocked: ${pipelineLabel} has reached the max_dispatches limit (${limitStatus.dispatches_used}/${limitStatus.max_dispatches} dispatches used).`,
-                        }],
-                    isError: true,
-                };
-            }
-            try {
-                const projectedDispatches = limitStatus.dispatches_used + estimatedDispatches;
-                if (projectedDispatches > limitStatus.max_dispatches) {
-                    warning = `Exceeding max_dispatches limit (${projectedDispatches}/${limitStatus.max_dispatches})`;
-                }
-                else if (projectedDispatches / limitStatus.max_dispatches > 0.8) {
-                    warning = `Approaching max_dispatches limit (${projectedDispatches}/${limitStatus.max_dispatches})`;
-                }
+                config = await loadConfig(projectDir);
+                taskProviders = tasks.map(t => {
+                    const roleConfig = config.roles[t.role]?.[t.subrole];
+                    return {
+                        task_id: t.task_id,
+                        providers: roleConfig?.providers.map(p => ({
+                            provider: p.provider,
+                            model: p.model,
+                            effort: p.effort,
+                        })) ?? [],
+                        provider_mode: roleConfig?.provider_mode ?? config.settings.default_provider_mode ?? 'parallel',
+                    };
+                });
             }
             catch {
-                // Warning-only path stays fail-open.
+                // Config read failed — return without provider info
             }
+            const estimatedDispatches = taskProviders.reduce((sum, task) => {
+                const mode = task.provider_mode;
+                return sum + (mode === 'parallel' ? task.providers.length : 1);
+            }, 0);
+            if (config?.settings.max_dispatches !== undefined) {
+                const pipelineId = sessionStateManager
+                    ? (boundPipelineId ?? null)
+                    : ((await new StateManager(projectDir).get())?.pipeline_id ?? null);
+                let limitStatus;
+                try {
+                    // Session-scoped metrics fall back to legacy sessions/<id>/metrics.json when the
+                    // migrated root metrics store is still empty. Remove this compatibility path after
+                    // legacy session metrics files have been cleaned up.
+                    limitStatus = await resolveLimitStatus(config, pipelineId, sessionScope?.sessionDir);
+                }
+                catch (err) {
+                    console.error('Failed to evaluate dispatch limit — failing closed', err);
+                    return errorResponse('Dispatch blocked: failed to evaluate dispatch limit');
+                }
+                if (limitStatus.at_limit) {
+                    const pipelineLabel = pipelineId ? `pipeline ${pipelineId}` : 'active pipeline';
+                    return {
+                        content: [{
+                                type: 'text',
+                                text: `Dispatch blocked: ${pipelineLabel} has reached the max_dispatches limit (${limitStatus.dispatches_used}/${limitStatus.max_dispatches} dispatches used).`,
+                            }],
+                        isError: true,
+                    };
+                }
+                try {
+                    const projectedDispatches = limitStatus.dispatches_used + estimatedDispatches;
+                    if (projectedDispatches > limitStatus.max_dispatches) {
+                        warning = `Exceeding max_dispatches limit (${projectedDispatches}/${limitStatus.max_dispatches})`;
+                    }
+                    else if (projectedDispatches / limitStatus.max_dispatches > 0.8) {
+                        warning = `Approaching max_dispatches limit (${projectedDispatches}/${limitStatus.max_dispatches})`;
+                    }
+                }
+                catch {
+                    // Warning-only path stays fail-open.
+                }
+            }
+            const maxParallel = config?.settings?.max_parallel_agents;
+            const batchId = await batchManager.dispatchBatch({
+                tasks: tasks.map(t => ({
+                    taskId: t.task_id,
+                    role: t.role,
+                    subrole: t.subrole,
+                    taskContext: t.task_context,
+                })),
+                createWorktrees: create_worktrees,
+                maxParallel,
+                ...(session_id ? { sessionId: session_id, boundPipelineId } : {}),
+            }, {
+                stateManager: sessionStateManager,
+            });
+            return {
+                content: [{ type: 'text', text: JSON.stringify({
+                            batch_id: batchId,
+                            status: 'dispatched',
+                            tasks: taskProviders,
+                            dispatch_estimate: estimatedDispatches,
+                            warning,
+                        }) }],
+            };
         }
-        const maxParallel = config?.settings?.max_parallel_agents;
-        const batchId = await batchManager.dispatchBatch({
-            tasks: tasks.map(t => ({
-                taskId: t.task_id,
-                role: t.role,
-                subrole: t.subrole,
-                taskContext: t.task_context,
-            })),
-            createWorktrees: create_worktrees,
-            maxParallel,
-            ...(session_id ? { sessionId: session_id, boundPipelineId } : {}),
-        }, {
-            stateManager: sessionStateManager,
-        });
-        return {
-            content: [{ type: 'text', text: JSON.stringify({
-                        batch_id: batchId,
-                        status: 'dispatched',
-                        tasks: taskProviders,
-                        dispatch_estimate: estimatedDispatches,
-                        warning,
-                    }) }],
-        };
+        catch (err) {
+            return errorResponse(`Dispatch error: ${err instanceof Error ? err.message : String(err)}`);
+        }
     });
     server.registerTool('invoke_get_batch_status', {
         description: 'Get the status of a dispatched batch. Waits up to `wait` seconds (default 60) for a status change before returning. Returns immediately if the batch is already complete or if any agent status changes.',

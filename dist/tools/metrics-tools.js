@@ -10,29 +10,29 @@ export function registerMetricsTools(server, metricsManager, projectDir, session
             session_id: z.string().optional().describe('Optional session id for session-scoped metrics'),
         }),
     }, async ({ stage, session_id }) => {
-        let pipelineId = null;
-        if (session_id) {
-            if (!sessionManager) {
-                throw new Error('Session manager is required for session-scoped metrics');
-            }
-            // Session-scoped metrics read pipeline_id from session state and rely on
-            // the state layer to preserve that binding once initialized.
-            const sessionStateManager = new StateManager(projectDir, sessionManager.resolve(session_id));
-            const sessionState = await sessionStateManager.get();
-            pipelineId = sessionState?.pipeline_id ?? null;
-            if (!pipelineId) {
-                return {
-                    content: [{
-                            type: 'text',
-                            text: JSON.stringify(createMetricsResponse([], createEmptySummary(), {
-                                dispatches_used: 0,
-                                at_limit: false,
-                            }), null, 2),
-                        }],
-                };
-            }
-        }
         try {
+            let pipelineId = null;
+            if (session_id) {
+                if (!sessionManager) {
+                    throw new Error('Session manager is required for session-scoped metrics');
+                }
+                // Session-scoped metrics read pipeline_id from session state and rely on
+                // the state layer to preserve that binding once initialized.
+                const sessionStateManager = new StateManager(projectDir, sessionManager.resolve(session_id));
+                const sessionState = await sessionStateManager.get();
+                pipelineId = sessionState?.pipeline_id ?? null;
+                if (!pipelineId) {
+                    return {
+                        content: [{
+                                type: 'text',
+                                text: JSON.stringify(createMetricsResponse([], createEmptySummary(), {
+                                    dispatches_used: 0,
+                                    at_limit: false,
+                                }), null, 2),
+                            }],
+                    };
+                }
+            }
             const pipelineEntries = await metricsManager.getMetricsByPipelineId(pipelineId);
             const entries = filterEntriesByStage(pipelineEntries, stage);
             const summary = metricsManager.summarize(entries);

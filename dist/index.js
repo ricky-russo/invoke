@@ -41294,88 +41294,94 @@ function registerDispatchTools(server, engine, batchManager, projectDir, metrics
       })
     },
     async ({ tasks, create_worktrees, session_id }) => {
-      const sessionScope = await resolveSessionScope(session_id);
-      const sessionStateManager = sessionScope?.stateManager;
-      let boundPipelineId;
-      if (sessionStateManager) {
-        const state = await sessionStateManager.get();
-        boundPipelineId = state?.pipeline_id ?? null;
-      }
-      let taskProviders = [];
-      let config2;
-      let warning;
       try {
-        config2 = await loadConfig(projectDir);
-        taskProviders = tasks.map((t) => {
-          const roleConfig = config2.roles[t.role]?.[t.subrole];
-          return {
-            task_id: t.task_id,
-            providers: roleConfig?.providers.map((p) => ({
-              provider: p.provider,
-              model: p.model,
-              effort: p.effort
-            })) ?? [],
-            provider_mode: roleConfig?.provider_mode ?? config2.settings.default_provider_mode ?? "parallel"
-          };
-        });
-      } catch {
-      }
-      const estimatedDispatches = taskProviders.reduce((sum, task) => {
-        const mode = task.provider_mode;
-        return sum + (mode === "parallel" ? task.providers.length : 1);
-      }, 0);
-      if (config2?.settings.max_dispatches !== void 0) {
-        const pipelineId = sessionStateManager ? boundPipelineId ?? null : (await new StateManager(projectDir).get())?.pipeline_id ?? null;
-        let limitStatus;
-        try {
-          limitStatus = await resolveLimitStatus(config2, pipelineId, sessionScope?.sessionDir);
-        } catch (err) {
-          console.error("Failed to evaluate dispatch limit \u2014 failing closed", err);
-          return errorResponse3("Dispatch blocked: failed to evaluate dispatch limit");
+        const sessionScope = await resolveSessionScope(session_id);
+        const sessionStateManager = sessionScope?.stateManager;
+        let boundPipelineId;
+        if (sessionStateManager) {
+          const state = await sessionStateManager.get();
+          boundPipelineId = state?.pipeline_id ?? null;
         }
-        if (limitStatus.at_limit) {
-          const pipelineLabel = pipelineId ? `pipeline ${pipelineId}` : "active pipeline";
-          return {
-            content: [{
-              type: "text",
-              text: `Dispatch blocked: ${pipelineLabel} has reached the max_dispatches limit (${limitStatus.dispatches_used}/${limitStatus.max_dispatches} dispatches used).`
-            }],
-            isError: true
-          };
-        }
+        let taskProviders = [];
+        let config2;
+        let warning;
         try {
-          const projectedDispatches = limitStatus.dispatches_used + estimatedDispatches;
-          if (projectedDispatches > limitStatus.max_dispatches) {
-            warning = `Exceeding max_dispatches limit (${projectedDispatches}/${limitStatus.max_dispatches})`;
-          } else if (projectedDispatches / limitStatus.max_dispatches > 0.8) {
-            warning = `Approaching max_dispatches limit (${projectedDispatches}/${limitStatus.max_dispatches})`;
-          }
+          config2 = await loadConfig(projectDir);
+          taskProviders = tasks.map((t) => {
+            const roleConfig = config2.roles[t.role]?.[t.subrole];
+            return {
+              task_id: t.task_id,
+              providers: roleConfig?.providers.map((p) => ({
+                provider: p.provider,
+                model: p.model,
+                effort: p.effort
+              })) ?? [],
+              provider_mode: roleConfig?.provider_mode ?? config2.settings.default_provider_mode ?? "parallel"
+            };
+          });
         } catch {
         }
+        const estimatedDispatches = taskProviders.reduce((sum, task) => {
+          const mode = task.provider_mode;
+          return sum + (mode === "parallel" ? task.providers.length : 1);
+        }, 0);
+        if (config2?.settings.max_dispatches !== void 0) {
+          const pipelineId = sessionStateManager ? boundPipelineId ?? null : (await new StateManager(projectDir).get())?.pipeline_id ?? null;
+          let limitStatus;
+          try {
+            limitStatus = await resolveLimitStatus(config2, pipelineId, sessionScope?.sessionDir);
+          } catch (err) {
+            console.error("Failed to evaluate dispatch limit \u2014 failing closed", err);
+            return errorResponse3("Dispatch blocked: failed to evaluate dispatch limit");
+          }
+          if (limitStatus.at_limit) {
+            const pipelineLabel = pipelineId ? `pipeline ${pipelineId}` : "active pipeline";
+            return {
+              content: [{
+                type: "text",
+                text: `Dispatch blocked: ${pipelineLabel} has reached the max_dispatches limit (${limitStatus.dispatches_used}/${limitStatus.max_dispatches} dispatches used).`
+              }],
+              isError: true
+            };
+          }
+          try {
+            const projectedDispatches = limitStatus.dispatches_used + estimatedDispatches;
+            if (projectedDispatches > limitStatus.max_dispatches) {
+              warning = `Exceeding max_dispatches limit (${projectedDispatches}/${limitStatus.max_dispatches})`;
+            } else if (projectedDispatches / limitStatus.max_dispatches > 0.8) {
+              warning = `Approaching max_dispatches limit (${projectedDispatches}/${limitStatus.max_dispatches})`;
+            }
+          } catch {
+          }
+        }
+        const maxParallel = config2?.settings?.max_parallel_agents;
+        const batchId = await batchManager.dispatchBatch({
+          tasks: tasks.map((t) => ({
+            taskId: t.task_id,
+            role: t.role,
+            subrole: t.subrole,
+            taskContext: t.task_context
+          })),
+          createWorktrees: create_worktrees,
+          maxParallel,
+          ...session_id ? { sessionId: session_id, boundPipelineId } : {}
+        }, {
+          stateManager: sessionStateManager
+        });
+        return {
+          content: [{ type: "text", text: JSON.stringify({
+            batch_id: batchId,
+            status: "dispatched",
+            tasks: taskProviders,
+            dispatch_estimate: estimatedDispatches,
+            warning
+          }) }]
+        };
+      } catch (err) {
+        return errorResponse3(
+          `Dispatch error: ${err instanceof Error ? err.message : String(err)}`
+        );
       }
-      const maxParallel = config2?.settings?.max_parallel_agents;
-      const batchId = await batchManager.dispatchBatch({
-        tasks: tasks.map((t) => ({
-          taskId: t.task_id,
-          role: t.role,
-          subrole: t.subrole,
-          taskContext: t.task_context
-        })),
-        createWorktrees: create_worktrees,
-        maxParallel,
-        ...session_id ? { sessionId: session_id, boundPipelineId } : {}
-      }, {
-        stateManager: sessionStateManager
-      });
-      return {
-        content: [{ type: "text", text: JSON.stringify({
-          batch_id: batchId,
-          status: "dispatched",
-          tasks: taskProviders,
-          dispatch_estimate: estimatedDispatches,
-          warning
-        }) }]
-      };
     }
   );
   server.registerTool(
@@ -43015,35 +43021,35 @@ function registerMetricsTools(server, metricsManager, projectDir, sessionManager
       })
     },
     async ({ stage, session_id }) => {
-      let pipelineId = null;
-      if (session_id) {
-        if (!sessionManager) {
-          throw new Error("Session manager is required for session-scoped metrics");
-        }
-        const sessionStateManager = new StateManager(projectDir, sessionManager.resolve(session_id));
-        const sessionState = await sessionStateManager.get();
-        pipelineId = sessionState?.pipeline_id ?? null;
-        if (!pipelineId) {
-          return {
-            content: [{
-              type: "text",
-              text: JSON.stringify(
-                createMetricsResponse(
-                  [],
-                  createEmptySummary(),
-                  {
-                    dispatches_used: 0,
-                    at_limit: false
-                  }
-                ),
-                null,
-                2
-              )
-            }]
-          };
-        }
-      }
       try {
+        let pipelineId = null;
+        if (session_id) {
+          if (!sessionManager) {
+            throw new Error("Session manager is required for session-scoped metrics");
+          }
+          const sessionStateManager = new StateManager(projectDir, sessionManager.resolve(session_id));
+          const sessionState = await sessionStateManager.get();
+          pipelineId = sessionState?.pipeline_id ?? null;
+          if (!pipelineId) {
+            return {
+              content: [{
+                type: "text",
+                text: JSON.stringify(
+                  createMetricsResponse(
+                    [],
+                    createEmptySummary(),
+                    {
+                      dispatches_used: 0,
+                      at_limit: false
+                    }
+                  ),
+                  null,
+                  2
+                )
+              }]
+            };
+          }
+        }
         const pipelineEntries = await metricsManager.getMetricsByPipelineId(pipelineId);
         const entries = filterEntriesByStage(pipelineEntries, stage);
         const summary = metricsManager.summarize(entries);
