@@ -6,6 +6,7 @@ import { buildWorkBranch } from './branch-prefix.js'
 import { parsePorcelainWorktrees, type PorcelainWorktreeEntry } from './porcelain.js'
 import { withRepoLock } from './repo-lock.js'
 import { validateSessionId } from './session-id-validator.js'
+import { INVOKE_SESSION_BASENAME_PREFIX } from './trusted-session-helpers.js'
 
 export interface SessionWorktreeInfo {
   sessionId: string
@@ -52,7 +53,7 @@ export class SessionWorktreeManager {
         return this.rememberInfo({ ...lockedExisting, baseBranch })
       }
 
-      const worktreePath = this.defaultWorktreePath(sessionId)
+      const worktreePath = this.freshWorktreePath(sessionId)
       const resolvedWorktreePath = this.addWorktree(
         worktreePath,
         ['-b', workBranch, baseBranch]
@@ -138,7 +139,7 @@ export class SessionWorktreeManager {
         stdio: 'pipe',
       })
 
-      const worktreePath = this.reattachWorktreePath(sessionId)
+      const worktreePath = this.freshWorktreePath(sessionId)
       const resolvedWorktreePath = this.addWorktree(worktreePath, [workBranch])
 
       return this.rememberInfo({
@@ -199,7 +200,7 @@ export class SessionWorktreeManager {
 
       const workBranch = entry.branch
       const matchingPrefix = this.matchingPrefix(workBranch)
-      const isSessionPath = path.basename(entry.worktreePath).startsWith('invoke-session-')
+      const isSessionPath = path.basename(entry.worktreePath).startsWith(INVOKE_SESSION_BASENAME_PREFIX)
 
       if (!isSessionPath && !matchingPrefix) {
         continue
@@ -249,12 +250,8 @@ export class SessionWorktreeManager {
     }
   }
 
-  private defaultWorktreePath(sessionId: string): string {
-    return mkdtempSync(path.join(os.tmpdir(), `invoke-session-${sessionId}-`))
-  }
-
-  private reattachWorktreePath(sessionId: string): string {
-    return mkdtempSync(path.join(os.tmpdir(), `invoke-session-${sessionId}-`))
+  private freshWorktreePath(sessionId: string): string {
+    return mkdtempSync(path.join(os.tmpdir(), `${INVOKE_SESSION_BASENAME_PREFIX}${sessionId}-`))
   }
 
   private assertUnderTmpdir(worktreePath: string): void {
@@ -364,7 +361,9 @@ export class SessionWorktreeManager {
   }
 
   private sessionIdFromPath(worktreePath: string): string | null {
-    const match = path.basename(worktreePath).match(/^invoke-session-(.+?)-[A-Za-z0-9]{6,}$/)
+    const match = path.basename(worktreePath).match(
+      new RegExp(`^${INVOKE_SESSION_BASENAME_PREFIX}(.+?)-[A-Za-z0-9]{6,}$`)
+    )
     return match?.[1] ?? null
   }
 

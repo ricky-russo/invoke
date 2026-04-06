@@ -3,7 +3,7 @@ import { existsSync } from 'fs';
 import path from 'path';
 import os from 'os';
 import { withMergeTargetLock, withRepoLock, withTaskLock } from './repo-lock.js';
-import { isSafeSessionWorktreeTarget } from './trusted-session-helpers.js';
+import { isSafeSessionWorkBranchPath } from './trusted-session-helpers.js';
 const CONFLICT_STATUS_PREFIXES = ['UU', 'AA', 'DD', 'AU', 'UA', 'DU', 'UD'];
 function git(cwd, args) {
     return execFileSync('git', args, { cwd, stdio: 'pipe' }).toString();
@@ -66,7 +66,7 @@ export class WorktreeManager {
             const mergeAttempt = tryGit(mergeTargetPath, ['merge', '--squash', info.branch]);
             if (!mergeAttempt.ok) {
                 const conflictingFiles = this.collectConflictingFiles(mergeTargetPath);
-                if (mergeTargetPath !== this.repoDir && !isSafeSessionWorktreeTarget(mergeTargetPath, this.repoDir)) {
+                if (mergeTargetPath !== this.repoDir && !isSafeSessionWorkBranchPath(mergeTargetPath, this.repoDir)) {
                     const original = mergeAttempt.error;
                     throw new Error(`Refusing destructive cleanup on unsafe merge target ${mergeTargetPath}: ${original?.message ?? original}`);
                 }

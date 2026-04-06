@@ -6,6 +6,7 @@ import { buildWorkBranch } from './branch-prefix.js';
 import { parsePorcelainWorktrees } from './porcelain.js';
 import { withRepoLock } from './repo-lock.js';
 import { validateSessionId } from './session-id-validator.js';
+import { INVOKE_SESSION_BASENAME_PREFIX } from './trusted-session-helpers.js';
 function isWithinPathRoot(targetPath, rootPath) {
     return targetPath === rootPath || targetPath.startsWith(rootPath + path.sep);
 }
@@ -39,7 +40,7 @@ export class SessionWorktreeManager {
             if (lockedExisting) {
                 return this.rememberInfo({ ...lockedExisting, baseBranch });
             }
-            const worktreePath = this.defaultWorktreePath(sessionId);
+            const worktreePath = this.freshWorktreePath(sessionId);
             const resolvedWorktreePath = this.addWorktree(worktreePath, ['-b', workBranch, baseBranch]);
             return this.rememberInfo({
                 sessionId,
@@ -104,7 +105,7 @@ export class SessionWorktreeManager {
                 cwd: this.repoDir,
                 stdio: 'pipe',
             });
-            const worktreePath = this.reattachWorktreePath(sessionId);
+            const worktreePath = this.freshWorktreePath(sessionId);
             const resolvedWorktreePath = this.addWorktree(worktreePath, [workBranch]);
             return this.rememberInfo({
                 sessionId,
@@ -148,7 +149,7 @@ export class SessionWorktreeManager {
             }
             const workBranch = entry.branch;
             const matchingPrefix = this.matchingPrefix(workBranch);
-            const isSessionPath = path.basename(entry.worktreePath).startsWith('invoke-session-');
+            const isSessionPath = path.basename(entry.worktreePath).startsWith(INVOKE_SESSION_BASENAME_PREFIX);
             if (!isSessionPath && !matchingPrefix) {
                 continue;
             }
@@ -188,11 +189,8 @@ export class SessionWorktreeManager {
             return false;
         }
     }
-    defaultWorktreePath(sessionId) {
-        return mkdtempSync(path.join(os.tmpdir(), `invoke-session-${sessionId}-`));
-    }
-    reattachWorktreePath(sessionId) {
-        return mkdtempSync(path.join(os.tmpdir(), `invoke-session-${sessionId}-`));
+    freshWorktreePath(sessionId) {
+        return mkdtempSync(path.join(os.tmpdir(), `${INVOKE_SESSION_BASENAME_PREFIX}${sessionId}-`));
     }
     assertUnderTmpdir(worktreePath) {
         if (existsSync(worktreePath)) {
@@ -277,7 +275,7 @@ export class SessionWorktreeManager {
         return match;
     }
     sessionIdFromPath(worktreePath) {
-        const match = path.basename(worktreePath).match(/^invoke-session-(.+?)-[A-Za-z0-9]{6,}$/);
+        const match = path.basename(worktreePath).match(new RegExp(`^${INVOKE_SESSION_BASENAME_PREFIX}(.+?)-[A-Za-z0-9]{6,}$`));
         return match?.[1] ?? null;
     }
     rememberInfo(info) {

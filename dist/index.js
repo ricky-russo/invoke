@@ -39741,16 +39741,36 @@ import { execFileSync as execFileSync2 } from "child_process";
 import { realpathSync as realpathSync2 } from "fs";
 import os from "os";
 import path4 from "path";
+var INVOKE_SESSION_BASENAME_PREFIX = "invoke-session-";
+var gitCommonDirCache = /* @__PURE__ */ new Map();
+var cachedTmpdirRealpath = null;
+function getTmpdirRealpath() {
+  if (cachedTmpdirRealpath !== null) return cachedTmpdirRealpath;
+  try {
+    cachedTmpdirRealpath = realpathSync2(os.tmpdir());
+  } catch {
+    cachedTmpdirRealpath = os.tmpdir();
+  }
+  return cachedTmpdirRealpath;
+}
 function resolveGitCommonDir(cwd) {
+  const cached2 = gitCommonDirCache.get(cwd);
+  if (cached2 !== void 0) return cached2;
   try {
     const output = execFileSync2("git", ["rev-parse", "--git-common-dir"], {
       cwd,
       stdio: "pipe"
     }).toString().trim();
-    return realpathSync2(path4.resolve(cwd, output));
+    const resolved = realpathSync2(path4.resolve(cwd, output));
+    gitCommonDirCache.set(cwd, resolved);
+    return resolved;
   } catch {
     return null;
   }
+}
+function isSafeWorkBranch(workBranch, sessionId, workBranchPrefix) {
+  if (!workBranch) return false;
+  return workBranch === `${workBranchPrefix}/${sessionId}`;
 }
 function isSafeSessionWorkBranchPath(workBranchPath, repoDir) {
   if (!workBranchPath || !path4.isAbsolute(workBranchPath)) return false;
@@ -39760,25 +39780,17 @@ function isSafeSessionWorkBranchPath(workBranchPath, repoDir) {
   } catch {
     return false;
   }
-  let canonicalTmp;
-  try {
-    canonicalTmp = realpathSync2(os.tmpdir());
-  } catch {
-    canonicalTmp = os.tmpdir();
-  }
+  const canonicalTmp = getTmpdirRealpath();
   if (canonicalTarget !== canonicalTmp && !canonicalTarget.startsWith(canonicalTmp + path4.sep)) {
     return false;
   }
-  if (!path4.basename(canonicalTarget).startsWith("invoke-session-")) {
+  if (!path4.basename(canonicalTarget).startsWith(INVOKE_SESSION_BASENAME_PREFIX)) {
     return false;
   }
   const targetCommonDir = resolveGitCommonDir(canonicalTarget);
   const repoCommonDir = resolveGitCommonDir(repoDir);
   if (!targetCommonDir || !repoCommonDir) return false;
   return targetCommonDir === repoCommonDir;
-}
-function isSafeSessionWorktreeTarget(targetPath, repoDir) {
-  return isSafeSessionWorkBranchPath(targetPath, repoDir);
 }
 
 // src/worktree/manager.ts
@@ -39840,7 +39852,7 @@ var WorktreeManager = class {
       const mergeAttempt = tryGit(mergeTargetPath, ["merge", "--squash", info.branch]);
       if (!mergeAttempt.ok) {
         const conflictingFiles = this.collectConflictingFiles(mergeTargetPath);
-        if (mergeTargetPath !== this.repoDir && !isSafeSessionWorktreeTarget(mergeTargetPath, this.repoDir)) {
+        if (mergeTargetPath !== this.repoDir && !isSafeSessionWorkBranchPath(mergeTargetPath, this.repoDir)) {
           const original = mergeAttempt.error;
           throw new Error(
             `Refusing destructive cleanup on unsafe merge target ${mergeTargetPath}: ${original?.message ?? original}`
@@ -40001,7 +40013,7 @@ var SessionWorktreeManager = class {
       if (lockedExisting) {
         return this.rememberInfo({ ...lockedExisting, baseBranch });
       }
-      const worktreePath = this.defaultWorktreePath(sessionId);
+      const worktreePath = this.freshWorktreePath(sessionId);
       const resolvedWorktreePath = this.addWorktree(
         worktreePath,
         ["-b", workBranch, baseBranch]
@@ -40067,7 +40079,7 @@ var SessionWorktreeManager = class {
         cwd: this.repoDir,
         stdio: "pipe"
       });
-      const worktreePath = this.reattachWorktreePath(sessionId);
+      const worktreePath = this.freshWorktreePath(sessionId);
       const resolvedWorktreePath = this.addWorktree(worktreePath, [workBranch]);
       return this.rememberInfo({
         sessionId,
@@ -40117,7 +40129,7 @@ var SessionWorktreeManager = class {
       }
       const workBranch = entry.branch;
       const matchingPrefix = this.matchingPrefix(workBranch);
-      const isSessionPath = path6.basename(entry.worktreePath).startsWith("invoke-session-");
+      const isSessionPath = path6.basename(entry.worktreePath).startsWith(INVOKE_SESSION_BASENAME_PREFIX);
       if (!isSessionPath && !matchingPrefix) {
         continue;
       }
@@ -40157,11 +40169,8 @@ var SessionWorktreeManager = class {
       return false;
     }
   }
-  defaultWorktreePath(sessionId) {
-    return mkdtempSync(path6.join(os3.tmpdir(), `invoke-session-${sessionId}-`));
-  }
-  reattachWorktreePath(sessionId) {
-    return mkdtempSync(path6.join(os3.tmpdir(), `invoke-session-${sessionId}-`));
+  freshWorktreePath(sessionId) {
+    return mkdtempSync(path6.join(os3.tmpdir(), `${INVOKE_SESSION_BASENAME_PREFIX}${sessionId}-`));
   }
   assertUnderTmpdir(worktreePath) {
     if (existsSync2(worktreePath)) {
@@ -40249,7 +40258,9 @@ var SessionWorktreeManager = class {
     return match;
   }
   sessionIdFromPath(worktreePath) {
-    const match = path6.basename(worktreePath).match(/^invoke-session-(.+?)-[A-Za-z0-9]{6,}$/);
+    const match = path6.basename(worktreePath).match(
+      new RegExp(`^${INVOKE_SESSION_BASENAME_PREFIX}(.+?)-[A-Za-z0-9]{6,}$`)
+    );
     return match?.[1] ?? null;
   }
   rememberInfo(info) {
@@ -41647,7 +41658,7 @@ function registerWorktreeTools(server, worktreeManager, sessionManager, config2,
 init_zod();
 init_config();
 var DEFAULT_STALE_SESSION_DAYS = 7;
-function isSafeWorkBranch(workBranch, sessionId, prefix) {
+function isSafeWorkBranch2(workBranch, sessionId, prefix) {
   if (!workBranch) {
     return false;
   }
@@ -41745,7 +41756,7 @@ async function cleanupSession(sessionId, sessionManager, sessionWorktreeManager,
         prefix = config2.settings.work_branch_prefix ?? "invoke/work";
       } catch {
       }
-      if (!isSafeWorkBranch(workBranch, sessionId, prefix)) {
+      if (!isSafeWorkBranch2(workBranch, sessionId, prefix)) {
         console.error(
           `Session ${sessionId} has unexpected work_branch '${workBranch}'; skipping branch cleanup.`
         );
@@ -42014,12 +42025,6 @@ init_zod();
 init_config();
 import { execFileSync as execFileSync6 } from "child_process";
 import { realpathSync as realpathSync5 } from "fs";
-function isSafeWorkBranch2(workBranch, sessionId, prefix) {
-  if (!workBranch) {
-    return false;
-  }
-  return workBranch === `${prefix}/${sessionId}`;
-}
 function registerPrTools(server, sessionManager, projectDir) {
   server.registerTool(
     "invoke_pr_create",
@@ -42045,7 +42050,7 @@ function registerPrTools(server, sessionManager, projectDir) {
         }
         const config2 = await loadConfig(projectDir);
         const workBranchPrefix = config2.settings.work_branch_prefix ?? "invoke/work";
-        if (!isSafeWorkBranch2(state.work_branch, session_id, workBranchPrefix)) {
+        if (!isSafeWorkBranch(state.work_branch, session_id, workBranchPrefix)) {
           return errorResponse(
             `Session ${session_id} has an unexpected work_branch \u2014 expected ${workBranchPrefix}/${session_id}`
           );

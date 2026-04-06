@@ -19,8 +19,7 @@ export declare class SessionWorktreeManager {
     listSessionWorktrees(): Promise<SessionWorktreeInfo[]>;
     private listPorcelainWorktrees;
     private branchExists;
-    private defaultWorktreePath;
-    private reattachWorktreePath;
+    private freshWorktreePath;
     private assertUnderTmpdir;
     private resolveTmpdirPath;
     private addWorktree;

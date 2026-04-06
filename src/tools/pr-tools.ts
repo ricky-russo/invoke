@@ -5,20 +5,8 @@ import { z } from 'zod'
 import { loadConfig } from '../config.js'
 import { checkCliExists } from '../config-validator.js'
 import type { SessionManager } from '../session/manager.js'
-import { isSafeSessionWorkBranchPath } from '../worktree/trusted-session-helpers.js'
+import { isSafeSessionWorkBranchPath, isSafeWorkBranch } from '../worktree/trusted-session-helpers.js'
 import { StateManager } from './state.js'
-
-function isSafeWorkBranch(
-  workBranch: string | undefined,
-  sessionId: string,
-  prefix: string
-): workBranch is string {
-  if (!workBranch) {
-    return false
-  }
-
-  return workBranch === `${prefix}/${sessionId}`
-}
 
 export function registerPrTools(
   server: McpServer,

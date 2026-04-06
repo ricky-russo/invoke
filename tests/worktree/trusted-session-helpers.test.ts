@@ -5,8 +5,9 @@ import { mkdtemp, rm, writeFile } from 'fs/promises'
 import os from 'os'
 import path from 'path'
 import {
+  INVOKE_SESSION_BASENAME_PREFIX,
   isSafeSessionWorkBranchPath,
-  isSafeSessionWorktreeTarget,
+  isSafeWorkBranch,
   resolveGitCommonDir,
 } from '../../src/worktree/trusted-session-helpers.js'
 
@@ -158,31 +159,55 @@ describe('isSafeSessionWorkBranchPath', () => {
   })
 })
 
-describe('isSafeSessionWorktreeTarget', () => {
-  it('delegates to isSafeSessionWorkBranchPath', () => {
-    // Same false case as isSafeSessionWorkBranchPath
-    expect(isSafeSessionWorktreeTarget('relative/invoke-session-foo', repoDir)).toBe(false)
+describe('INVOKE_SESSION_BASENAME_PREFIX', () => {
+  it('is exported and equals the canonical session basename prefix', () => {
+    expect(INVOKE_SESSION_BASENAME_PREFIX).toBe('invoke-session-')
+  })
+})
+
+describe('isSafeWorkBranch', () => {
+  it('returns true when workBranch matches `${prefix}/${sessionId}` exactly', () => {
+    expect(isSafeWorkBranch('invoke/work/sess-abc', 'sess-abc', 'invoke/work')).toBe(true)
   })
 
-  it('returns true for a real session worktree of the test repo', () => {
-    const sessionPath = path.join(
-      os.tmpdir(),
-      `invoke-session-target-${Date.now()}`
-    )
-    execSync(
-      `git worktree add "${sessionPath}" -b "trusted-helpers-target"`,
-      { cwd: repoDir, stdio: 'pipe' }
-    )
-    trackCleanup(sessionPath)
+  it('returns false for undefined workBranch', () => {
+    expect(isSafeWorkBranch(undefined, 'sess-abc', 'invoke/work')).toBe(false)
+  })
 
-    try {
-      expect(isSafeSessionWorktreeTarget(sessionPath, repoDir)).toBe(true)
-    } finally {
-      execSync(`git worktree remove "${sessionPath}" --force`, {
-        cwd: repoDir,
-        stdio: 'pipe',
-      })
-      execSync('git branch -D "trusted-helpers-target"', { cwd: repoDir, stdio: 'pipe' })
-    }
+  it('returns false for an empty workBranch', () => {
+    expect(isSafeWorkBranch('', 'sess-abc', 'invoke/work')).toBe(false)
+  })
+
+  it('returns false when the prefix differs', () => {
+    expect(isSafeWorkBranch('other/prefix/sess-abc', 'sess-abc', 'invoke/work')).toBe(false)
+  })
+
+  it('returns false when the sessionId differs', () => {
+    expect(isSafeWorkBranch('invoke/work/sess-xyz', 'sess-abc', 'invoke/work')).toBe(false)
+  })
+
+  it('returns false for a partial match (prefix without sessionId)', () => {
+    expect(isSafeWorkBranch('invoke/work', 'sess-abc', 'invoke/work')).toBe(false)
+  })
+})
+
+describe('resolveGitCommonDir memoization', () => {
+  it('caches successful resolutions per cwd', async () => {
+    // Create a fresh repo whose cwd has not been resolved before, then prove
+    // the cache is honoured by physically removing .git after the first call
+    // and confirming the second call still returns the originally-resolved path.
+    const freshRepo = trackCleanup(
+      await createGitRepo('invoke-trusted-helpers-memo-')
+    )
+    const expected = realpathSync(path.join(freshRepo, '.git'))
+
+    const first = resolveGitCommonDir(freshRepo)
+    expect(first).toBe(expected)
+
+    // Tear down .git so a non-cached call would return null.
+    await rm(path.join(freshRepo, '.git'), { recursive: true, force: true })
+
+    const second = resolveGitCommonDir(freshRepo)
+    expect(second).toBe(expected)
   })
 })

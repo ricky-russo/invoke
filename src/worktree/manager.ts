@@ -3,7 +3,7 @@ import { existsSync } from 'fs'
 import path from 'path'
 import os from 'os'
 import { withMergeTargetLock, withRepoLock, withTaskLock } from './repo-lock.js'
-import { isSafeSessionWorktreeTarget } from './trusted-session-helpers.js'
+import { isSafeSessionWorkBranchPath } from './trusted-session-helpers.js'
 
 interface WorktreeInfo {
   taskId: string
@@ -96,7 +96,7 @@ export class WorktreeManager {
       if (!mergeAttempt.ok) {
         const conflictingFiles = this.collectConflictingFiles(mergeTargetPath)
 
-        if (mergeTargetPath !== this.repoDir && !isSafeSessionWorktreeTarget(mergeTargetPath, this.repoDir)) {
+        if (mergeTargetPath !== this.repoDir && !isSafeSessionWorkBranchPath(mergeTargetPath, this.repoDir)) {
           const original = mergeAttempt.error as Error
           throw new Error(
             `Refusing destructive cleanup on unsafe merge target ${mergeTargetPath}: ${original?.message ?? original}`

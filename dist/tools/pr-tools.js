@@ -3,14 +3,8 @@ import { realpathSync } from 'fs';
 import { z } from 'zod';
 import { loadConfig } from '../config.js';
 import { checkCliExists } from '../config-validator.js';
-import { isSafeSessionWorkBranchPath } from '../worktree/trusted-session-helpers.js';
+import { isSafeSessionWorkBranchPath, isSafeWorkBranch } from '../worktree/trusted-session-helpers.js';
 import { StateManager } from './state.js';
-function isSafeWorkBranch(workBranch, sessionId, prefix) {
-    if (!workBranch) {
-        return false;
-    }
-    return workBranch === `${prefix}/${sessionId}`;
-}
 export function registerPrTools(server, sessionManager, projectDir) {
     server.registerTool('invoke_pr_create', {
         description: 'Push the session work branch to origin and optionally open a PR via gh. Detects gh availability and degrades gracefully.',
