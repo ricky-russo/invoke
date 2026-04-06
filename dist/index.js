@@ -41371,39 +41371,33 @@ function matchesCleanupFilter(session, filter) {
 init_zod();
 
 // src/worktree/base-branch.ts
-import { execSync as execSync2 } from "child_process";
-function shellEscape(value) {
-  return value.replace(/(["\\$`])/g, "\\$1");
-}
-function runGit(repoDir, command) {
-  return execSync2(command, {
+import { execFileSync as execFileSync4 } from "child_process";
+function runGit(repoDir, args) {
+  return execFileSync4("git", args, {
     cwd: repoDir,
     stdio: "pipe"
   }).toString().trim();
 }
-function tryRunGit(repoDir, command) {
+function tryRunGit(repoDir, args) {
   try {
-    return runGit(repoDir, command);
+    return runGit(repoDir, args);
   } catch {
     return null;
   }
 }
 function branchExists(repoDir, branch) {
   try {
-    execSync2(
-      `git show-ref --verify "refs/heads/${shellEscape(branch)}"`,
-      {
-        cwd: repoDir,
-        stdio: "pipe"
-      }
-    );
+    execFileSync4("git", ["show-ref", "--verify", `refs/heads/${branch}`], {
+      cwd: repoDir,
+      stdio: "pipe"
+    });
     return true;
   } catch {
     return false;
   }
 }
 function discoverDefaultBranch(repoDir) {
-  const originHead = tryRunGit(repoDir, "git symbolic-ref refs/remotes/origin/HEAD");
+  const originHead = tryRunGit(repoDir, ["symbolic-ref", "refs/remotes/origin/HEAD"]);
   if (originHead) {
     return originHead.replace(/^refs\/remotes\/origin\//, "");
   }
@@ -41416,11 +41410,12 @@ function discoverDefaultBranch(repoDir) {
   return null;
 }
 function discoverBaseBranchCandidates(repoDir) {
-  const currentHead = tryRunGit(repoDir, "git symbolic-ref --short HEAD");
-  const allLocalBranchesOutput = runGit(
-    repoDir,
-    `git for-each-ref --format='%(refname:short)' refs/heads/`
-  );
+  const currentHead = tryRunGit(repoDir, ["symbolic-ref", "--short", "HEAD"]);
+  const allLocalBranchesOutput = runGit(repoDir, [
+    "for-each-ref",
+    "--format=%(refname:short)",
+    "refs/heads/"
+  ]);
   return {
     currentHead,
     defaultBranch: discoverDefaultBranch(repoDir),
@@ -41556,7 +41551,7 @@ function registerSessionInitTools(server, sessionWorktreeManager, sessionManager
 
 // src/tools/pr-tools.ts
 init_zod();
-import { execFileSync as execFileSync4 } from "child_process";
+import { execFileSync as execFileSync5 } from "child_process";
 function registerPrTools(server, sessionManager, projectDir) {
   server.registerTool(
     "invoke_pr_create",
@@ -41585,7 +41580,7 @@ function registerPrTools(server, sessionManager, projectDir) {
         const effectiveTitle = title ?? `feat: ${workBranch}`;
         const effectiveBody = body ?? "";
         try {
-          execFileSync4("git", ["push", "-u", "origin", workBranch], {
+          execFileSync5("git", ["push", "-u", "origin", workBranch], {
             cwd,
             stdio: "pipe"
           });
@@ -41616,7 +41611,7 @@ function registerPrTools(server, sessionManager, projectDir) {
           });
         }
         try {
-          execFileSync4("gh", ["auth", "status"], { cwd, stdio: "pipe" });
+          execFileSync5("gh", ["auth", "status"], { cwd, stdio: "pipe" });
         } catch {
           return ok({
             status: "pushed",
@@ -41629,7 +41624,7 @@ function registerPrTools(server, sessionManager, projectDir) {
           });
         }
         try {
-          const existing = execFileSync4(
+          const existing = execFileSync5(
             "gh",
             ["pr", "view", workBranch, "--json", "number,url"],
             { cwd, stdio: "pipe" }
@@ -41648,7 +41643,7 @@ function registerPrTools(server, sessionManager, projectDir) {
         } catch {
         }
         try {
-          const output = execFileSync4(
+          const output = execFileSync5(
             "gh",
             [
               "pr",
@@ -41693,7 +41688,7 @@ function errorResponse(msg) {
 }
 function computeCompareUrl(cwd, baseBranch, headBranch) {
   try {
-    const remoteUrl = execFileSync4("git", ["remote", "get-url", "origin"], {
+    const remoteUrl = execFileSync5("git", ["remote", "get-url", "origin"], {
       cwd,
       stdio: "pipe"
     }).toString().trim();
