@@ -122,10 +122,18 @@ Failed tasks do NOT block merging successful tasks that are already completed. O
 
 #### e.1 Bug Recording
 
-When a build agent fails and the error appears to be a pre-existing bug (not merely a task-specific failure such as a merge conflict or a missing dependency introduced by this pipeline):
+Bug recording applies in two cases:
 
-1. Ask the user via `AskUserQuestion`: "Agent [task_id] encountered what appears to be a pre-existing bug. Want to log it?"
+**Case A — Agent failed with a pre-existing bug:** When a build agent fails and the error appears to be a pre-existing bug (not merely a task-specific failure such as a merge conflict or a missing dependency introduced by this pipeline):
+
+1. Ask the user via `AskUserQuestion`: "Agent [task_id] failed on what appears to be a pre-existing bug. Want to log it?"
 2. If yes, call `invoke_report_bug` with `title`, `description` from the error output, a `severity` estimate, `file`/`line` if available in the stack trace or error message, and `session_id` from the current pipeline.
+3. Confirm: "Logged [BUG-NNN]: [title]"
+
+**Case B — Agent succeeded but discovered a pre-existing bug:** When a build agent completes successfully but its output mentions a pre-existing bug in code it touched (e.g., a note in the commit message, output log, or artifact):
+
+1. Ask the user via `AskUserQuestion`: "Agent [task_id] completed but reported a pre-existing bug. Want to log it?"
+2. If yes, call `invoke_report_bug` with `title`, `description` from the agent's reported finding, a `severity` estimate, `file`/`line` if included, and `session_id` from the current pipeline.
 3. Confirm: "Logged [BUG-NNN]: [title]"
 
 #### f. Merge and Validate Sequentially
@@ -187,7 +195,9 @@ Then invoke `Skill({ skill: "invoke:invoke-review" })` to begin the review stage
 After the final build batch completes:
 
 1. Read pipeline state via `invoke_get_state` with `session_id: <pipeline_id>`.
-2. If `state.bug_ids` is present and non-empty, note them — they will be resolved when the pipeline ultimately completes (after review).
+2. If `state.bug_ids` is present and non-empty:
+   - **Transitioning to `review`**: note them — they will be resolved when the pipeline ultimately completes after review.
+   - **Transitioning directly to `complete`** (review skipped or aborted): call `invoke_update_bug` for each `bug_id` in `state.bug_ids` with `status: "resolved"`, a brief `resolution` summary, and `session_id: <pipeline_id>`. Then print: `✅ Resolved bugs: [list of bug_ids]`
 
 ## Error Handling
 
