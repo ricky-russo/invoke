@@ -86,8 +86,9 @@ For example, if the user asks to "build an MVC framework with auth, routing, and
 If the request covers more than 3 distinct topics, dispatch multiple rounds of researchers rather than one overloaded round. Each research task should be completable in under 5 minutes.
 
 Wait for user selection, then dispatch the selected researchers using `invoke_dispatch_batch`:
+- `session_id: <pipeline_id>`
 - `create_worktrees: false` (researchers don't modify code)
-- `task_context: { task_description: "<focused research topic, NOT the full user request>" }`
+- `task_context: { task_description: "<focused research topic, NOT the full user request>", pipeline_id: "<pipeline_id>", stage: "scope" }`
 
 #### Wait for completion
 

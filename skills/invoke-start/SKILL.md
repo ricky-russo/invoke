@@ -9,19 +9,17 @@ You are in a project with the invoke pipeline installed. Invoke orchestrates dev
 
 ## On Every Message
 
-Before responding to any user message — including clarifying questions — check if an invoke skill applies. If the user's message clearly involves development work (writing or modifying code), invoke the matching skill. When in doubt about whether a message is a human request vs. a dispatched agent prompt, err on the side of executing the task directly.
+Before responding to any user message — including clarifying questions — check if an invoke skill applies. If the user's message clearly involves development work (writing or modifying code), invoke the matching skill. If the message looks like a normal human request, invoke the matching skill — do not skip routing unless dispatched-agent signals are clearly present.
 
 ## Dispatched Agent Detection
 
-When this skill loads inside a dispatched agent (researcher, builder, planner, reviewer), the agent's task prompt is the first user message. These prompts typically contain role-specific instructions like task descriptions, acceptance criteria, or research topics. If the user message appears to be a dispatched agent task prompt rather than a human request, do NOT invoke any invoke skill — execute the task directly.
-
-Heuristics that indicate a dispatched agent prompt:
+When this skill loads inside a dispatched agent (researcher, builder, planner, reviewer), the agent's task prompt is the first user message. These prompts carry recognizable structural signals. Only skip skill routing when one or more of the following positive signals are clearly present:
 
 - The message contains structured fields like `task_description`, `acceptance_criteria`, or `relevant_files`
-- The message starts with an explicit role instruction like "You are analyzing...", "Research how...", or "Implement the following..."
-- The message was injected by the dispatch engine (no conversational tone, no greeting, reads like a spec or brief)
+- The message begins with an explicit role prefix such as "You are analyzing...", "Research how...", or "Implement the following..."
+- The message has no conversational tone, no greeting, and reads like a machine-injected spec or brief rather than a human request
 
-If any of these heuristics match, skip skill routing entirely and execute the task.
+If none of these signals are clearly present, treat the message as a human request and invoke the matching skill.
 
 ## Skill Routing
 

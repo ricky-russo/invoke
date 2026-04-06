@@ -72,7 +72,7 @@ AskUserQuestion({
       { label: "Plan A ([planner name]) (Recommended)", description: "[1-sentence summary of Plan A approach]" },
       { label: "Plan B ([planner name])", description: "[1-sentence summary of Plan B approach]" },
       { label: "Hybrid", description: "Combine elements from multiple plans" },
-      { label: "Re-plan", description: "Dispatch new planners with additional constraints" }
+      { label: "Re-plan with constraints", description: "Dispatch new planners with additional constraints" }
     ]
   }]
 })
@@ -80,11 +80,11 @@ AskUserQuestion({
 
 If only one planner was dispatched, omit the Hybrid option and present:
 - `Plan A ([planner name]) (Recommended)` — with a 1-sentence summary
-- `Re-plan` — dispatch new planners with additional constraints
+- `Re-plan with constraints` — dispatch new planners with additional constraints
 
 (Two options satisfies the `AskUserQuestion` minimum of 2.)
 
-If the user selects `Re-plan`, ask them to describe the additional constraints, then return to step 2 and dispatch new planners with those constraints added to `task_context`.
+If the user selects `Re-plan with constraints`, ask them to describe the additional constraints, then return to step 2 and dispatch new planners with those constraints added to `task_context`.
 
 ### 5. Generate and Approve Plan
 
@@ -136,7 +136,7 @@ Skill({ skill: "invoke:invoke-orchestrate" })
 
 - If a planner fails, present the error using the `❌` format from `invoke-messaging`. If only one planner succeeded, ask if the user wants to proceed with that single plan or retry.
 - If all planners fail, investigate the error and offer to retry or fall back to manual planning.
-- If the user selects `Re-plan` at any point, ask them to describe additional constraints, then dispatch new planners with those constraints appended to `task_context.task_description`.
+- If the user selects `Re-plan with constraints` at any point, ask them to describe additional constraints, then dispatch new planners with those constraints appended to `task_context.task_description`.
 
 ## Key Principles
 
