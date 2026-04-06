@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { validateSessionId } from '../../src/worktree/session-id-validator.js'
+import {
+  validateSessionId,
+  validateSessionIdForRead,
+} from '../../src/worktree/session-id-validator.js'
 
 describe('validateSessionId', () => {
   it.each([
@@ -31,6 +34,38 @@ describe('validateSessionId', () => {
     'rejects invalid session IDs: %p',
     sessionId => {
       expect(() => validateSessionId(sessionId)).toThrow(`Invalid session ID: '${sessionId}'`)
+    }
+  )
+})
+
+describe('validateSessionIdForRead', () => {
+  it.each([
+    'session-1',
+    'session 1',
+    '.session',
+    '-session',
+    'foo*bar',
+    'newline\nhere',
+  ])(
+    'accepts readable legacy session IDs: %p',
+    sessionId => {
+      expect(() => validateSessionIdForRead(sessionId)).not.toThrow()
+    }
+  )
+
+  it.each([
+    '',
+    '.',
+    '..',
+    'nested/path',
+    'nested\\path',
+    'session\u0000id',
+  ])(
+    'rejects traversal-oriented session IDs for read paths: %p',
+    sessionId => {
+      expect(() => validateSessionIdForRead(sessionId)).toThrow(
+        `Invalid session ID: '${sessionId}'`
+      )
     }
   )
 })
