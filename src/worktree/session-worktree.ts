@@ -1,5 +1,5 @@
 import { execFileSync } from 'child_process'
-import { existsSync, realpathSync } from 'fs'
+import { existsSync, lstatSync, mkdtempSync, realpathSync } from 'fs'
 import os from 'os'
 import path from 'path'
 import { buildWorkBranch } from './branch-prefix.js'
@@ -14,6 +14,10 @@ export interface SessionWorktreeInfo {
   baseBranch: string | null
 }
 
+function isWithinPathRoot(targetPath: string, rootPath: string): boolean {
+  return targetPath === rootPath || targetPath.startsWith(rootPath + path.sep)
+}
+
 function toKnownPath(worktreePath: string): string {
   return existsSync(worktreePath) ? realpathSync(worktreePath) : worktreePath
 }
@@ -22,9 +26,13 @@ export class SessionWorktreeManager {
   private readonly baseBranches = new Map<string, string>()
   private readonly knownPrefixes = new Set<string>()
   private readonly repoPath: string
+  private readonly realTmpdirPath: string
+  private readonly tmpdirPath: string
 
   constructor(private readonly repoDir: string) {
     this.repoPath = toKnownPath(repoDir)
+    this.tmpdirPath = path.resolve(os.tmpdir())
+    this.realTmpdirPath = this.resolveTmpdirPath()
   }
 
   async create(sessionId: string, workBranchPrefix: string, baseBranch: string): Promise<SessionWorktreeInfo> {
@@ -45,16 +53,14 @@ export class SessionWorktreeManager {
       }
 
       const worktreePath = this.defaultWorktreePath(sessionId)
-      this.assertUnderTmpdir(worktreePath)
-      execFileSync(
-        'git',
-        ['worktree', 'add', worktreePath, '-b', workBranch, baseBranch],
-        { cwd: this.repoDir, stdio: 'pipe' }
+      const resolvedWorktreePath = this.addWorktree(
+        worktreePath,
+        ['-b', workBranch, baseBranch]
       )
 
       return this.rememberInfo({
         sessionId,
-        worktreePath: toKnownPath(worktreePath),
+        worktreePath: resolvedWorktreePath,
         workBranch,
         baseBranch,
       })
@@ -71,9 +77,14 @@ export class SessionWorktreeManager {
       return null
     }
 
+    const resolvedWorktreePath = this.safeRealpathUnderTmpdir(entry.worktreePath)
+    if (!resolvedWorktreePath) {
+      return null
+    }
+
     return this.rememberInfo({
       sessionId,
-      worktreePath: toKnownPath(entry.worktreePath),
+      worktreePath: resolvedWorktreePath,
       workBranch,
       baseBranch: this.lookupBaseBranch(workBranch),
     })
@@ -128,16 +139,11 @@ export class SessionWorktreeManager {
       })
 
       const worktreePath = this.reattachWorktreePath(sessionId)
-      this.assertUnderTmpdir(worktreePath)
-      execFileSync(
-        'git',
-        ['worktree', 'add', worktreePath, workBranch],
-        { cwd: this.repoDir, stdio: 'pipe' }
-      )
+      const resolvedWorktreePath = this.addWorktree(worktreePath, [workBranch])
 
       return this.rememberInfo({
         sessionId,
-        worktreePath: toKnownPath(worktreePath),
+        worktreePath: resolvedWorktreePath,
         workBranch,
         baseBranch: this.lookupBaseBranch(workBranch),
       })
@@ -182,7 +188,12 @@ export class SessionWorktreeManager {
         continue
       }
 
-      if (toKnownPath(entry.worktreePath) === this.repoPath) {
+      const resolvedWorktreePath = this.safeRealpathUnderTmpdir(entry.worktreePath)
+      if (!resolvedWorktreePath) {
+        continue
+      }
+
+      if (resolvedWorktreePath === this.repoPath) {
         continue
       }
 
@@ -204,7 +215,7 @@ export class SessionWorktreeManager {
 
       sessionWorktrees.push(this.rememberInfo({
         sessionId,
-        worktreePath: toKnownPath(entry.worktreePath),
+        worktreePath: resolvedWorktreePath,
         workBranch,
         baseBranch: this.lookupBaseBranch(workBranch),
       }))
@@ -239,30 +250,88 @@ export class SessionWorktreeManager {
   }
 
   private defaultWorktreePath(sessionId: string): string {
-    return path.join(os.tmpdir(), `invoke-session-${sessionId}`)
+    return mkdtempSync(path.join(os.tmpdir(), `invoke-session-${sessionId}-`))
   }
 
   private reattachWorktreePath(sessionId: string): string {
-    return path.join(os.tmpdir(), `invoke-session-${sessionId}-reattach-${Date.now()}`)
+    return mkdtempSync(path.join(os.tmpdir(), `invoke-session-${sessionId}-`))
   }
 
   private assertUnderTmpdir(worktreePath: string): void {
-    const tmpdir = os.tmpdir()
-    let canonicalRoot = tmpdir
-    try {
-      canonicalRoot = realpathSync(tmpdir)
-    } catch {
-      // Fall back to the literal tmpdir below.
+    if (existsSync(worktreePath)) {
+      const stat = lstatSync(worktreePath)
+      if (stat.isSymbolicLink()) {
+        throw new Error(`Session worktree path cannot be a symlink: ${worktreePath}`)
+      }
+
+      const realWorktreePath = realpathSync(worktreePath)
+      if (isWithinPathRoot(realWorktreePath, this.realTmpdirPath)) {
+        return
+      }
+
+      throw new Error(`Session worktree path escapes tmpdir: ${realWorktreePath}`)
     }
 
     const resolved = path.resolve(worktreePath)
-    for (const root of [tmpdir, canonicalRoot]) {
-      if (resolved === root || resolved.startsWith(root + path.sep)) {
-        return
-      }
+    if (isWithinPathRoot(resolved, this.tmpdirPath) || isWithinPathRoot(resolved, this.realTmpdirPath)) {
+      return
     }
 
     throw new Error(`Session worktree path escapes tmpdir: ${resolved}`)
+  }
+
+  private resolveTmpdirPath(): string {
+    try {
+      return realpathSync(this.tmpdirPath)
+    } catch {
+      return this.tmpdirPath
+    }
+  }
+
+  private addWorktree(worktreePath: string, addArgs: string[]): string {
+    this.assertUnderTmpdir(worktreePath)
+    execFileSync(
+      'git',
+      ['worktree', 'add', worktreePath, ...addArgs],
+      { cwd: this.repoDir, stdio: 'pipe' }
+    )
+
+    try {
+      return this.realpathUnderTmpdir(worktreePath)
+    } catch (error) {
+      try {
+        execFileSync(
+          'git',
+          ['worktree', 'remove', '--force', worktreePath],
+          { cwd: this.repoDir, stdio: 'pipe' }
+        )
+      } catch {
+        // Best-effort cleanup of the escaped worktree.
+      }
+
+      throw error
+    }
+  }
+
+  private realpathUnderTmpdir(worktreePath: string): string {
+    const resolvedWorktreePath = realpathSync(worktreePath)
+    if (isWithinPathRoot(resolvedWorktreePath, this.realTmpdirPath)) {
+      return resolvedWorktreePath
+    }
+
+    throw new Error(`Session worktree path escapes tmpdir: ${resolvedWorktreePath}`)
+  }
+
+  private safeRealpathUnderTmpdir(worktreePath: string): string | null {
+    if (!existsSync(worktreePath)) {
+      return null
+    }
+
+    try {
+      return this.realpathUnderTmpdir(worktreePath)
+    } catch {
+      return null
+    }
   }
 
   private lookupBaseBranch(workBranch: string): string | null {
@@ -295,7 +364,7 @@ export class SessionWorktreeManager {
   }
 
   private sessionIdFromPath(worktreePath: string): string | null {
-    const match = path.basename(worktreePath).match(/^invoke-session-(.+?)(?:-reattach-\d+)?$/)
+    const match = path.basename(worktreePath).match(/^invoke-session-(.+?)-[A-Za-z0-9]{6,}$/)
     return match?.[1] ?? null
   }
 

@@ -39788,7 +39788,7 @@ var WorktreeManager = class {
 // src/worktree/session-worktree.ts
 init_branch_prefix();
 import { execFileSync as execFileSync3 } from "child_process";
-import { existsSync as existsSync2, realpathSync as realpathSync2 } from "fs";
+import { existsSync as existsSync2, lstatSync, mkdtempSync, realpathSync as realpathSync2 } from "fs";
 import os2 from "os";
 import path5 from "path";
 
@@ -39834,6 +39834,9 @@ function validateSessionId(sessionId) {
 }
 
 // src/worktree/session-worktree.ts
+function isWithinPathRoot(targetPath, rootPath) {
+  return targetPath === rootPath || targetPath.startsWith(rootPath + path5.sep);
+}
 function toKnownPath(worktreePath) {
   return existsSync2(worktreePath) ? realpathSync2(worktreePath) : worktreePath;
 }
@@ -39841,11 +39844,15 @@ var SessionWorktreeManager = class {
   constructor(repoDir) {
     this.repoDir = repoDir;
     this.repoPath = toKnownPath(repoDir);
+    this.tmpdirPath = path5.resolve(os2.tmpdir());
+    this.realTmpdirPath = this.resolveTmpdirPath();
   }
   repoDir;
   baseBranches = /* @__PURE__ */ new Map();
   knownPrefixes = /* @__PURE__ */ new Set();
   repoPath;
+  realTmpdirPath;
+  tmpdirPath;
   async create(sessionId, workBranchPrefix, baseBranch) {
     validateSessionId(sessionId);
     const workBranch = buildWorkBranch(workBranchPrefix, sessionId);
@@ -39861,15 +39868,13 @@ var SessionWorktreeManager = class {
         return this.rememberInfo({ ...lockedExisting, baseBranch });
       }
       const worktreePath = this.defaultWorktreePath(sessionId);
-      this.assertUnderTmpdir(worktreePath);
-      execFileSync3(
-        "git",
-        ["worktree", "add", worktreePath, "-b", workBranch, baseBranch],
-        { cwd: this.repoDir, stdio: "pipe" }
+      const resolvedWorktreePath = this.addWorktree(
+        worktreePath,
+        ["-b", workBranch, baseBranch]
       );
       return this.rememberInfo({
         sessionId,
-        worktreePath: toKnownPath(worktreePath),
+        worktreePath: resolvedWorktreePath,
         workBranch,
         baseBranch
       });
@@ -39882,9 +39887,13 @@ var SessionWorktreeManager = class {
     if (!entry) {
       return null;
     }
+    const resolvedWorktreePath = this.safeRealpathUnderTmpdir(entry.worktreePath);
+    if (!resolvedWorktreePath) {
+      return null;
+    }
     return this.rememberInfo({
       sessionId,
-      worktreePath: toKnownPath(entry.worktreePath),
+      worktreePath: resolvedWorktreePath,
       workBranch,
       baseBranch: this.lookupBaseBranch(workBranch)
     });
@@ -39925,15 +39934,10 @@ var SessionWorktreeManager = class {
         stdio: "pipe"
       });
       const worktreePath = this.reattachWorktreePath(sessionId);
-      this.assertUnderTmpdir(worktreePath);
-      execFileSync3(
-        "git",
-        ["worktree", "add", worktreePath, workBranch],
-        { cwd: this.repoDir, stdio: "pipe" }
-      );
+      const resolvedWorktreePath = this.addWorktree(worktreePath, [workBranch]);
       return this.rememberInfo({
         sessionId,
-        worktreePath: toKnownPath(worktreePath),
+        worktreePath: resolvedWorktreePath,
         workBranch,
         baseBranch: this.lookupBaseBranch(workBranch)
       });
@@ -39970,7 +39974,11 @@ var SessionWorktreeManager = class {
       if (!entry.branch) {
         continue;
       }
-      if (toKnownPath(entry.worktreePath) === this.repoPath) {
+      const resolvedWorktreePath = this.safeRealpathUnderTmpdir(entry.worktreePath);
+      if (!resolvedWorktreePath) {
+        continue;
+      }
+      if (resolvedWorktreePath === this.repoPath) {
         continue;
       }
       const workBranch = entry.branch;
@@ -39985,7 +39993,7 @@ var SessionWorktreeManager = class {
       }
       sessionWorktrees.push(this.rememberInfo({
         sessionId,
-        worktreePath: toKnownPath(entry.worktreePath),
+        worktreePath: resolvedWorktreePath,
         workBranch,
         baseBranch: this.lookupBaseBranch(workBranch)
       }));
@@ -40016,25 +40024,73 @@ var SessionWorktreeManager = class {
     }
   }
   defaultWorktreePath(sessionId) {
-    return path5.join(os2.tmpdir(), `invoke-session-${sessionId}`);
+    return mkdtempSync(path5.join(os2.tmpdir(), `invoke-session-${sessionId}-`));
   }
   reattachWorktreePath(sessionId) {
-    return path5.join(os2.tmpdir(), `invoke-session-${sessionId}-reattach-${Date.now()}`);
+    return mkdtempSync(path5.join(os2.tmpdir(), `invoke-session-${sessionId}-`));
   }
   assertUnderTmpdir(worktreePath) {
-    const tmpdir = os2.tmpdir();
-    let canonicalRoot = tmpdir;
-    try {
-      canonicalRoot = realpathSync2(tmpdir);
-    } catch {
-    }
-    const resolved = path5.resolve(worktreePath);
-    for (const root of [tmpdir, canonicalRoot]) {
-      if (resolved === root || resolved.startsWith(root + path5.sep)) {
+    if (existsSync2(worktreePath)) {
+      const stat = lstatSync(worktreePath);
+      if (stat.isSymbolicLink()) {
+        throw new Error(`Session worktree path cannot be a symlink: ${worktreePath}`);
+      }
+      const realWorktreePath = realpathSync2(worktreePath);
+      if (isWithinPathRoot(realWorktreePath, this.realTmpdirPath)) {
         return;
       }
+      throw new Error(`Session worktree path escapes tmpdir: ${realWorktreePath}`);
+    }
+    const resolved = path5.resolve(worktreePath);
+    if (isWithinPathRoot(resolved, this.tmpdirPath) || isWithinPathRoot(resolved, this.realTmpdirPath)) {
+      return;
     }
     throw new Error(`Session worktree path escapes tmpdir: ${resolved}`);
+  }
+  resolveTmpdirPath() {
+    try {
+      return realpathSync2(this.tmpdirPath);
+    } catch {
+      return this.tmpdirPath;
+    }
+  }
+  addWorktree(worktreePath, addArgs) {
+    this.assertUnderTmpdir(worktreePath);
+    execFileSync3(
+      "git",
+      ["worktree", "add", worktreePath, ...addArgs],
+      { cwd: this.repoDir, stdio: "pipe" }
+    );
+    try {
+      return this.realpathUnderTmpdir(worktreePath);
+    } catch (error48) {
+      try {
+        execFileSync3(
+          "git",
+          ["worktree", "remove", "--force", worktreePath],
+          { cwd: this.repoDir, stdio: "pipe" }
+        );
+      } catch {
+      }
+      throw error48;
+    }
+  }
+  realpathUnderTmpdir(worktreePath) {
+    const resolvedWorktreePath = realpathSync2(worktreePath);
+    if (isWithinPathRoot(resolvedWorktreePath, this.realTmpdirPath)) {
+      return resolvedWorktreePath;
+    }
+    throw new Error(`Session worktree path escapes tmpdir: ${resolvedWorktreePath}`);
+  }
+  safeRealpathUnderTmpdir(worktreePath) {
+    if (!existsSync2(worktreePath)) {
+      return null;
+    }
+    try {
+      return this.realpathUnderTmpdir(worktreePath);
+    } catch {
+      return null;
+    }
   }
   lookupBaseBranch(workBranch) {
     return this.baseBranches.get(workBranch) ?? null;
@@ -40059,7 +40115,7 @@ var SessionWorktreeManager = class {
     return match;
   }
   sessionIdFromPath(worktreePath) {
-    const match = path5.basename(worktreePath).match(/^invoke-session-(.+?)(?:-reattach-\d+)?$/);
+    const match = path5.basename(worktreePath).match(/^invoke-session-(.+?)-[A-Za-z0-9]{6,}$/);
     return match?.[1] ?? null;
   }
   rememberInfo(info) {

@@ -9,6 +9,8 @@ export declare class SessionWorktreeManager {
     private readonly baseBranches;
     private readonly knownPrefixes;
     private readonly repoPath;
+    private readonly realTmpdirPath;
+    private readonly tmpdirPath;
     constructor(repoDir: string);
     create(sessionId: string, workBranchPrefix: string, baseBranch: string): Promise<SessionWorktreeInfo>;
     resolve(sessionId: string, workBranch: string): Promise<SessionWorktreeInfo | null>;
@@ -20,6 +22,10 @@ export declare class SessionWorktreeManager {
     private defaultWorktreePath;
     private reattachWorktreePath;
     private assertUnderTmpdir;
+    private resolveTmpdirPath;
+    private addWorktree;
+    private realpathUnderTmpdir;
+    private safeRealpathUnderTmpdir;
     private lookupBaseBranch;
     private rememberPrefix;
     private matchingPrefix;

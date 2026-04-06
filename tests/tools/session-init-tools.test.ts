@@ -81,6 +81,11 @@ function uniquePath(prefix: string): string {
   )
 }
 
+function sessionWorktreePathPattern(sessionId: string): RegExp {
+  const escapedSessionId = sessionId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  return new RegExp(`^invoke-session-${escapedSessionId}-[A-Za-z0-9]{6,}$`)
+}
+
 function parseWorktreePaths(): Array<{ worktreePath: string; branchRef: string | null }> {
   const output = git('git worktree list --porcelain')
   if (output.length === 0) {
@@ -236,12 +241,18 @@ describe('registerSessionInitTools', () => {
       work_branch_path: string
     }>(result)
 
-    expect(response).toEqual({
+    expect(response).toMatchObject({
       session_id: sessionId,
       work_branch: buildWorkBranch(TEST_CONFIG.settings.work_branch_prefix, sessionId),
       base_branch: 'main',
-      work_branch_path: normalizePath(path.join(os.tmpdir(), `invoke-session-${sessionId}`)),
     })
+    const realTmpdir = normalizePath(os.tmpdir())
+    expect(response.work_branch_path).toBe(normalizePath(response.work_branch_path))
+    expect(path.basename(response.work_branch_path)).toMatch(sessionWorktreePathPattern(sessionId))
+    expect(
+      response.work_branch_path === realTmpdir
+      || response.work_branch_path.startsWith(realTmpdir + path.sep)
+    ).toBe(true)
     expect(existsSync(response.work_branch_path)).toBe(true)
     expect(git('git branch --show-current', response.work_branch_path)).toBe(response.work_branch)
 

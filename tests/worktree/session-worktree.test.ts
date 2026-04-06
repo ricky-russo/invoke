@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { execSync } from 'child_process'
 import { existsSync, realpathSync } from 'fs'
-import { mkdtemp, rm, writeFile } from 'fs/promises'
+import { mkdtemp, rm, symlink, writeFile } from 'fs/promises'
 import os from 'os'
 import path from 'path'
 import { buildWorkBranch } from '../../src/worktree/branch-prefix.js'
@@ -63,6 +63,21 @@ function parseWorktreeList(output: string): ParsedWorktree[] {
 
 function normalizePath(targetPath: string): string {
   return existsSync(targetPath) ? realpathSync(targetPath) : targetPath
+}
+
+function sessionWorktreePathPattern(sessionId: string): RegExp {
+  const escapedSessionId = sessionId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  return new RegExp(`^invoke-session-${escapedSessionId}-[A-Za-z0-9]{6,}$`)
+}
+
+function expectSessionWorktreePath(worktreePath: string, sessionId: string): void {
+  const realTmpdir = normalizePath(os.tmpdir())
+
+  expect(worktreePath).toBe(normalizePath(worktreePath))
+  expect(path.basename(worktreePath)).toMatch(sessionWorktreePathPattern(sessionId))
+  expect(
+    worktreePath === realTmpdir || worktreePath.startsWith(realTmpdir + path.sep)
+  ).toBe(true)
 }
 
 function uniquePath(prefix: string): string {
@@ -133,15 +148,34 @@ describe('SessionWorktreeManager', () => {
 
     const info = await manager.create(sessionId, workBranchPrefix, 'main')
 
-    expect(info).toEqual({
+    expect(info).toMatchObject({
       sessionId,
-      worktreePath: normalizePath(path.join(os.tmpdir(), `invoke-session-${sessionId}`)),
       workBranch,
       baseBranch: 'main',
     })
+    expectSessionWorktreePath(info.worktreePath, sessionId)
     expect(existsSync(info.worktreePath)).toBe(true)
     expect(existsSync(path.join(info.worktreePath, 'README.md'))).toBe(true)
     expect(git('git branch --show-current', info.worktreePath)).toBe(workBranch)
+  })
+
+  it('ignores a pre-existing legacy symlink path when creating a session worktree', async () => {
+    const sessionId = `legacy-symlink-${Date.now()}`
+    const legacyPath = path.join(os.tmpdir(), `invoke-session-${sessionId}`)
+    const externalDir = await mkdtemp(path.join(os.tmpdir(), 'invoke-session-legacy-target-'))
+
+    await symlink(externalDir, legacyPath)
+
+    try {
+      const info = await manager.create(sessionId, 'invoke/sessions', 'main')
+
+      expectSessionWorktreePath(info.worktreePath, sessionId)
+      expect(info.worktreePath).not.toBe(normalizePath(legacyPath))
+      expect(existsSync(path.join(externalDir, 'README.md'))).toBe(false)
+    } finally {
+      await rm(legacyPath, { force: true })
+      await rm(externalDir, { recursive: true, force: true })
+    }
   })
 
   it('is idempotent when create is called twice for the same session', async () => {
@@ -198,6 +232,7 @@ describe('SessionWorktreeManager', () => {
     expect(reattached?.workBranch).toBe(created.workBranch)
     expect(reattached?.baseBranch).toBe('main')
     expect(reattached?.worktreePath).not.toBe(created.worktreePath)
+    expectSessionWorktreePath(reattached!.worktreePath, sessionId)
     expect(existsSync(reattached!.worktreePath)).toBe(true)
     expect(git('git branch --show-current', reattached!.worktreePath)).toBe(created.workBranch)
   })
@@ -293,6 +328,7 @@ describe('SessionWorktreeManager', () => {
       listedByBranch,
       listedByPath.workBranch,
     ].sort())
+    expect(listed.find(info => info.workBranch === listedByPath.workBranch)).toEqual(listedByPath)
 
     const prefixedEntry = listed.find(info => info.workBranch === listedByBranch)
     expect(prefixedEntry).toEqual({
