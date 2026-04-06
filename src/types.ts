@@ -181,6 +181,7 @@ export interface PipelineState {
   strategy?: string
   batches: BatchState[]
   review_cycles: ReviewCycle[]
+  bug_ids?: string[]
 }
 
 export interface BatchState {
@@ -262,4 +263,29 @@ export interface SessionComparisonDelta {
 export interface SessionComparison {
   sessions: SessionComparisonEntry[]
   delta: SessionComparisonDelta | null
+}
+
+// -- Bug Tracking --
+
+export type BugStatus = 'open' | 'in_progress' | 'resolved'
+export type BugSeverity = 'critical' | 'high' | 'medium' | 'low'
+
+export interface BugEntry {
+  id: string
+  title: string
+  description: string
+  status: BugStatus
+  severity: BugSeverity
+  file?: string | null
+  line?: number | null
+  labels: string[]
+  session_id?: string | null
+  created: string
+  updated: string
+  resolution?: string | null
+  resolved_by_session?: string | null
+}
+
+export interface BugsFile {
+  bugs: BugEntry[]
 }
