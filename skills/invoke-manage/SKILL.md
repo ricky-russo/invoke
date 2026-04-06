@@ -216,23 +216,26 @@ When the user wants to clean up old or completed sessions (e.g., 'clean up old s
      }]
    })
    ```
-3. For EACH session whose `state.work_branch` is set, ask the user via `AskUserQuestion` before cleaning that specific session:
-   ```
-   AskUserQuestion({
-     questions: [{
-       question: 'Session [session_id] has work branch [work_branch]. Keep the branch?',
-       header: 'Keep branch',
-       multiSelect: false,
-       options: [
-         { label: 'Keep (Recommended)', description: 'Remove the worktree but preserve the branch' },
-         { label: 'Delete', description: 'Remove both the worktree and the branch (git branch -D)' }
-       ]
-     }]
-   })
-   ```
-4. Call `invoke_cleanup_sessions` with `{ session_id: <id>, delete_work_branch: <true|false> }` based on the user's answer.
-5. For sessions WITHOUT `state.work_branch` (legacy), call `invoke_cleanup_sessions` without the `delete_work_branch` flag (the underlying tool ignores it for legacy sessions).
-6. Report the cleaned sessions back to the user.
+3. For each session that matched the filter:
+   a. Call `invoke_get_state({ session_id: <session.session_id> })` to read that session's state.
+   b. Check the response for `state.work_branch`.
+   c. If `state.work_branch` is set, ask the user via `AskUserQuestion`:
+      ```
+      AskUserQuestion({
+        questions: [{
+          question: 'Session [session_id] has work branch [state.work_branch]. Keep the branch?',
+          header: 'Keep branch',
+          multiSelect: false,
+          options: [
+            { label: 'Keep (Recommended)', description: 'Remove the worktree but preserve the branch' },
+            { label: 'Delete', description: 'Remove both the worktree and the branch (git branch -D)' }
+          ]
+        }]
+      })
+      ```
+      Then call `invoke_cleanup_sessions({ session_id: <id>, delete_work_branch: <true|false> })` based on the answer.
+   d. If `state.work_branch` is NOT set (legacy session), call `invoke_cleanup_sessions({ session_id: <id> })` without the `delete_work_branch` flag.
+4. Report the cleaned sessions back to the user.
 
 ### Edit Settings
 
