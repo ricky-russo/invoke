@@ -59,42 +59,64 @@ To discover orphaned worktrees, read the pipeline state from `invoke_get_state`.
 
 If orphaned worktrees are found:
 
-> "Found [N] worktrees from the previous session. Some may have incomplete work."
-> 1. **Keep and merge** — merge whatever was completed
-> 2. **Discard** — clean up all worktrees and restart the affected tasks
-> 3. **Inspect** — let me check each worktree's status first
+```
+AskUserQuestion({
+  questions: [{
+    question: "Found [N] worktrees from the previous session. Some may have incomplete work.",
+    header: "Orphaned worktrees",
+    multiSelect: false,
+    options: [
+      { label: "Keep and merge", description: "Merge whatever was completed" },
+      { label: "Discard", description: "Clean up all worktrees and restart the affected tasks" },
+      { label: "Inspect", description: "Check each worktree's status first" }
+    ]
+  }]
+})
+```
 
 If "Inspect": check each worktree for uncommitted changes and committed changes via `git -C <worktree_path> status` and `git -C <worktree_path> log --oneline -5`, then present options per worktree.
 
 ### 5. Offer Options
 
-> "What would you like to do?"
-> 1. **Continue** — pick up where we left off at the [stage] stage
-> 2. **Redo current stage** — restart the [stage] stage from scratch
-> 3. **Abort** — clean up and start fresh
+```
+AskUserQuestion({
+  questions: [{
+    question: "What would you like to do?",
+    header: "Resume pipeline",
+    multiSelect: false,
+    options: [
+      { label: "Continue", description: "Pick up where we left off at the [stage] stage" },
+      { label: "Redo current stage", description: "Restart the [stage] stage from scratch" },
+      { label: "Abort", description: "Clean up and start fresh" }
+    ]
+  }]
+})
+```
 
 ### 6. Handle Choice
 
 **Continue:**
-- Load the appropriate stage skill based on `current_stage`:
-  - `scope` — check if context.md exists via `invoke_get_context`. If not initialized, invoke-scope should resume at context initialization (step 2). If context exists, invoke-scope picks up at researcher dispatch or clarifying questions (research may already be done).
-  - `plan` — invoke-plan picks up at planner dispatch or plan selection
-  - `orchestrate` — invoke-orchestrate picks up at task breakdown
-  - `build` — invoke-build resumes at the **next batch with unmerged work or unresolved failures**. Within a batch, never re-dispatch tasks already marked `merged: true`, and never re-dispatch tasks already `completed` but awaiting merge. Only re-dispatch tasks that are both unmerged and incomplete. Present: "Batch [N]: [M] merged, [R] completed awaiting merge, resuming [U] remaining tasks."
-  - `review` — invoke-review resumes at reviewer selection
+- Load the appropriate stage skill based on `current_stage` by calling `Skill()`:
+  - `scope` — `Skill({ skill: "invoke:invoke-scope" })` — check if context.md exists via `invoke_get_context`. If not initialized, invoke-scope should resume at context initialization (step 2). If context exists, invoke-scope picks up at researcher dispatch or clarifying questions (research may already be done).
+  - `plan` — `Skill({ skill: "invoke:invoke-plan" })` — invoke-plan picks up at planner dispatch or plan selection
+  - `orchestrate` — `Skill({ skill: "invoke:invoke-orchestrate" })` — invoke-orchestrate picks up at task breakdown
+  - `build` — `Skill({ skill: "invoke:invoke-build" })` — invoke-build resumes at the **next batch with unmerged work or unresolved failures**. Within a batch, never re-dispatch tasks already marked `merged: true`, and never re-dispatch tasks already `completed` but awaiting merge. Only re-dispatch tasks that are both unmerged and incomplete. Present: "Batch [N]: [M] merged, [R] completed awaiting merge, resuming [U] remaining tasks."
+  - `review` — `Skill({ skill: "invoke:invoke-review" })` — invoke-review resumes at reviewer selection
 
 **Redo:**
 
 Reset state for the current stage but keep prior stage outputs, then re-invoke the stage skill. Per-stage operations:
 
-- **scope:** Clear `state.spec` and remove scope batch results. Keep context.md.
-- **plan:** Clear `state.plan` and `state.strategy`. Keep spec.
-- **orchestrate:** Clear `state.strategy` and clear all batches. Keep spec and plan.
-- **build:** Clear all batch task results and worktree paths. Keep spec, plan, and strategy. Call `invoke_cleanup_worktrees` to remove existing worktrees.
-- **review:** Clear `review_cycles`. Keep everything else.
+- **scope:** Call `invoke_set_state({ session_id: "<pipeline_id>", spec: "", batches: [] })`. Keep context.md.
+- **plan:** Call `invoke_set_state({ session_id: "<pipeline_id>", plan: "", strategy: "" })`. Keep spec.
+- **orchestrate:** Call `invoke_set_state({ session_id: "<pipeline_id>", strategy: "", batches: [] })`. Keep spec and plan.
+- **build:** Call `invoke_cleanup_worktrees({})` to remove existing worktrees, then call `invoke_set_state({ session_id: "<pipeline_id>", batches: [] })`. Keep spec, plan, and strategy.
+- **review:** Call `invoke_set_state({ session_id: "<pipeline_id>", review_cycles: [] })`. Keep everything else.
 
-After clearing the appropriate fields, set `current_stage` back to the current stage and re-invoke the stage skill.
+After clearing the appropriate fields, re-invoke the stage skill using the same `Skill()` calls listed under Continue above.
 
 **Abort:**
 
-Call `invoke_cleanup_worktrees` to remove all worktrees. Then call `invoke_cleanup_sessions` with the `session_id` to remove the session entirely. Inform the user: "Pipeline cleaned up. Ready to start fresh — use invoke-scope to begin a new pipeline."
+1. Call `invoke_cleanup_worktrees({})` to remove all worktrees.
+2. Call `invoke_cleanup_sessions({ session_id: "<pipeline_id>" })` to remove the session.
+3. Inform the user: "Pipeline cleaned up. Ready to start fresh — use invoke-scope to begin a new pipeline."
