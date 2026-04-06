@@ -39743,15 +39743,12 @@ import os from "os";
 import path4 from "path";
 var INVOKE_SESSION_BASENAME_PREFIX = "invoke-session-";
 var gitCommonDirCache = /* @__PURE__ */ new Map();
-var cachedTmpdirRealpath = null;
 function getTmpdirRealpath() {
-  if (cachedTmpdirRealpath !== null) return cachedTmpdirRealpath;
   try {
-    cachedTmpdirRealpath = realpathSync2(os.tmpdir());
+    return realpathSync2(os.tmpdir());
   } catch {
-    cachedTmpdirRealpath = os.tmpdir();
+    return os.tmpdir();
   }
-  return cachedTmpdirRealpath;
 }
 function resolveGitCommonDir(cwd) {
   const cached2 = gitCommonDirCache.get(cwd);
@@ -39975,6 +39972,11 @@ function parsePorcelainWorktrees(porcelainOutput) {
 var SESSION_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 function validateSessionId(sessionId) {
   if (!SESSION_ID_PATTERN.test(sessionId)) {
+    throw new Error(`Invalid session ID: '${sessionId}'`);
+  }
+}
+function validateSessionIdForRead(sessionId) {
+  if (!sessionId || sessionId === "." || sessionId === ".." || sessionId.includes("/") || sessionId.includes("\\") || sessionId.includes("\0")) {
     throw new Error(`Invalid session ID: '${sessionId}'`);
   }
 }
@@ -40498,11 +40500,6 @@ import { existsSync as existsSync4 } from "fs";
 import { mkdir as mkdir2, readFile as readFile4, readdir as readdir2, rename as rename2, rm } from "fs/promises";
 import path8 from "path";
 var MS_PER_DAY = 24 * 60 * 60 * 1e3;
-function validateSessionIdForRead(sessionId) {
-  if (!sessionId || sessionId === "." || sessionId === ".." || sessionId.includes("/") || sessionId.includes("\\") || sessionId.includes("\0")) {
-    throw new Error(`Invalid session ID: '${sessionId}'`);
-  }
-}
 var SessionManager = class {
   invokeDir;
   sessionsDir;
@@ -41395,14 +41392,11 @@ function registerDispatchTools(server, engine, batchManager, projectDir, metrics
               isError: true
             };
           }
-          try {
-            const projectedDispatches = limitStatus.dispatches_used + estimatedDispatches;
-            if (projectedDispatches > limitStatus.max_dispatches) {
-              warning = `Exceeding max_dispatches limit (${projectedDispatches}/${limitStatus.max_dispatches})`;
-            } else if (projectedDispatches / limitStatus.max_dispatches > 0.8) {
-              warning = `Approaching max_dispatches limit (${projectedDispatches}/${limitStatus.max_dispatches})`;
-            }
-          } catch {
+          const projectedDispatches = limitStatus.dispatches_used + estimatedDispatches;
+          if (projectedDispatches > limitStatus.max_dispatches) {
+            warning = `Exceeding max_dispatches limit (${projectedDispatches}/${limitStatus.max_dispatches})`;
+          } else if (projectedDispatches / limitStatus.max_dispatches > 0.8) {
+            warning = `Approaching max_dispatches limit (${projectedDispatches}/${limitStatus.max_dispatches})`;
           }
         }
         const maxParallel = config2?.settings?.max_parallel_agents;

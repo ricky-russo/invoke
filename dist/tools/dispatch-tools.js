@@ -165,17 +165,12 @@ export function registerDispatchTools(server, engine, batchManager, projectDir, 
                         isError: true,
                     };
                 }
-                try {
-                    const projectedDispatches = limitStatus.dispatches_used + estimatedDispatches;
-                    if (projectedDispatches > limitStatus.max_dispatches) {
-                        warning = `Exceeding max_dispatches limit (${projectedDispatches}/${limitStatus.max_dispatches})`;
-                    }
-                    else if (projectedDispatches / limitStatus.max_dispatches > 0.8) {
-                        warning = `Approaching max_dispatches limit (${projectedDispatches}/${limitStatus.max_dispatches})`;
-                    }
+                const projectedDispatches = limitStatus.dispatches_used + estimatedDispatches;
+                if (projectedDispatches > limitStatus.max_dispatches) {
+                    warning = `Exceeding max_dispatches limit (${projectedDispatches}/${limitStatus.max_dispatches})`;
                 }
-                catch {
-                    // Warning-only path stays fail-open.
+                else if (projectedDispatches / limitStatus.max_dispatches > 0.8) {
+                    warning = `Approaching max_dispatches limit (${projectedDispatches}/${limitStatus.max_dispatches})`;
                 }
             }
             const maxParallel = config?.settings?.max_parallel_agents;

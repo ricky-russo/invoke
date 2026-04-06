@@ -6,16 +6,16 @@ import path from 'path'
 export const INVOKE_SESSION_BASENAME_PREFIX = 'invoke-session-'
 
 const gitCommonDirCache = new Map<string, string>()
-let cachedTmpdirRealpath: string | null = null
 
+// Note: realpath(os.tmpdir()) is intentionally NOT memoized. The call is cheap
+// (single syscall), and caching it would break tests that mock os.tmpdir() via
+// vi.spyOn — once cached, subsequent calls would see the stale mocked value.
 function getTmpdirRealpath(): string {
-  if (cachedTmpdirRealpath !== null) return cachedTmpdirRealpath
   try {
-    cachedTmpdirRealpath = realpathSync(os.tmpdir())
+    return realpathSync(os.tmpdir())
   } catch {
-    cachedTmpdirRealpath = os.tmpdir()
+    return os.tmpdir()
   }
-  return cachedTmpdirRealpath
 }
 
 /**

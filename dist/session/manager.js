@@ -1,19 +1,8 @@
 import { existsSync } from 'fs';
 import { mkdir, readFile, readdir, rename, rm } from 'fs/promises';
 import path from 'path';
-import { validateSessionId } from '../worktree/session-id-validator.js';
+import { validateSessionId, validateSessionIdForRead, } from '../worktree/session-id-validator.js';
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
-function validateSessionIdForRead(sessionId) {
-    // Legacy session IDs remain readable as long as they cannot escape the sessions directory.
-    if (!sessionId ||
-        sessionId === '.' ||
-        sessionId === '..' ||
-        sessionId.includes('/') ||
-        sessionId.includes('\\') ||
-        sessionId.includes('\0')) {
-        throw new Error(`Invalid session ID: '${sessionId}'`);
-    }
-}
 export class SessionManager {
     invokeDir;
     sessionsDir;
