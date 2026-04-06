@@ -1,6 +1,6 @@
 ---
 name: invoke-manage
-description: "MUST USE when creating, editing, removing, or listing invoke roles, reviewers, researchers, builders, planners, strategies, sub-roles, or agents. Triggers on: 'create a reviewer', 'add a new agent', 'new sub-role', 'remove reviewer', 'edit strategy', 'list roles', 'configure pipeline', 'add provider'. Always use this skill instead of manually editing .invoke/ files."
+description: "MUST USE when creating, editing, removing, or listing invoke roles, reviewers, researchers, builders, planners, strategies, sub-roles, or agents, or when cleaning up sessions. Triggers on: 'create a reviewer', 'add a new agent', 'new sub-role', 'remove reviewer', 'edit strategy', 'list roles', 'configure pipeline', 'add provider', 'clean up old sessions', 'remove stale pipelines', 'delete completed sessions'. Always use this skill instead of manually editing .invoke/ files."
 ---
 
 # Invoke — Manage Configuration
@@ -195,6 +195,44 @@ Preset definitions cannot be created or modified through the config tool API. Wh
 
 1. Explain that preset definitions live in `pipeline.yaml` (under the `presets:` key) or as separate YAML files in `.invoke/presets/`
 2. Offer to help the user edit the relevant file directly
+
+### Cleanup Sessions
+
+When the user wants to clean up old or completed sessions (e.g., 'clean up old sessions', 'remove stale pipelines', 'delete completed sessions'):
+
+1. Call `invoke_list_sessions` to get all sessions.
+2. Filter to sessions matching the cleanup criteria (status: `complete`, `stale`, or all inactive per user choice). If the user did not specify, ask via `AskUserQuestion`:
+   ```
+   AskUserQuestion({
+     questions: [{
+       question: 'Which sessions should I clean up?',
+       header: 'Cleanup scope',
+       multiSelect: false,
+       options: [
+         { label: 'Complete only', description: 'Sessions whose pipeline reached the complete stage' },
+         { label: 'Stale only', description: 'Sessions that were abandoned or never finished' },
+         { label: 'All inactive', description: 'Both complete and stale sessions' }
+       ]
+     }]
+   })
+   ```
+3. For EACH session whose `state.work_branch` is set, ask the user via `AskUserQuestion` before cleaning that specific session:
+   ```
+   AskUserQuestion({
+     questions: [{
+       question: 'Session [session_id] has work branch [work_branch]. Keep the branch?',
+       header: 'Keep branch',
+       multiSelect: false,
+       options: [
+         { label: 'Keep (Recommended)', description: 'Remove the worktree but preserve the branch' },
+         { label: 'Delete', description: 'Remove both the worktree and the branch (git branch -D)' }
+       ]
+     }]
+   })
+   ```
+4. Call `invoke_cleanup_sessions` with `{ session_id: <id>, delete_work_branch: <true|false> }` based on the user's answer.
+5. For sessions WITHOUT `state.work_branch` (legacy), call `invoke_cleanup_sessions` without the `delete_work_branch` flag (the underlying tool ignores it for legacy sessions).
+6. Report the cleaned sessions back to the user.
 
 ### Edit Settings
 

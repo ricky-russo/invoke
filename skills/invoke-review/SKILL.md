@@ -324,26 +324,11 @@ When the pipeline completes (all review cycles pass or the user approves the fin
 - In tiered review, `critical` gates `quality`, and `quality` completes before optional `polish`
 - In fallback review, the loop continues until the user is satisfied, not until reviewers find zero issues
 
-## Session Cleanup (R6)
+## Session Cleanup (R6) — contract for cleanup callers
 
-When the user invokes session cleanup (via /invoke-manage or by explicit request to clean up old sessions), the cleanup flow MUST prompt for each session whose work_branch is set:
+This section documents the per-session prompt contract that any cleanup flow must follow per R6. **The actual cleanup operation lives in invoke-manage — see its Cleanup Sessions section.** invoke-review does not run cleanup itself, but if you call `invoke_cleanup_sessions` from any context, you MUST follow this per-session loop:
 
-1. List sessions to clean up via `invoke_list_sessions` (status: `'complete'` or `'stale'`).
-2. For EACH session whose `state.work_branch` is set, ask the user via `AskUserQuestion`:
-   ```
-   AskUserQuestion({
-     questions: [{
-       question: 'Cleaning up session [session_id]. Keep the work branch [work_branch]?',
-       header: 'Keep branch',
-       multiSelect: false,
-       options: [
-         { label: 'Keep (Recommended)', description: 'Remove the worktree but preserve the branch in case you want to revisit it' },
-         { label: 'Delete', description: 'Remove both the worktree and the branch (git branch -D)' }
-       ]
-     }]
-   })
-   ```
-3. Call `invoke_cleanup_sessions` with `session_id: <id>` and `delete_work_branch: <true|false>` based on the user's answer.
-4. Repeat for each session.
-
-For sessions WITHOUT `state.work_branch` (legacy), call `invoke_cleanup_sessions` without the `delete_work_branch` flag (the underlying tool ignores it for legacy sessions).
+1. List sessions to clean up via `invoke_list_sessions`.
+2. For each session whose `state.work_branch` is set, ask the user via `AskUserQuestion` (Keep / Delete branch).
+3. Call `invoke_cleanup_sessions` with `session_id` and `delete_work_branch`.
+4. Repeat per session.
