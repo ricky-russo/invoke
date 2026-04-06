@@ -99,7 +99,7 @@ export function registerBugTools(server: McpServer, bugManager: BugManager): voi
 
 function errorResponse(message: string) {
   return {
-    content: [{ type: 'text', text: message }],
+    content: [{ type: 'text' as const, text: message }],
     isError: true as const,
   }
 }
