@@ -8,6 +8,18 @@ You are reviewing code for security vulnerabilities.
 ## Diff
 {{diff}}
 
+## Scope
+
+The approved spec for this work is below. It defines what is in-scope for the current task. Use it to determine whether each finding is in-scope or out-of-scope (see Output Format). Pay particular attention to the spec's `## Out of Scope` section if present — anything explicitly listed there is out-of-scope.
+
+{{scope}}
+
+## Prior Findings (verify these were fixed)
+
+{{prior_findings}}
+
+If prior findings are listed above, the diff above is a delta — only the changes builders made in response to those findings. Your primary job in this cycle is to verify each prior finding was actually fixed and that the fix did not introduce regressions. You MAY raise new findings, but only if they are regressions caused by the delta itself.
+
 ## Instructions
 
 Review the code for security issues, focusing on:
@@ -44,6 +56,12 @@ If you find issues, report each one using this exact format:
 **Line:** line number
 **Issue:** Clear description of the vulnerability
 **Suggestion:** Specific fix recommendation
+**Out-of-Scope:** yes | no
+
+**In-scope:** the finding concerns code paths, files, or behaviors the spec intended to change, or a regression introduced by those changes.
+**Out-of-scope:** the finding is a real defect, but lives in code the spec never intended to touch and is not a regression caused by the diff under review.
+
+Flagging a finding as out-of-scope does NOT dismiss it — it routes the finding to a tracked followup bug instead of the current build loop. Be honest: if you find a real issue, flag it; the scope marker decides only where it goes, not whether it's reported.
 
 ## FEW-SHOT EXAMPLE
 
@@ -53,6 +71,7 @@ If you find issues, report each one using this exact format:
 **Line:** 41
 **Issue:** User-controlled `query` is concatenated into the SQL string, which creates a concrete SQL injection path via the `/admin/search` endpoint (OWASP Top 10: Injection).
 **Suggestion:** Replace string interpolation with parameterized queries and validate the accepted search syntax before executing the statement.
+**Out-of-Scope:** no
 
 ## NOTHING-FOUND
 
