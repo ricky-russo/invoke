@@ -4,7 +4,17 @@ import path from 'path';
 import os from 'os';
 import { withMergeTargetLock, withRepoLock, withTaskLock } from './repo-lock.js';
 const CONFLICT_STATUS_PREFIXES = ['UU', 'AA', 'DD', 'AU', 'UA', 'DU', 'UD'];
-function isSafeSessionWorktreeTarget(targetPath) {
+function resolveGitCommonDir(cwd) {
+    const canonicalCwd = realpathSync(cwd);
+    const commonDir = execFileSync('git', ['rev-parse', '--git-common-dir'], {
+        cwd: canonicalCwd,
+        stdio: 'pipe',
+    })
+        .toString()
+        .trim();
+    return realpathSync(path.resolve(canonicalCwd, commonDir));
+}
+function isSafeSessionWorktreeTarget(targetPath, repoDir) {
     let canonicalTarget;
     let canonicalTmp;
     try {
@@ -22,7 +32,15 @@ function isSafeSessionWorktreeTarget(targetPath) {
     if (canonicalTarget !== canonicalTmp && !canonicalTarget.startsWith(canonicalTmp + path.sep)) {
         return false;
     }
-    return path.basename(canonicalTarget).startsWith('invoke-session-');
+    if (!path.basename(canonicalTarget).startsWith('invoke-session-')) {
+        return false;
+    }
+    try {
+        return resolveGitCommonDir(canonicalTarget) === resolveGitCommonDir(repoDir);
+    }
+    catch {
+        return false;
+    }
 }
 function git(cwd, args) {
     return execFileSync('git', args, { cwd, stdio: 'pipe' }).toString();
@@ -85,7 +103,7 @@ export class WorktreeManager {
             const mergeAttempt = tryGit(mergeTargetPath, ['merge', '--squash', info.branch]);
             if (!mergeAttempt.ok) {
                 const conflictingFiles = this.collectConflictingFiles(mergeTargetPath);
-                if (mergeTargetPath !== this.repoDir && !isSafeSessionWorktreeTarget(mergeTargetPath)) {
+                if (mergeTargetPath !== this.repoDir && !isSafeSessionWorktreeTarget(mergeTargetPath, this.repoDir)) {
                     const original = mergeAttempt.error;
                     throw new Error(`Refusing destructive cleanup on unsafe merge target ${mergeTargetPath}: ${original?.message ?? original}`);
                 }

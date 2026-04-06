@@ -1,3 +1,4 @@
+import { execFileSync } from 'child_process';
 import { realpathSync } from 'fs';
 import os from 'os';
 import path from 'path';
@@ -6,7 +7,17 @@ import { loadConfig } from '../config.js';
 import { MetricsManager } from '../metrics/manager.js';
 import { StateManager } from './state.js';
 const DEFAULT_STALE_SESSION_DAYS = 7;
-function isSafeSessionWorkBranchPath(workBranchPath) {
+function resolveGitCommonDir(cwd) {
+    const canonicalCwd = realpathSync(cwd);
+    const commonDir = execFileSync('git', ['rev-parse', '--git-common-dir'], {
+        cwd: canonicalCwd,
+        stdio: 'pipe',
+    })
+        .toString()
+        .trim();
+    return realpathSync(path.resolve(canonicalCwd, commonDir));
+}
+function isSafeSessionWorkBranchPath(workBranchPath, repoDir) {
     if (!workBranchPath || !path.isAbsolute(workBranchPath)) {
         return false;
     }
@@ -27,7 +38,15 @@ function isSafeSessionWorkBranchPath(workBranchPath) {
     if (canonicalTarget !== canonicalTmp && !canonicalTarget.startsWith(canonicalTmp + path.sep)) {
         return false;
     }
-    return path.basename(canonicalTarget).startsWith('invoke-session-');
+    if (!path.basename(canonicalTarget).startsWith('invoke-session-')) {
+        return false;
+    }
+    try {
+        return resolveGitCommonDir(canonicalTarget) === resolveGitCommonDir(repoDir);
+    }
+    catch {
+        return false;
+    }
 }
 function isSafeWorkBranch(workBranch, sessionId, prefix) {
     if (!workBranch) {
@@ -119,7 +138,7 @@ async function cleanupSession(sessionId, sessionManager, sessionWorktreeManager,
             if (!isSafeWorkBranch(workBranch, sessionId, prefix)) {
                 console.error(`Session ${sessionId} has unexpected work_branch '${workBranch}'; skipping branch cleanup.`);
             }
-            else if (!isSafeSessionWorkBranchPath(workBranchPath)) {
+            else if (!isSafeSessionWorkBranchPath(workBranchPath, projectDir)) {
                 console.error(`Session ${sessionId} has unsafe work_branch_path; skipping worktree cleanup.`);
             }
             else {

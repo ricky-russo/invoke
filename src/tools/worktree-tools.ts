@@ -1,3 +1,4 @@
+import { execFileSync } from 'child_process'
 import { realpathSync } from 'fs'
 import os from 'os'
 import path from 'path'
@@ -9,7 +10,22 @@ import type { InvokeConfig } from '../types.js'
 import { runPostMergeCommands } from './post-merge.js'
 import { StateManager } from './state.js'
 
-function isSafeSessionWorkBranchPath(workBranchPath: string | undefined): workBranchPath is string {
+function resolveGitCommonDir(cwd: string): string {
+  const canonicalCwd = realpathSync(cwd)
+  const commonDir = execFileSync('git', ['rev-parse', '--git-common-dir'], {
+    cwd: canonicalCwd,
+    stdio: 'pipe',
+  })
+    .toString()
+    .trim()
+
+  return realpathSync(path.resolve(canonicalCwd, commonDir))
+}
+
+function isSafeSessionWorkBranchPath(
+  workBranchPath: string | undefined,
+  repoDir: string
+): workBranchPath is string {
   if (!workBranchPath || !path.isAbsolute(workBranchPath)) {
     return false
   }
@@ -33,7 +49,15 @@ function isSafeSessionWorkBranchPath(workBranchPath: string | undefined): workBr
     return false
   }
 
-  return path.basename(canonicalTarget).startsWith('invoke-session-')
+  if (!path.basename(canonicalTarget).startsWith('invoke-session-')) {
+    return false
+  }
+
+  try {
+    return resolveGitCommonDir(canonicalTarget) === resolveGitCommonDir(repoDir)
+  } catch {
+    return false
+  }
 }
 
 async function resolveSessionWorkBranchPath(
@@ -52,7 +76,7 @@ async function resolveSessionWorkBranchPath(
   const workBranchPath = state?.work_branch_path
 
   if (workBranchPath === undefined) return undefined
-  if (!isSafeSessionWorkBranchPath(workBranchPath)) {
+  if (!isSafeSessionWorkBranchPath(workBranchPath, projectDir)) {
     throw new Error(
       `Refusing to use unsafe session work branch path for session '${sessionId}'`
     )

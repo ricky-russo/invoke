@@ -14,6 +14,7 @@ import { loadConfig } from '../../src/config.js'
 import { SessionManager } from '../../src/session/manager.js'
 import { registerPrTools } from '../../src/tools/pr-tools.js'
 import type { InvokeConfig, PipelineState } from '../../src/types.js'
+import { SessionWorktreeManager } from '../../src/worktree/session-worktree.js'
 
 type ToolInput = {
   session_id: string
@@ -41,6 +42,7 @@ type GitRepo = {
   repoDir: string
   originDir: string
   workBranch: string
+  worktreePath: string
 }
 
 const ORIGINAL_ENV = { ...process.env }
@@ -64,13 +66,7 @@ function parseResponseText<T>(result: ToolResult): T {
   return JSON.parse(result.content[0].text) as T
 }
 
-async function createGitRepoForSession(sessionId: string, remoteUrl?: string): Promise<GitRepo> {
-  const repoDir = await mkdtemp(path.join(os.tmpdir(), `invoke-session-${sessionId}-`))
-  const originDir = await mkdtemp(path.join(os.tmpdir(), 'invoke-pr-tools-origin-'))
-
-  git(originDir, ['init', '--bare'])
-  git(originDir, ['symbolic-ref', 'HEAD', 'refs/heads/main'])
-
+async function initializeGitRepo(repoDir: string): Promise<void> {
   git(repoDir, ['init'])
   git(repoDir, ['branch', '-M', 'main'])
   git(repoDir, ['config', 'user.email', 'test@example.com'])
@@ -79,21 +75,44 @@ async function createGitRepoForSession(sessionId: string, remoteUrl?: string): P
   await writeFile(path.join(repoDir, 'README.md'), '# Test repo\n')
   git(repoDir, ['add', 'README.md'])
   git(repoDir, ['commit', '-m', 'initial commit'])
+}
 
-  git(repoDir, ['remote', 'add', 'origin', remoteUrl ?? originDir])
+async function createGitRepoForSession(
+  sessionId: string,
+  remoteUrl?: string,
+  repoDir?: string
+): Promise<GitRepo> {
+  const targetRepoDir = repoDir ?? await mkdtemp(path.join(os.tmpdir(), 'invoke-pr-tools-repo-'))
+  const originDir = await mkdtemp(path.join(os.tmpdir(), 'invoke-pr-tools-origin-'))
+
+  git(originDir, ['init', '--bare'])
+  git(originDir, ['symbolic-ref', 'HEAD', 'refs/heads/main'])
+
+  await initializeGitRepo(targetRepoDir)
+
+  git(targetRepoDir, ['remote', 'add', 'origin', remoteUrl ?? originDir])
   if (remoteUrl) {
-    git(repoDir, ['remote', 'set-url', '--push', 'origin', originDir])
+    git(targetRepoDir, ['remote', 'set-url', '--push', 'origin', originDir])
   }
 
-  git(repoDir, ['push', '-u', 'origin', 'main'])
+  git(targetRepoDir, ['push', '-u', 'origin', 'main'])
 
-  const workBranch = `${TEST_CONFIG.settings.work_branch_prefix}/${sessionId}`
-  git(repoDir, ['switch', '-c', workBranch])
-  await writeFile(path.join(repoDir, 'feature.txt'), 'feature work\n')
-  git(repoDir, ['add', 'feature.txt'])
-  git(repoDir, ['commit', '-m', 'add feature'])
+  const sessionWorktreeManager = new SessionWorktreeManager(targetRepoDir)
+  const worktree = await sessionWorktreeManager.create(
+    sessionId,
+    TEST_CONFIG.settings.work_branch_prefix,
+    'main'
+  )
+  await writeFile(path.join(worktree.worktreePath, 'feature.txt'), 'feature work\n')
+  git(worktree.worktreePath, ['add', 'feature.txt'])
+  git(worktree.worktreePath, ['commit', '-m', 'add feature'])
 
-  return { repoDir, originDir, workBranch }
+  return {
+    repoDir: targetRepoDir,
+    originDir,
+    workBranch: worktree.workBranch,
+    worktreePath: worktree.worktreePath,
+  }
 }
 
 async function createBinDir(withGh: boolean): Promise<string> {
@@ -186,6 +205,13 @@ describe('registerPrTools', () => {
     return tool
   }
 
+  function trackGitRepo(repo: GitRepo): void {
+    tempDirs.push(repo.originDir, repo.worktreePath)
+    if (repo.repoDir !== projectDir) {
+      tempDirs.push(repo.repoDir)
+    }
+  }
+
   beforeEach(async () => {
     projectDir = await mkdtemp(path.join(os.tmpdir(), 'invoke-pr-tools-project-'))
     sessionManager = new SessionManager(projectDir)
@@ -213,15 +239,15 @@ describe('registerPrTools', () => {
 
   it('pushes in push_only mode, returns a GitHub compare URL, and does not invoke gh', async () => {
     const sessionId = 'session-1'
-    const repo = await createGitRepoForSession(sessionId, 'https://github.com/owner/repo.git')
-    tempDirs.push(repo.repoDir, repo.originDir)
+    const repo = await createGitRepoForSession(sessionId, 'https://github.com/owner/repo.git', projectDir)
+    trackGitRepo(repo)
 
     await writeSessionState(
       sessionManager,
       sessionId,
       createState({
         work_branch: repo.workBranch,
-        work_branch_path: repo.repoDir,
+        work_branch_path: repo.worktreePath,
       })
     )
 
@@ -252,15 +278,15 @@ describe('registerPrTools', () => {
 
   it('falls back to push plus compare URL when gh is missing', async () => {
     const sessionId = 'session-2'
-    const repo = await createGitRepoForSession(sessionId, 'git@github.com:owner/repo.git')
-    tempDirs.push(repo.repoDir, repo.originDir)
+    const repo = await createGitRepoForSession(sessionId, 'git@github.com:owner/repo.git', projectDir)
+    trackGitRepo(repo)
 
     await writeSessionState(
       sessionManager,
       sessionId,
       createState({
         work_branch: repo.workBranch,
-        work_branch_path: repo.repoDir,
+        work_branch_path: repo.worktreePath,
       })
     )
 
@@ -288,15 +314,15 @@ describe('registerPrTools', () => {
 
   it('creates a PR when gh is available, authenticated, and no PR exists', async () => {
     const sessionId = 'session-3'
-    const repo = await createGitRepoForSession(sessionId, 'https://github.com/owner/repo.git')
-    tempDirs.push(repo.repoDir, repo.originDir)
+    const repo = await createGitRepoForSession(sessionId, 'https://github.com/owner/repo.git', projectDir)
+    trackGitRepo(repo)
 
     await writeSessionState(
       sessionManager,
       sessionId,
       createState({
         work_branch: repo.workBranch,
-        work_branch_path: repo.repoDir,
+        work_branch_path: repo.worktreePath,
       })
     )
 
@@ -329,15 +355,15 @@ describe('registerPrTools', () => {
 
   it('falls back to push plus compare URL when gh is present but unauthenticated', async () => {
     const sessionId = 'session-unauth'
-    const repo = await createGitRepoForSession(sessionId, 'https://github.com/owner/repo.git')
-    tempDirs.push(repo.repoDir, repo.originDir)
+    const repo = await createGitRepoForSession(sessionId, 'https://github.com/owner/repo.git', projectDir)
+    trackGitRepo(repo)
 
     await writeSessionState(
       sessionManager,
       sessionId,
       createState({
         work_branch: repo.workBranch,
-        work_branch_path: repo.repoDir,
+        work_branch_path: repo.worktreePath,
       })
     )
 
@@ -366,15 +392,15 @@ describe('registerPrTools', () => {
 
   it('returns an existing PR URL when gh pr view succeeds', async () => {
     const sessionId = 'session-4'
-    const repo = await createGitRepoForSession(sessionId, 'https://github.com/owner/repo.git')
-    tempDirs.push(repo.repoDir, repo.originDir)
+    const repo = await createGitRepoForSession(sessionId, 'https://github.com/owner/repo.git', projectDir)
+    trackGitRepo(repo)
 
     await writeSessionState(
       sessionManager,
       sessionId,
       createState({
         work_branch: repo.workBranch,
-        work_branch_path: repo.repoDir,
+        work_branch_path: repo.worktreePath,
       })
     )
 
@@ -421,24 +447,21 @@ describe('registerPrTools', () => {
 
   it('returns an error when git push fails', async () => {
     const sessionId = 'session-6'
-    const repoDir = await mkdtemp(path.join(os.tmpdir(), `invoke-session-${sessionId}-`))
-    tempDirs.push(repoDir)
-
-    git(repoDir, ['init'])
-    git(repoDir, ['branch', '-M', 'main'])
-    git(repoDir, ['config', 'user.email', 'test@example.com'])
-    git(repoDir, ['config', 'user.name', 'Test User'])
-    await writeFile(path.join(repoDir, 'README.md'), '# Test repo\n')
-    git(repoDir, ['add', 'README.md'])
-    git(repoDir, ['commit', '-m', 'initial commit'])
-    git(repoDir, ['switch', '-c', `${TEST_CONFIG.settings.work_branch_prefix}/${sessionId}`])
+    await initializeGitRepo(projectDir)
+    const sessionWorktreeManager = new SessionWorktreeManager(projectDir)
+    const worktree = await sessionWorktreeManager.create(
+      sessionId,
+      TEST_CONFIG.settings.work_branch_prefix,
+      'main'
+    )
+    tempDirs.push(worktree.worktreePath)
 
     await writeSessionState(
       sessionManager,
       sessionId,
       createState({
-        work_branch: `${TEST_CONFIG.settings.work_branch_prefix}/${sessionId}`,
-        work_branch_path: repoDir,
+        work_branch: worktree.workBranch,
+        work_branch_path: worktree.worktreePath,
       })
     )
 
@@ -458,15 +481,15 @@ describe('registerPrTools', () => {
 
   it('returns null compare_url for a non-GitHub remote', async () => {
     const sessionId = 'session-7'
-    const repo = await createGitRepoForSession(sessionId, 'https://gitlab.com/owner/repo.git')
-    tempDirs.push(repo.repoDir, repo.originDir)
+    const repo = await createGitRepoForSession(sessionId, 'https://gitlab.com/owner/repo.git', projectDir)
+    trackGitRepo(repo)
 
     await writeSessionState(
       sessionManager,
       sessionId,
       createState({
         work_branch: repo.workBranch,
-        work_branch_path: repo.repoDir,
+        work_branch_path: repo.worktreePath,
       })
     )
 
@@ -517,15 +540,15 @@ describe('registerPrTools', () => {
 
   it('returns an error when the session work_branch does not match the expected prefix and session id', async () => {
     const sessionId = 'session-bad-branch'
-    const repo = await createGitRepoForSession(sessionId, 'https://github.com/owner/repo.git')
-    tempDirs.push(repo.repoDir, repo.originDir)
+    const repo = await createGitRepoForSession(sessionId, 'https://github.com/owner/repo.git', projectDir)
+    trackGitRepo(repo)
 
     await writeSessionState(
       sessionManager,
       sessionId,
       createState({
         work_branch: 'invoke/sessions/other-session',
-        work_branch_path: repo.repoDir,
+        work_branch_path: repo.worktreePath,
       })
     )
 
@@ -540,5 +563,33 @@ describe('registerPrTools', () => {
       `Session ${sessionId} has an unexpected work_branch — expected ${TEST_CONFIG.settings.work_branch_prefix}/${sessionId}`
     )
     expect(git(repo.originDir, ['branch', '--list', repo.workBranch])).toBe('')
+  })
+
+  it('returns an error when the session work_branch_path points at a session worktree from a different repo', async () => {
+    const sessionId = 'session-cross-repo'
+    const repo = await createGitRepoForSession(sessionId, 'https://github.com/owner/repo.git', projectDir)
+    trackGitRepo(repo)
+    const foreignRepo = await createGitRepoForSession('foreign-session', 'https://github.com/owner/other.git')
+    trackGitRepo(foreignRepo)
+
+    await writeSessionState(
+      sessionManager,
+      sessionId,
+      createState({
+        work_branch: repo.workBranch,
+        work_branch_path: foreignRepo.worktreePath,
+      })
+    )
+
+    const result = await getTool('invoke_pr_create').handler({
+      session_id: sessionId,
+      base_branch: 'main',
+      mode: 'push_only',
+    })
+
+    expect(result.isError).toBe(true)
+    expect(result.content[0].text).toBe(
+      `Session ${sessionId} has an unsafe work_branch_path`
+    )
   })
 })

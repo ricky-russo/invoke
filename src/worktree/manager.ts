@@ -16,7 +16,19 @@ export type MergeResult =
 
 const CONFLICT_STATUS_PREFIXES = ['UU', 'AA', 'DD', 'AU', 'UA', 'DU', 'UD']
 
-function isSafeSessionWorktreeTarget(targetPath: string): boolean {
+function resolveGitCommonDir(cwd: string): string {
+  const canonicalCwd = realpathSync(cwd)
+  const commonDir = execFileSync('git', ['rev-parse', '--git-common-dir'], {
+    cwd: canonicalCwd,
+    stdio: 'pipe',
+  })
+    .toString()
+    .trim()
+
+  return realpathSync(path.resolve(canonicalCwd, commonDir))
+}
+
+function isSafeSessionWorktreeTarget(targetPath: string, repoDir: string): boolean {
   let canonicalTarget: string
   let canonicalTmp: string
 
@@ -36,7 +48,15 @@ function isSafeSessionWorktreeTarget(targetPath: string): boolean {
     return false
   }
 
-  return path.basename(canonicalTarget).startsWith('invoke-session-')
+  if (!path.basename(canonicalTarget).startsWith('invoke-session-')) {
+    return false
+  }
+
+  try {
+    return resolveGitCommonDir(canonicalTarget) === resolveGitCommonDir(repoDir)
+  } catch {
+    return false
+  }
 }
 
 function git(cwd: string, args: string[]): string {
@@ -118,7 +138,7 @@ export class WorktreeManager {
       if (!mergeAttempt.ok) {
         const conflictingFiles = this.collectConflictingFiles(mergeTargetPath)
 
-        if (mergeTargetPath !== this.repoDir && !isSafeSessionWorktreeTarget(mergeTargetPath)) {
+        if (mergeTargetPath !== this.repoDir && !isSafeSessionWorktreeTarget(mergeTargetPath, this.repoDir)) {
           const original = mergeAttempt.error as Error
           throw new Error(
             `Refusing destructive cleanup on unsafe merge target ${mergeTargetPath}: ${original?.message ?? original}`

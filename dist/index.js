@@ -39738,7 +39738,15 @@ function canonicalize(targetPath) {
 
 // src/worktree/manager.ts
 var CONFLICT_STATUS_PREFIXES = ["UU", "AA", "DD", "AU", "UA", "DU", "UD"];
-function isSafeSessionWorktreeTarget(targetPath) {
+function resolveGitCommonDir(cwd) {
+  const canonicalCwd = realpathSync2(cwd);
+  const commonDir = execFileSync2("git", ["rev-parse", "--git-common-dir"], {
+    cwd: canonicalCwd,
+    stdio: "pipe"
+  }).toString().trim();
+  return realpathSync2(path4.resolve(canonicalCwd, commonDir));
+}
+function isSafeSessionWorktreeTarget(targetPath, repoDir) {
   let canonicalTarget;
   let canonicalTmp;
   try {
@@ -39754,7 +39762,14 @@ function isSafeSessionWorktreeTarget(targetPath) {
   if (canonicalTarget !== canonicalTmp && !canonicalTarget.startsWith(canonicalTmp + path4.sep)) {
     return false;
   }
-  return path4.basename(canonicalTarget).startsWith("invoke-session-");
+  if (!path4.basename(canonicalTarget).startsWith("invoke-session-")) {
+    return false;
+  }
+  try {
+    return resolveGitCommonDir(canonicalTarget) === resolveGitCommonDir(repoDir);
+  } catch {
+    return false;
+  }
 }
 function git(cwd, args) {
   return execFileSync2("git", args, { cwd, stdio: "pipe" }).toString();
@@ -39813,7 +39828,7 @@ var WorktreeManager = class {
       const mergeAttempt = tryGit(mergeTargetPath, ["merge", "--squash", info.branch]);
       if (!mergeAttempt.ok) {
         const conflictingFiles = this.collectConflictingFiles(mergeTargetPath);
-        if (mergeTargetPath !== this.repoDir && !isSafeSessionWorktreeTarget(mergeTargetPath)) {
+        if (mergeTargetPath !== this.repoDir && !isSafeSessionWorktreeTarget(mergeTargetPath, this.repoDir)) {
           const original = mergeAttempt.error;
           throw new Error(
             `Refusing destructive cleanup on unsafe merge target ${mergeTargetPath}: ${original?.message ?? original}`
@@ -41443,6 +41458,7 @@ function registerDispatchTools(server, engine, batchManager, projectDir, metrics
 
 // src/tools/worktree-tools.ts
 init_zod();
+import { execFileSync as execFileSync4 } from "child_process";
 import { realpathSync as realpathSync4 } from "fs";
 import os3 from "os";
 import path13 from "path";
@@ -41474,7 +41490,15 @@ function runPostMergeCommands(config2, projectDir, cwd) {
 }
 
 // src/tools/worktree-tools.ts
-function isSafeSessionWorkBranchPath(workBranchPath) {
+function resolveGitCommonDir2(cwd) {
+  const canonicalCwd = realpathSync4(cwd);
+  const commonDir = execFileSync4("git", ["rev-parse", "--git-common-dir"], {
+    cwd: canonicalCwd,
+    stdio: "pipe"
+  }).toString().trim();
+  return realpathSync4(path13.resolve(canonicalCwd, commonDir));
+}
+function isSafeSessionWorkBranchPath(workBranchPath, repoDir) {
   if (!workBranchPath || !path13.isAbsolute(workBranchPath)) {
     return false;
   }
@@ -41493,7 +41517,14 @@ function isSafeSessionWorkBranchPath(workBranchPath) {
   if (canonicalTarget !== canonicalTmp && !canonicalTarget.startsWith(canonicalTmp + path13.sep)) {
     return false;
   }
-  return path13.basename(canonicalTarget).startsWith("invoke-session-");
+  if (!path13.basename(canonicalTarget).startsWith("invoke-session-")) {
+    return false;
+  }
+  try {
+    return resolveGitCommonDir2(canonicalTarget) === resolveGitCommonDir2(repoDir);
+  } catch {
+    return false;
+  }
 }
 async function resolveSessionWorkBranchPath(sessionManager, projectDir, sessionId) {
   if (!sessionId) return void 0;
@@ -41505,7 +41536,7 @@ async function resolveSessionWorkBranchPath(sessionManager, projectDir, sessionI
   const state = await stateManager.get();
   const workBranchPath = state?.work_branch_path;
   if (workBranchPath === void 0) return void 0;
-  if (!isSafeSessionWorkBranchPath(workBranchPath)) {
+  if (!isSafeSessionWorkBranchPath(workBranchPath, projectDir)) {
     throw new Error(
       `Refusing to use unsafe session work branch path for session '${sessionId}'`
     );
@@ -41631,11 +41662,20 @@ function registerWorktreeTools(server, worktreeManager, sessionManager, config2,
 // src/tools/session-tools.ts
 init_zod();
 init_config();
+import { execFileSync as execFileSync5 } from "child_process";
 import { realpathSync as realpathSync5 } from "fs";
 import os4 from "os";
 import path14 from "path";
 var DEFAULT_STALE_SESSION_DAYS = 7;
-function isSafeSessionWorkBranchPath2(workBranchPath) {
+function resolveGitCommonDir3(cwd) {
+  const canonicalCwd = realpathSync5(cwd);
+  const commonDir = execFileSync5("git", ["rev-parse", "--git-common-dir"], {
+    cwd: canonicalCwd,
+    stdio: "pipe"
+  }).toString().trim();
+  return realpathSync5(path14.resolve(canonicalCwd, commonDir));
+}
+function isSafeSessionWorkBranchPath2(workBranchPath, repoDir) {
   if (!workBranchPath || !path14.isAbsolute(workBranchPath)) {
     return false;
   }
@@ -41654,7 +41694,14 @@ function isSafeSessionWorkBranchPath2(workBranchPath) {
   if (canonicalTarget !== canonicalTmp && !canonicalTarget.startsWith(canonicalTmp + path14.sep)) {
     return false;
   }
-  return path14.basename(canonicalTarget).startsWith("invoke-session-");
+  if (!path14.basename(canonicalTarget).startsWith("invoke-session-")) {
+    return false;
+  }
+  try {
+    return resolveGitCommonDir3(canonicalTarget) === resolveGitCommonDir3(repoDir);
+  } catch {
+    return false;
+  }
 }
 function isSafeWorkBranch(workBranch, sessionId, prefix) {
   if (!workBranch) {
@@ -41758,7 +41805,7 @@ async function cleanupSession(sessionId, sessionManager, sessionWorktreeManager,
         console.error(
           `Session ${sessionId} has unexpected work_branch '${workBranch}'; skipping branch cleanup.`
         );
-      } else if (!isSafeSessionWorkBranchPath2(workBranchPath)) {
+      } else if (!isSafeSessionWorkBranchPath2(workBranchPath, projectDir)) {
         console.error(
           `Session ${sessionId} has unsafe work_branch_path; skipping worktree cleanup.`
         );
@@ -41840,9 +41887,9 @@ function matchesCleanupFilter(session, filter) {
 init_zod();
 
 // src/worktree/base-branch.ts
-import { execFileSync as execFileSync4 } from "child_process";
+import { execFileSync as execFileSync6 } from "child_process";
 function runGit(repoDir, args) {
-  return execFileSync4("git", args, {
+  return execFileSync6("git", args, {
     cwd: repoDir,
     stdio: "pipe"
   }).toString().trim();
@@ -41856,7 +41903,7 @@ function tryRunGit(repoDir, args) {
 }
 function branchExists(repoDir, branch) {
   try {
-    execFileSync4("git", ["show-ref", "--verify", `refs/heads/${branch}`], {
+    execFileSync6("git", ["show-ref", "--verify", `refs/heads/${branch}`], {
       cwd: repoDir,
       stdio: "pipe"
     });
@@ -42021,11 +42068,19 @@ function registerSessionInitTools(server, sessionWorktreeManager, sessionManager
 // src/tools/pr-tools.ts
 init_zod();
 init_config();
-import { execFileSync as execFileSync5 } from "child_process";
+import { execFileSync as execFileSync7 } from "child_process";
 import { realpathSync as realpathSync6 } from "fs";
 import os5 from "os";
 import path15 from "path";
-function isSafeSessionWorkBranchPath3(workBranchPath) {
+function resolveGitCommonDir4(cwd) {
+  const canonicalCwd = realpathSync6(cwd);
+  const commonDir = execFileSync7("git", ["rev-parse", "--git-common-dir"], {
+    cwd: canonicalCwd,
+    stdio: "pipe"
+  }).toString().trim();
+  return realpathSync6(path15.resolve(canonicalCwd, commonDir));
+}
+function isSafeSessionWorkBranchPath3(workBranchPath, repoDir) {
   if (!workBranchPath || !path15.isAbsolute(workBranchPath)) {
     return false;
   }
@@ -42044,7 +42099,14 @@ function isSafeSessionWorkBranchPath3(workBranchPath) {
   if (canonicalTarget !== canonicalTmp && !canonicalTarget.startsWith(canonicalTmp + path15.sep)) {
     return false;
   }
-  return path15.basename(canonicalTarget).startsWith("invoke-session-");
+  if (!path15.basename(canonicalTarget).startsWith("invoke-session-")) {
+    return false;
+  }
+  try {
+    return resolveGitCommonDir4(canonicalTarget) === resolveGitCommonDir4(repoDir);
+  } catch {
+    return false;
+  }
 }
 function isSafeWorkBranch2(workBranch, sessionId, prefix) {
   if (!workBranch) {
@@ -42082,7 +42144,7 @@ function registerPrTools(server, sessionManager, projectDir) {
             `Session ${session_id} has an unexpected work_branch \u2014 expected ${workBranchPrefix}/${session_id}`
           );
         }
-        if (!isSafeSessionWorkBranchPath3(state.work_branch_path)) {
+        if (!isSafeSessionWorkBranchPath3(state.work_branch_path, projectDir)) {
           return errorResponse(
             `Session ${session_id} has an unsafe work_branch_path`
           );
@@ -42092,7 +42154,7 @@ function registerPrTools(server, sessionManager, projectDir) {
         const effectiveTitle = title ?? `feat: ${workBranch}`;
         const effectiveBody = body ?? "";
         try {
-          execFileSync5("git", ["push", "-u", "origin", workBranch], {
+          execFileSync7("git", ["push", "-u", "origin", workBranch], {
             cwd,
             stdio: "pipe"
           });
@@ -42123,7 +42185,7 @@ function registerPrTools(server, sessionManager, projectDir) {
           });
         }
         try {
-          execFileSync5("gh", ["auth", "status"], { cwd, stdio: "pipe" });
+          execFileSync7("gh", ["auth", "status"], { cwd, stdio: "pipe" });
         } catch {
           return ok({
             status: "pushed",
@@ -42136,7 +42198,7 @@ function registerPrTools(server, sessionManager, projectDir) {
           });
         }
         try {
-          const existing = execFileSync5(
+          const existing = execFileSync7(
             "gh",
             ["pr", "view", workBranch, "--json", "number,url"],
             { cwd, stdio: "pipe" }
@@ -42155,7 +42217,7 @@ function registerPrTools(server, sessionManager, projectDir) {
         } catch {
         }
         try {
-          const output = execFileSync5(
+          const output = execFileSync7(
             "gh",
             [
               "pr",
@@ -42200,7 +42262,7 @@ function errorResponse(msg) {
 }
 function computeCompareUrl(cwd, baseBranch, headBranch) {
   try {
-    const remoteUrl = execFileSync5("git", ["remote", "get-url", "origin"], {
+    const remoteUrl = execFileSync7("git", ["remote", "get-url", "origin"], {
       cwd,
       stdio: "pipe"
     }).toString().trim();

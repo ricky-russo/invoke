@@ -9,7 +9,22 @@ import { checkCliExists } from '../config-validator.js'
 import type { SessionManager } from '../session/manager.js'
 import { StateManager } from './state.js'
 
-function isSafeSessionWorkBranchPath(workBranchPath: string | undefined): workBranchPath is string {
+function resolveGitCommonDir(cwd: string): string {
+  const canonicalCwd = realpathSync(cwd)
+  const commonDir = execFileSync('git', ['rev-parse', '--git-common-dir'], {
+    cwd: canonicalCwd,
+    stdio: 'pipe',
+  })
+    .toString()
+    .trim()
+
+  return realpathSync(path.resolve(canonicalCwd, commonDir))
+}
+
+function isSafeSessionWorkBranchPath(
+  workBranchPath: string | undefined,
+  repoDir: string
+): workBranchPath is string {
   if (!workBranchPath || !path.isAbsolute(workBranchPath)) {
     return false
   }
@@ -33,7 +48,15 @@ function isSafeSessionWorkBranchPath(workBranchPath: string | undefined): workBr
     return false
   }
 
-  return path.basename(canonicalTarget).startsWith('invoke-session-')
+  if (!path.basename(canonicalTarget).startsWith('invoke-session-')) {
+    return false
+  }
+
+  try {
+    return resolveGitCommonDir(canonicalTarget) === resolveGitCommonDir(repoDir)
+  } catch {
+    return false
+  }
 }
 
 function isSafeWorkBranch(
@@ -85,7 +108,7 @@ export function registerPrTools(
             `Session ${session_id} has an unexpected work_branch — expected ${workBranchPrefix}/${session_id}`
           )
         }
-        if (!isSafeSessionWorkBranchPath(state.work_branch_path)) {
+        if (!isSafeSessionWorkBranchPath(state.work_branch_path, projectDir)) {
           return errorResponse(
             `Session ${session_id} has an unsafe work_branch_path`
           )

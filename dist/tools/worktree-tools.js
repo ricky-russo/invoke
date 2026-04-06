@@ -1,10 +1,21 @@
+import { execFileSync } from 'child_process';
 import { realpathSync } from 'fs';
 import os from 'os';
 import path from 'path';
 import { z } from 'zod';
 import { runPostMergeCommands } from './post-merge.js';
 import { StateManager } from './state.js';
-function isSafeSessionWorkBranchPath(workBranchPath) {
+function resolveGitCommonDir(cwd) {
+    const canonicalCwd = realpathSync(cwd);
+    const commonDir = execFileSync('git', ['rev-parse', '--git-common-dir'], {
+        cwd: canonicalCwd,
+        stdio: 'pipe',
+    })
+        .toString()
+        .trim();
+    return realpathSync(path.resolve(canonicalCwd, commonDir));
+}
+function isSafeSessionWorkBranchPath(workBranchPath, repoDir) {
     if (!workBranchPath || !path.isAbsolute(workBranchPath)) {
         return false;
     }
@@ -25,7 +36,15 @@ function isSafeSessionWorkBranchPath(workBranchPath) {
     if (canonicalTarget !== canonicalTmp && !canonicalTarget.startsWith(canonicalTmp + path.sep)) {
         return false;
     }
-    return path.basename(canonicalTarget).startsWith('invoke-session-');
+    if (!path.basename(canonicalTarget).startsWith('invoke-session-')) {
+        return false;
+    }
+    try {
+        return resolveGitCommonDir(canonicalTarget) === resolveGitCommonDir(repoDir);
+    }
+    catch {
+        return false;
+    }
 }
 async function resolveSessionWorkBranchPath(sessionManager, projectDir, sessionId) {
     if (!sessionId)
@@ -39,7 +58,7 @@ async function resolveSessionWorkBranchPath(sessionManager, projectDir, sessionI
     const workBranchPath = state?.work_branch_path;
     if (workBranchPath === undefined)
         return undefined;
-    if (!isSafeSessionWorkBranchPath(workBranchPath)) {
+    if (!isSafeSessionWorkBranchPath(workBranchPath, projectDir)) {
         throw new Error(`Refusing to use unsafe session work branch path for session '${sessionId}'`);
     }
     return realpathSync(workBranchPath);

@@ -1,3 +1,4 @@
+import { execFileSync } from 'child_process'
 import { realpathSync } from 'fs'
 import os from 'os'
 import path from 'path'
@@ -17,7 +18,22 @@ import type { SessionWorktreeManager } from '../worktree/session-worktree.js'
 
 const DEFAULT_STALE_SESSION_DAYS = 7
 
-function isSafeSessionWorkBranchPath(workBranchPath: string | undefined): workBranchPath is string {
+function resolveGitCommonDir(cwd: string): string {
+  const canonicalCwd = realpathSync(cwd)
+  const commonDir = execFileSync('git', ['rev-parse', '--git-common-dir'], {
+    cwd: canonicalCwd,
+    stdio: 'pipe',
+  })
+    .toString()
+    .trim()
+
+  return realpathSync(path.resolve(canonicalCwd, commonDir))
+}
+
+function isSafeSessionWorkBranchPath(
+  workBranchPath: string | undefined,
+  repoDir: string
+): workBranchPath is string {
   if (!workBranchPath || !path.isAbsolute(workBranchPath)) {
     return false
   }
@@ -41,7 +57,15 @@ function isSafeSessionWorkBranchPath(workBranchPath: string | undefined): workBr
     return false
   }
 
-  return path.basename(canonicalTarget).startsWith('invoke-session-')
+  if (!path.basename(canonicalTarget).startsWith('invoke-session-')) {
+    return false
+  }
+
+  try {
+    return resolveGitCommonDir(canonicalTarget) === resolveGitCommonDir(repoDir)
+  } catch {
+    return false
+  }
 }
 
 function isSafeWorkBranch(
@@ -180,7 +204,7 @@ async function cleanupSession(
         console.error(
           `Session ${sessionId} has unexpected work_branch '${workBranch}'; skipping branch cleanup.`
         )
-      } else if (!isSafeSessionWorkBranchPath(workBranchPath)) {
+      } else if (!isSafeSessionWorkBranchPath(workBranchPath, projectDir)) {
         console.error(
           `Session ${sessionId} has unsafe work_branch_path; skipping worktree cleanup.`
         )

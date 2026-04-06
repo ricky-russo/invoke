@@ -11,13 +11,19 @@ import os from 'os'
 let repoDir: string
 let manager: WorktreeManager
 
+async function createGitRepo(prefix: string): Promise<string> {
+  const dir = await mkdtemp(path.join(os.tmpdir(), prefix))
+  execSync('git init', { cwd: dir })
+  execSync('git branch -M main', { cwd: dir })
+  execSync('git config user.email "test@test.com"', { cwd: dir })
+  execSync('git config user.name "Test"', { cwd: dir })
+  await writeFile(path.join(dir, 'README.md'), '# Test')
+  execSync('git add . && git commit -m "initial"', { cwd: dir })
+  return dir
+}
+
 beforeEach(async () => {
-  repoDir = await mkdtemp(path.join(os.tmpdir(), 'invoke-wt-test-'))
-  execSync('git init', { cwd: repoDir })
-  execSync('git config user.email "test@test.com"', { cwd: repoDir })
-  execSync('git config user.name "Test"', { cwd: repoDir })
-  await writeFile(path.join(repoDir, 'README.md'), '# Test')
-  execSync('git add . && git commit -m "initial"', { cwd: repoDir })
+  repoDir = await createGitRepo('invoke-wt-test-')
   manager = new WorktreeManager(repoDir)
 })
 
@@ -254,6 +260,43 @@ describe('WorktreeManager merge with custom target', () => {
       expect(status).toBe('')
     } finally {
       await sessionManager.cleanup(sessionInfo.sessionId, sessionInfo.workBranch, true)
+    }
+  })
+
+  it('refuses destructive cleanup for a session-shaped merge target from a different repo', async () => {
+    const wt = await manager.create('task-cross-repo-session-target')
+    await writeFile(path.join(wt.worktreePath, 'cross-repo.ts'), 'export const crossRepo = true')
+    execSync('git add . && git commit -m "add cross repo file"', { cwd: wt.worktreePath })
+
+    const otherRepoDir = await createGitRepo('invoke-wt-foreign-')
+    const otherSessionManager = new SessionWorktreeManager(otherRepoDir)
+    const otherSession = await otherSessionManager.create(
+      'foreign-session',
+      'invoke/sessions',
+      'main'
+    )
+
+    try {
+      const untrackedPath = path.join(otherSession.worktreePath, 'keep.me')
+      await writeFile(untrackedPath, 'do not delete')
+
+      await expect(
+        manager.merge('task-cross-repo-session-target', {
+          mergeTargetPath: otherSession.worktreePath,
+        })
+      ).rejects.toThrow(/Refusing destructive cleanup on unsafe merge target/)
+
+      expect(existsSync(untrackedPath)).toBe(true)
+
+      const status = execSync('git status --porcelain', {
+        cwd: otherSession.worktreePath,
+      })
+        .toString()
+        .trim()
+      expect(status).toContain('?? keep.me')
+    } finally {
+      await otherSessionManager.cleanup(otherSession.sessionId, otherSession.workBranch, true)
+      await rm(otherRepoDir, { recursive: true, force: true })
     }
   })
 

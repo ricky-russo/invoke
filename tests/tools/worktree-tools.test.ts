@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { execSync } from 'child_process'
 import { realpathSync } from 'fs'
 import { mkdtemp, rm, writeFile } from 'fs/promises'
 import os from 'os'
@@ -17,6 +18,7 @@ import { SessionManager } from '../../src/session/manager.js'
 import { registerWorktreeTools } from '../../src/tools/worktree-tools.js'
 import type { InvokeConfig, PipelineState } from '../../src/types.js'
 import type { WorktreeManager } from '../../src/worktree/manager.js'
+import { SessionWorktreeManager } from '../../src/worktree/session-worktree.js'
 
 type ToolResponse = {
   content: Array<{ type: string; text: string }>
@@ -57,6 +59,18 @@ function createState(overrides: Partial<PipelineState> = {}): PipelineState {
   }
 }
 
+async function createGitRepo(prefix: string): Promise<string> {
+  const repoDir = await mkdtemp(path.join(os.tmpdir(), prefix))
+  execSync('git init', { cwd: repoDir, stdio: 'pipe' })
+  execSync('git branch -M main', { cwd: repoDir, stdio: 'pipe' })
+  execSync('git config user.email "test@example.com"', { cwd: repoDir, stdio: 'pipe' })
+  execSync('git config user.name "Test User"', { cwd: repoDir, stdio: 'pipe' })
+  await writeFile(path.join(repoDir, 'README.md'), '# Test repo\n')
+  execSync('git add .', { cwd: repoDir, stdio: 'pipe' })
+  execSync('git commit -m "initial"', { cwd: repoDir, stdio: 'pipe' })
+  return repoDir
+}
+
 describe('registerWorktreeTools', () => {
   let projectDir: string
   let sessionManager: SessionManager
@@ -87,14 +101,18 @@ describe('registerWorktreeTools', () => {
     await writeFile(path.join(sessionDir, 'state.json'), JSON.stringify(state, null, 2) + '\n')
   }
 
-  async function createSafeSessionWorktreePath(sessionId: string): Promise<string> {
-    const worktreePath = await mkdtemp(path.join(os.tmpdir(), `invoke-session-${sessionId}-`))
-    tempDirs.push(worktreePath)
-    return realpathSync(worktreePath)
+  async function createSafeSessionWorktreePath(
+    sessionId: string,
+    repoDir = projectDir
+  ): Promise<string> {
+    const sessionWorktreeManager = new SessionWorktreeManager(repoDir)
+    const worktree = await sessionWorktreeManager.create(sessionId, 'invoke/sessions', 'main')
+    tempDirs.push(worktree.worktreePath)
+    return realpathSync(worktree.worktreePath)
   }
 
   beforeEach(async () => {
-    projectDir = await mkdtemp(path.join(os.tmpdir(), 'invoke-worktree-tools-'))
+    projectDir = await createGitRepo('invoke-worktree-tools-')
     sessionManager = new SessionManager(projectDir)
     registeredTools = new Map()
     tempDirs = [projectDir]
@@ -254,6 +272,45 @@ describe('registerWorktreeTools', () => {
     expect(result.isError).toBe(true)
     expect(result.content[0].text).toContain(
       "Post-merge error: Refusing to use unsafe session work branch path for session 'session-unsafe'"
+    )
+    expect(postMergeMocks.runPostMergeCommands).not.toHaveBeenCalled()
+  })
+
+  it('rejects invoke_merge_worktree when the session work_branch_path belongs to a different repo', async () => {
+    const externalRepoDir = await createGitRepo('invoke-worktree-tools-external-')
+    tempDirs.push(externalRepoDir)
+    const foreignWorktreePath = await createSafeSessionWorktreePath('foreign-session', externalRepoDir)
+    await writeSessionState('session-cross-repo', createState({ work_branch_path: foreignWorktreePath }))
+
+    registerWorktreeTools(server, worktreeManager, sessionManager, TEST_CONFIG, projectDir)
+
+    const result = await getTool('invoke_merge_worktree').handler({
+      task_id: 'task-cross-repo',
+      session_id: 'session-cross-repo',
+    })
+
+    expect(result.isError).toBe(true)
+    expect(result.content[0].text).toContain(
+      "Merge error: Refusing to use unsafe session work branch path for session 'session-cross-repo'"
+    )
+    expect(worktreeManager.merge).not.toHaveBeenCalled()
+  })
+
+  it('rejects invoke_run_post_merge when the session work_branch_path belongs to a different repo', async () => {
+    const externalRepoDir = await createGitRepo('invoke-worktree-tools-external-')
+    tempDirs.push(externalRepoDir)
+    const foreignWorktreePath = await createSafeSessionWorktreePath('foreign-session', externalRepoDir)
+    await writeSessionState('session-cross-repo', createState({ work_branch_path: foreignWorktreePath }))
+
+    registerWorktreeTools(server, worktreeManager, sessionManager, TEST_CONFIG, projectDir)
+
+    const result = await getTool('invoke_run_post_merge').handler({
+      session_id: 'session-cross-repo',
+    })
+
+    expect(result.isError).toBe(true)
+    expect(result.content[0].text).toContain(
+      "Post-merge error: Refusing to use unsafe session work branch path for session 'session-cross-repo'"
     )
     expect(postMergeMocks.runPostMergeCommands).not.toHaveBeenCalled()
   })

@@ -6,7 +6,17 @@ import { z } from 'zod';
 import { loadConfig } from '../config.js';
 import { checkCliExists } from '../config-validator.js';
 import { StateManager } from './state.js';
-function isSafeSessionWorkBranchPath(workBranchPath) {
+function resolveGitCommonDir(cwd) {
+    const canonicalCwd = realpathSync(cwd);
+    const commonDir = execFileSync('git', ['rev-parse', '--git-common-dir'], {
+        cwd: canonicalCwd,
+        stdio: 'pipe',
+    })
+        .toString()
+        .trim();
+    return realpathSync(path.resolve(canonicalCwd, commonDir));
+}
+function isSafeSessionWorkBranchPath(workBranchPath, repoDir) {
     if (!workBranchPath || !path.isAbsolute(workBranchPath)) {
         return false;
     }
@@ -27,7 +37,15 @@ function isSafeSessionWorkBranchPath(workBranchPath) {
     if (canonicalTarget !== canonicalTmp && !canonicalTarget.startsWith(canonicalTmp + path.sep)) {
         return false;
     }
-    return path.basename(canonicalTarget).startsWith('invoke-session-');
+    if (!path.basename(canonicalTarget).startsWith('invoke-session-')) {
+        return false;
+    }
+    try {
+        return resolveGitCommonDir(canonicalTarget) === resolveGitCommonDir(repoDir);
+    }
+    catch {
+        return false;
+    }
 }
 function isSafeWorkBranch(workBranch, sessionId, prefix) {
     if (!workBranch) {
@@ -58,7 +76,7 @@ export function registerPrTools(server, sessionManager, projectDir) {
             if (!isSafeWorkBranch(state.work_branch, session_id, workBranchPrefix)) {
                 return errorResponse(`Session ${session_id} has an unexpected work_branch — expected ${workBranchPrefix}/${session_id}`);
             }
-            if (!isSafeSessionWorkBranchPath(state.work_branch_path)) {
+            if (!isSafeSessionWorkBranchPath(state.work_branch_path, projectDir)) {
                 return errorResponse(`Session ${session_id} has an unsafe work_branch_path`);
             }
             const workBranch = state.work_branch;
