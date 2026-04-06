@@ -1,6 +1,6 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
-import type { BugManager } from '../bugs/manager.js'
+import { BugNotFoundError, type BugManager } from '../bugs/manager.js'
 
 export function registerBugTools(server: McpServer, bugManager: BugManager): void {
   server.registerTool(
@@ -87,7 +87,7 @@ export function registerBugTools(server: McpServer, bugManager: BugManager): voi
       } catch (err) {
         logToolError('invoke_update_bug', err)
 
-        if (isBugNotFoundError(err, bug_id)) {
+        if (err instanceof BugNotFoundError) {
           return errorResponse(`Bug not found: ${bug_id}`)
         }
 
@@ -106,8 +106,4 @@ function errorResponse(message: string) {
 
 function logToolError(toolName: string, error: unknown): void {
   console.error(`[bug-tools] ${toolName} failed`, error)
-}
-
-function isBugNotFoundError(error: unknown, bugId: string): boolean {
-  return error instanceof Error && error.message === `Bug '${bugId}' not found`
 }

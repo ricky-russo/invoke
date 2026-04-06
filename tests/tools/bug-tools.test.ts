@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
-import type { BugManager } from '../../src/bugs/manager.js'
+import { BugNotFoundError, type BugManager } from '../../src/bugs/manager.js'
 import { registerBugTools } from '../../src/tools/bug-tools.js'
 
 type RegisteredTool = {
@@ -263,7 +263,7 @@ describe('registerBugTools', () => {
 
   it('returns a useful message when bugManager.update() cannot find the bug', async () => {
     const tool = getTool('invoke_update_bug')
-    const error = new Error("Bug 'BUG-999' not found")
+    const error = new BugNotFoundError('BUG-999')
     update.mockRejectedValue(error)
 
     const input = parseToolInput(tool, { bug_id: 'BUG-999' })
