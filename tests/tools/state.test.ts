@@ -592,11 +592,12 @@ describe('StateManager', () => {
 describe('invoke_set_state schema alignment', () => {
   it('persists base_branch and work_branch_path and round-trips them via invoke_get_state', async () => {
     const setStateTool = getTool('invoke_set_state')
+    const workBranchPath = '/tmp/invoke-session-1'
     const input = {
       session_id: 'session-1',
       pipeline_id: 'pipeline-123',
       base_branch: 'main',
-      work_branch_path: '/tmp/invoke/worktrees/session-1',
+      work_branch_path: workBranchPath,
     }
 
     expect(setStateTool.config.inputSchema.safeParse(input).success).toBe(true)
@@ -611,7 +612,7 @@ describe('invoke_set_state schema alignment', () => {
     expect(storedState).toMatchObject({
       pipeline_id: 'pipeline-123',
       base_branch: 'main',
-      work_branch_path: '/tmp/invoke/worktrees/session-1',
+      work_branch_path: workBranchPath,
     })
 
     const getResult = await getTool('invoke_get_state').handler({ session_id: 'session-1' })
@@ -619,7 +620,7 @@ describe('invoke_set_state schema alignment', () => {
     expect(parseResponseText(getResult)).toMatchObject({
       pipeline_id: 'pipeline-123',
       base_branch: 'main',
-      work_branch_path: '/tmp/invoke/worktrees/session-1',
+      work_branch_path: workBranchPath,
     })
   })
 

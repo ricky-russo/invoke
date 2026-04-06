@@ -1,7 +1,9 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
+import path from 'path'
 import { z } from 'zod'
 import { loadConfig } from '../config.js'
 import { SessionManager } from '../session/manager.js'
+import { SESSION_ID_PATTERN } from '../worktree/session-id-validator.js'
 import { StateManager } from './state.js'
 
 const TaskSchema = z.object({
@@ -36,13 +38,20 @@ const ReviewCycleSchema = z.object({
   }).optional(),
 })
 
+const WORK_BRANCH_PATTERN = /^(?!.*\.\.)[A-Za-z0-9][A-Za-z0-9._/-]{0,255}$/
+
 const SetStateInputSchema = z.object({
-  session_id: z.string().optional(),
+  session_id: z.string().regex(SESSION_ID_PATTERN, 'invalid session id format').optional(),
   pipeline_id: z.string().optional(),
   current_stage: z.enum(['scope', 'plan', 'orchestrate', 'build', 'review', 'complete']).optional(),
-  work_branch: z.string().optional(),
+  work_branch: z.string().regex(WORK_BRANCH_PATTERN, 'invalid work_branch format').optional(),
   base_branch: z.string().optional(),
-  work_branch_path: z.string().optional(),
+  work_branch_path: z.string()
+    .refine(
+      value => path.isAbsolute(value) && path.basename(value).startsWith('invoke-session-'),
+      'work_branch_path must be an absolute path with invoke-session- basename'
+    )
+    .optional(),
   spec: z.string().optional(),
   plan: z.string().optional(),
   tasks: z.string().optional(),

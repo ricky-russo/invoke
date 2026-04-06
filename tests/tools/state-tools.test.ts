@@ -737,6 +737,41 @@ describe('registerStateTools', () => {
     expect(invalidResult.content[0].text).toBe('bug_ids must be BUG-NNN format')
   })
 
+  it('rejects malformed session_id, work_branch, and work_branch_path in invoke_set_state', async () => {
+    const setStateTool = getTool('invoke_set_state')
+    const cases = [
+      {
+        input: { session_id: 'session;rm -rf /' },
+        message: 'invalid session id format',
+      },
+      {
+        input: { work_branch: 'invoke/../escape' },
+        message: 'invalid work_branch format',
+      },
+      {
+        input: { work_branch: '/tmp/invoke-session-1' },
+        message: 'invalid work_branch format',
+      },
+      {
+        input: { work_branch_path: 'relative/invoke-session-1' },
+        message: 'work_branch_path must be an absolute path with invoke-session- basename',
+      },
+      {
+        input: { work_branch_path: '/tmp/not-session-1' },
+        message: 'work_branch_path must be an absolute path with invoke-session- basename',
+      },
+    ] as const
+
+    for (const testCase of cases) {
+      const parsed = setStateTool.config.inputSchema.safeParse(testCase.input)
+      expect(parsed.success).toBe(false)
+
+      const result = await setStateTool.handler(testCase.input as Record<string, unknown>)
+      expect(result.isError).toBe(true)
+      expect(result.content[0].text).toBe(testCase.message)
+    }
+  })
+
   it('returns session-scoped state when session_id is provided to invoke_get_state', async () => {
     const resolveSpy = vi.spyOn(sessionManager, 'resolve')
     const sessionStateManager = new StateManager(TEST_DIR, await sessionManager.create('session-1'))
