@@ -424,7 +424,11 @@ describe('index bootstrap', () => {
     })
 
     expect(mocks.registerDispatchTools).not.toHaveBeenCalled()
-    expect(mocks.registerSessionInitTools).not.toHaveBeenCalled()
+    // Session-init tools must register unconditionally so the per-session
+    // worktree flow remains usable in projects whose pipeline.yaml fails
+    // to load (the config getter just returns undefined and the tools fall
+    // back to the default work_branch_prefix).
+    expect(mocks.registerSessionInitTools).toHaveBeenCalledTimes(1)
     expect(mocks.registerPrTools).toHaveBeenCalledTimes(1)
     expect(mocks.metricsManagerInstances).toHaveLength(1)
   })

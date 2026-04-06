@@ -42000,7 +42000,7 @@ function registerSessionInitTools(server, sessionWorktreeManager, sessionManager
           };
         }
         const cfg = config2();
-        const prefix = cfg.settings.work_branch_prefix ?? "invoke/work";
+        const prefix = cfg?.settings.work_branch_prefix ?? "invoke/work";
         const info = await sessionWorktreeManager.create(session_id, prefix, base_branch);
         const sessionDir = sessionManager.resolve(session_id);
         const stateManager = new StateManager(projectDir, sessionDir);
@@ -43366,9 +43366,7 @@ async function main() {
   registerMetricsTools(server, metricsManager, projectDir, sessionManager);
   registerBugTools(server, bugManager);
   registerPrTools(server, sessionManager, projectDir);
-  if (config2) {
-    registerSessionInitTools(server, sessionWorktreeManager, sessionManager, () => config2, projectDir);
-  }
+  registerSessionInitTools(server, sessionWorktreeManager, sessionManager, () => config2, projectDir);
   if (config2) {
     const providers = createProviderRegistry(config2.providers);
     const parsers = createParserRegistry();

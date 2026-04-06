@@ -13,6 +13,7 @@ import { SessionWorktreeManager } from './worktree/session-worktree.js'
 import { MetricsManager } from './metrics/manager.js'
 import { SessionManager } from './session/manager.js'
 import { BugManager } from './bugs/manager.js'
+import type { InvokeConfig } from './types.js'
 import { StateManager } from './tools/state.js'
 import { ArtifactManager } from './tools/artifacts.js'
 import { registerConfigTools } from './tools/config-tool.js'
@@ -42,7 +43,7 @@ async function main() {
   })
 
   // Load config — tools will fail gracefully if config is missing
-  let config
+  let config: InvokeConfig | undefined
   try {
     config = await loadConfig(projectDir)
   } catch (err) {
@@ -105,10 +106,7 @@ async function main() {
   registerMetricsTools(server, metricsManager, projectDir, sessionManager)
   registerBugTools(server, bugManager)
   registerPrTools(server, sessionManager, projectDir)
-
-  if (config) {
-    registerSessionInitTools(server, sessionWorktreeManager, sessionManager, () => config!, projectDir)
-  }
+  registerSessionInitTools(server, sessionWorktreeManager, sessionManager, () => config, projectDir)
 
   // Register dispatch tools (need config)
   if (config) {

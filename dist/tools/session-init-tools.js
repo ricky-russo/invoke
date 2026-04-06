@@ -41,7 +41,7 @@ export function registerSessionInitTools(server, sessionWorktreeManager, session
                 };
             }
             const cfg = config();
-            const prefix = cfg.settings.work_branch_prefix ?? 'invoke/work';
+            const prefix = cfg?.settings.work_branch_prefix ?? 'invoke/work';
             const info = await sessionWorktreeManager.create(session_id, prefix, base_branch);
             const sessionDir = sessionManager.resolve(session_id);
             const stateManager = new StateManager(projectDir, sessionDir);

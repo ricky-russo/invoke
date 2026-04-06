@@ -10,7 +10,7 @@ export function registerSessionInitTools(
   server: McpServer,
   sessionWorktreeManager: SessionWorktreeManager,
   sessionManager: SessionManager,
-  config: () => InvokeConfig,
+  config: () => InvokeConfig | undefined,
   projectDir: string,
 ): void {
   server.registerTool(
@@ -60,7 +60,7 @@ export function registerSessionInitTools(
         }
 
         const cfg = config()
-        const prefix = cfg.settings.work_branch_prefix ?? 'invoke/work'
+        const prefix = cfg?.settings.work_branch_prefix ?? 'invoke/work'
         const info = await sessionWorktreeManager.create(session_id, prefix, base_branch)
 
         const sessionDir = sessionManager.resolve(session_id)
