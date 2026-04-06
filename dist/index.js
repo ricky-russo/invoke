@@ -39605,123 +39605,146 @@ function cloneAgentResult(result) {
 }
 
 // src/worktree/manager.ts
-import { execSync } from "child_process";
+import { execFileSync as execFileSync2 } from "child_process";
 import { existsSync } from "fs";
 import path4 from "path";
 import os from "os";
+
+// src/worktree/repo-lock.ts
+import { realpathSync } from "fs";
+var repoLocks = /* @__PURE__ */ new Map();
+var mergeTargetLocks = /* @__PURE__ */ new Map();
+var taskLocks = /* @__PURE__ */ new Map();
+async function runExclusive(locks, key, fn) {
+  const previous = locks.get(key) ?? Promise.resolve();
+  let release;
+  const current = new Promise((resolve) => {
+    release = resolve;
+  });
+  const tail = previous.catch(() => void 0).then(() => current);
+  locks.set(key, tail);
+  await previous.catch(() => void 0);
+  try {
+    return await fn();
+  } finally {
+    release();
+    if (locks.get(key) === tail) {
+      locks.delete(key);
+    }
+  }
+}
+async function withRepoLock(repoDir, fn) {
+  return runExclusive(repoLocks, canonicalize(repoDir), fn);
+}
+async function withMergeTargetLock(targetPath, fn) {
+  return runExclusive(mergeTargetLocks, canonicalize(targetPath), fn);
+}
+async function withTaskLock(taskId, fn) {
+  return runExclusive(taskLocks, taskId, fn);
+}
+function canonicalize(targetPath) {
+  try {
+    return realpathSync(targetPath);
+  } catch {
+    return targetPath;
+  }
+}
+
+// src/worktree/manager.ts
 var CONFLICT_STATUS_PREFIXES = ["UU", "AA", "DD", "AU", "UA", "DU", "UD"];
-var WorktreeManager = class _WorktreeManager {
+function git(cwd, args) {
+  return execFileSync2("git", args, { cwd, stdio: "pipe" }).toString();
+}
+function tryGit(cwd, args) {
+  try {
+    return { ok: true, stdout: git(cwd, args) };
+  } catch (error48) {
+    return { ok: false, error: error48 };
+  }
+}
+var WorktreeManager = class {
   constructor(repoDir) {
     this.repoDir = repoDir;
   }
   repoDir;
-  static repoMutex = /* @__PURE__ */ new Map();
-  static mergeTargetMutex = /* @__PURE__ */ new Map();
   worktrees = /* @__PURE__ */ new Map();
-  static async withRepoLock(repoDir, fn) {
-    return _WorktreeManager.runExclusive(_WorktreeManager.repoMutex, repoDir, fn);
-  }
-  static async withMergeTargetLock(targetPath, fn) {
-    return _WorktreeManager.runExclusive(_WorktreeManager.mergeTargetMutex, targetPath, fn);
-  }
-  static async runExclusive(mutex, key, fn) {
-    const prev = mutex.get(key) ?? Promise.resolve();
-    let release;
-    const next = new Promise((resolve) => {
-      release = resolve;
-    });
-    mutex.set(key, next);
-    try {
-      await prev;
-      return await fn();
-    } finally {
-      release();
-      if (mutex.get(key) === next) {
-        mutex.delete(key);
-      }
-    }
-  }
   async create(taskId) {
     const branch = `invoke-wt-${taskId}`;
     const worktreePath = path4.join(os.tmpdir(), `invoke-worktree-${taskId}-${Date.now()}`);
-    await _WorktreeManager.withRepoLock(this.repoDir, async () => {
-      execSync(
-        `git worktree add "${worktreePath}" -b "${branch}"`,
-        { cwd: this.repoDir, stdio: "pipe" }
-      );
+    await withRepoLock(this.repoDir, async () => {
+      git(this.repoDir, ["worktree", "add", worktreePath, "-b", branch]);
     });
     const info = { taskId, worktreePath, branch };
     this.worktrees.set(taskId, info);
     return info;
   }
   async merge(taskId, options) {
+    return withTaskLock(taskId, () => this.mergeLocked(taskId, options));
+  }
+  async mergeLocked(taskId, options) {
     const info = this.worktrees.get(taskId);
     if (!info) {
       throw new Error(`No worktree found for task: ${taskId}`);
     }
     const mergeTargetPath = options?.mergeTargetPath ?? this.repoDir;
     const message = options?.commitMessage ?? `feat: ${taskId}`;
-    try {
-      execSync("git add -A", { cwd: info.worktreePath, stdio: "pipe" });
-      execSync(
-        `git diff --cached --quiet`,
-        { cwd: info.worktreePath, stdio: "pipe" }
-      );
-    } catch {
-      try {
-        execSync(
-          `git commit -m "agent work: ${taskId}"`,
-          { cwd: info.worktreePath, stdio: "pipe" }
+    git(info.worktreePath, ["add", "-A"]);
+    const diff = tryGit(info.worktreePath, ["diff", "--cached", "--quiet"]);
+    if (!diff.ok) {
+      const code = diff.error?.status;
+      if (code !== 1) {
+        throw new Error(
+          `Failed to inspect staged changes in ${info.worktreePath}: ${diff.error?.message ?? diff.error}`
         );
-      } catch {
+      }
+      try {
+        git(info.worktreePath, ["commit", "-m", `agent work: ${taskId}`]);
+      } catch (commitError) {
+        throw new Error(
+          `Failed to auto-commit agent work for task ${taskId}: ${commitError?.message ?? commitError}`
+        );
       }
     }
-    return _WorktreeManager.withMergeTargetLock(mergeTargetPath, async () => {
-      try {
-        execSync(
-          `git merge --squash "${info.branch}"`,
-          { cwd: mergeTargetPath, stdio: "pipe" }
-        );
-      } catch {
+    return withMergeTargetLock(mergeTargetPath, async () => {
+      const mergeAttempt = tryGit(mergeTargetPath, ["merge", "--squash", info.branch]);
+      if (!mergeAttempt.ok) {
         const conflictingFiles = this.collectConflictingFiles(mergeTargetPath);
-        execSync("git reset --hard HEAD", { cwd: mergeTargetPath, stdio: "pipe" });
-        execSync("git clean -fd", { cwd: mergeTargetPath, stdio: "pipe" });
+        git(mergeTargetPath, ["reset", "--hard", "HEAD"]);
+        if (mergeTargetPath !== this.repoDir) {
+          git(mergeTargetPath, ["clean", "-fd"]);
+        }
+        if (conflictingFiles.length === 0) {
+          const original = mergeAttempt.error;
+          throw new Error(
+            `git merge --squash ${info.branch} into ${mergeTargetPath} failed: ${original?.message ?? original}`
+          );
+        }
         return { status: "conflict", conflictingFiles, mergeTargetPath };
       }
-      execSync(
-        `git commit -m "${message.replace(/"/g, '\\"')}"`,
-        { cwd: mergeTargetPath, stdio: "pipe" }
-      );
+      git(mergeTargetPath, ["commit", "-m", message]);
       return { status: "merged" };
     });
   }
   collectConflictingFiles(targetPath) {
-    try {
-      const status = execSync("git status --porcelain", {
-        cwd: targetPath,
-        stdio: "pipe"
-      }).toString();
-      return status.split("\n").filter((line) => CONFLICT_STATUS_PREFIXES.some((p) => line.startsWith(p))).map((line) => line.slice(3));
-    } catch {
+    const result = tryGit(targetPath, ["status", "--porcelain"]);
+    if (!result.ok) {
       return [];
     }
+    return result.stdout.split("\n").filter((line) => CONFLICT_STATUS_PREFIXES.some((p) => line.startsWith(p))).map((line) => line.slice(3));
   }
   async cleanup(taskId) {
+    return withTaskLock(taskId, () => this.cleanupLocked(taskId));
+  }
+  async cleanupLocked(taskId) {
     const info = this.worktrees.get(taskId);
     if (!info) return;
     if (existsSync(info.worktreePath)) {
-      await _WorktreeManager.withRepoLock(this.repoDir, async () => {
-        execSync(
-          `git worktree remove "${info.worktreePath}" --force`,
-          { cwd: this.repoDir, stdio: "pipe" }
-        );
+      await withRepoLock(this.repoDir, async () => {
+        git(this.repoDir, ["worktree", "remove", info.worktreePath, "--force"]);
       });
     }
     try {
-      execSync(
-        `git branch -D "${info.branch}"`,
-        { cwd: this.repoDir, stdio: "pipe" }
-      );
+      git(this.repoDir, ["branch", "-D", info.branch]);
     } catch {
     }
     this.worktrees.delete(taskId);
@@ -39735,30 +39758,26 @@ var WorktreeManager = class _WorktreeManager {
     return [...this.worktrees.values()];
   }
   async discoverOrphaned() {
-    try {
-      const output = execSync("git worktree list --porcelain", {
-        cwd: this.repoDir,
-        stdio: "pipe"
-      }).toString();
-      const orphaned = [];
-      const blocks = output.split("\n\n").filter(Boolean);
-      for (const block of blocks) {
-        const lines = block.split("\n");
-        const worktreeLine = lines.find((l) => l.startsWith("worktree "));
-        const branchLine = lines.find((l) => l.startsWith("branch "));
-        if (!worktreeLine || !branchLine) continue;
-        const worktreePath = worktreeLine.replace("worktree ", "");
-        const fullBranch = branchLine.replace("branch ", "");
-        const branch = fullBranch.replace("refs/heads/", "");
-        if (!branch.startsWith("invoke-wt-")) continue;
-        const taskId = branch.replace("invoke-wt-", "");
-        if (this.worktrees.has(taskId)) continue;
-        orphaned.push({ taskId, worktreePath, branch });
-      }
-      return orphaned;
-    } catch {
+    const result = tryGit(this.repoDir, ["worktree", "list", "--porcelain"]);
+    if (!result.ok) {
       return [];
     }
+    const orphaned = [];
+    const blocks = result.stdout.split("\n\n").filter(Boolean);
+    for (const block of blocks) {
+      const lines = block.split("\n");
+      const worktreeLine = lines.find((l) => l.startsWith("worktree "));
+      const branchLine = lines.find((l) => l.startsWith("branch "));
+      if (!worktreeLine || !branchLine) continue;
+      const worktreePath = worktreeLine.replace("worktree ", "");
+      const fullBranch = branchLine.replace("branch ", "");
+      const branch = fullBranch.replace("refs/heads/", "");
+      if (!branch.startsWith("invoke-wt-")) continue;
+      const taskId = branch.replace("invoke-wt-", "");
+      if (this.worktrees.has(taskId)) continue;
+      orphaned.push({ taskId, worktreePath, branch });
+    }
+    return orphaned;
   }
 };
 
@@ -40705,13 +40724,13 @@ function registerDispatchTools(server, engine, batchManager, projectDir, metrics
 init_zod();
 
 // src/tools/post-merge.ts
-import { execSync as execSync2 } from "child_process";
+import { execSync } from "child_process";
 function runPostMergeCommands(config2, projectDir) {
   const commands = config2.settings.post_merge_commands ?? [];
   const results = [];
   for (const command of commands) {
     try {
-      const output = execSync2(command, {
+      const output = execSync(command, {
         cwd: projectDir,
         stdio: "pipe",
         timeout: 6e4

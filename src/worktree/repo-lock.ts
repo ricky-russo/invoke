@@ -2,6 +2,7 @@ import { realpathSync } from 'fs'
 
 const repoLocks = new Map<string, Promise<void>>()
 const mergeTargetLocks = new Map<string, Promise<void>>()
+const taskLocks = new Map<string, Promise<void>>()
 
 async function runExclusive<T>(
   locks: Map<string, Promise<void>>,
@@ -36,6 +37,11 @@ export async function withRepoLock<T>(repoDir: string, fn: () => Promise<T>): Pr
 /** Serializes operations that mutate the working tree at a specific path (merges, resets, commits). Keyed by canonical path. */
 export async function withMergeTargetLock<T>(targetPath: string, fn: () => Promise<T>): Promise<T> {
   return runExclusive(mergeTargetLocks, canonicalize(targetPath), fn)
+}
+
+/** Serializes lifecycle operations (merge, cleanup) that target the same task's worktree. Keyed by taskId. */
+export async function withTaskLock<T>(taskId: string, fn: () => Promise<T>): Promise<T> {
+  return runExclusive(taskLocks, taskId, fn)
 }
 
 function canonicalize(targetPath: string): string {

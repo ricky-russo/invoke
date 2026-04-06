@@ -12,20 +12,17 @@ export type MergeResult = {
 };
 export declare class WorktreeManager {
     private repoDir;
-    private static repoMutex;
-    private static mergeTargetMutex;
     private worktrees;
     constructor(repoDir: string);
-    static withRepoLock<T>(repoDir: string, fn: () => Promise<T>): Promise<T>;
-    static withMergeTargetLock<T>(targetPath: string, fn: () => Promise<T>): Promise<T>;
-    private static runExclusive;
     create(taskId: string): Promise<WorktreeInfo>;
     merge(taskId: string, options?: {
         commitMessage?: string;
         mergeTargetPath?: string;
     }): Promise<MergeResult>;
+    private mergeLocked;
     private collectConflictingFiles;
     cleanup(taskId: string): Promise<void>;
+    private cleanupLocked;
     cleanupAll(): Promise<void>;
     listActive(): WorktreeInfo[];
     discoverOrphaned(): Promise<WorktreeInfo[]>;

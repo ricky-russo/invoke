@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { WorktreeManager } from '../../src/worktree/manager.js'
+import { withRepoLock } from '../../src/worktree/repo-lock.js'
 import { execSync } from 'child_process'
 import { mkdtemp, rm, writeFile } from 'fs/promises'
 import { existsSync, realpathSync } from 'fs'
@@ -173,6 +174,87 @@ describe('WorktreeManager merge with custom target', () => {
     const status = execSync('git status --porcelain', { cwd: repoDir }).toString().trim()
     expect(status).toBe('')
   })
+
+  it('preserves untracked files in the default repo target when a merge conflicts', async () => {
+    execSync('git checkout -b untracked-base', { cwd: repoDir })
+    await writeFile(path.join(repoDir, 'shared.ts'), 'export const s = "base"')
+    execSync('git add . && git commit -m "base shared"', { cwd: repoDir })
+
+    // Land a clean change so the next worktree, branched from the prior commit,
+    // will conflict on shared.ts
+    const wt1 = await manager.create('task-untracked-a')
+    await writeFile(path.join(wt1.worktreePath, 'shared.ts'), 'export const s = "from-a"')
+    execSync('git add . && git commit -m "a changes shared"', { cwd: wt1.worktreePath })
+    await manager.merge('task-untracked-a')
+
+    // Create the conflicting worktree
+    const wt2 = await manager.create('task-untracked-b')
+    execSync('git reset --hard HEAD~1', { cwd: wt2.worktreePath })
+    await writeFile(path.join(wt2.worktreePath, 'shared.ts'), 'export const s = "from-b"')
+    execSync('git add . && git commit -m "b changes shared"', { cwd: wt2.worktreePath })
+
+    // The user has an untracked scratch file in their repo dir — this MUST survive a conflict.
+    const scratchPath = path.join(repoDir, 'scratch.local.txt')
+    await writeFile(scratchPath, 'do not delete me')
+
+    const result = await manager.merge('task-untracked-b')
+    expect(result.status).toBe('conflict')
+    expect(existsSync(scratchPath)).toBe(true)
+  })
+
+  it('throws when squash merge fails for a non-conflict reason (dirty target)', async () => {
+    execSync('git checkout -b non-conflict-base', { cwd: repoDir })
+    await writeFile(path.join(repoDir, 'shared.ts'), 'export const s = "base"')
+    execSync('git add . && git commit -m "base shared"', { cwd: repoDir })
+
+    const wt = await manager.create('task-non-conflict')
+    await writeFile(path.join(wt.worktreePath, 'shared.ts'), 'export const s = "from-task"')
+    execSync('git add . && git commit -m "task changes shared"', { cwd: wt.worktreePath })
+
+    // Dirty the target with an unstaged change to a file the merge wants to overwrite.
+    // git merge --squash refuses, but no conflict markers are produced.
+    await writeFile(path.join(repoDir, 'shared.ts'), 'export const s = "dirty local edit"')
+
+    await expect(manager.merge('task-non-conflict')).rejects.toThrow(/git merge --squash/)
+  })
+
+  it('commits a commit_message containing shell metacharacters literally', async () => {
+    execSync('git checkout -b injection-base', { cwd: repoDir })
+
+    const wt = await manager.create('task-injection')
+    await writeFile(path.join(wt.worktreePath, 'inj.ts'), 'export const i = 1')
+    execSync('git add . && git commit -m "add inj"', { cwd: wt.worktreePath })
+
+    const dangerous = 'feat: $(echo pwned) and `whoami` "quoted" \\backslash'
+    const result = await manager.merge('task-injection', { commitMessage: dangerous })
+    expect(result.status).toBe('merged')
+
+    const subject = execSync('git log -1 --pretty=%s', { cwd: repoDir }).toString().trim()
+    expect(subject).toBe(dangerous)
+  })
+
+  it('serializes concurrent merge() and cleanup() for the same task id', async () => {
+    execSync('git checkout -b race-base', { cwd: repoDir })
+
+    const wt = await manager.create('task-race')
+    await writeFile(path.join(wt.worktreePath, 'race.ts'), 'export const r = 1')
+    execSync('git add . && git commit -m "race add"', { cwd: wt.worktreePath })
+
+    // merge is initiated first; cleanup is initiated immediately after.
+    // Without per-task serialization, cleanup could remove the worktree
+    // while merge is still squash-merging from it, corrupting either side.
+    const mergePromise = manager.merge('task-race')
+    const cleanupPromise = manager.cleanup('task-race')
+
+    const [mergeResult, cleanupResult] = await Promise.all([mergePromise, cleanupPromise])
+
+    expect(mergeResult.status).toBe('merged')
+    expect(cleanupResult).toBeUndefined()
+
+    // After both: file landed in repoDir, worktree gone
+    expect(existsSync(path.join(repoDir, 'race.ts'))).toBe(true)
+    expect(existsSync(wt.worktreePath)).toBe(false)
+  })
 })
 
 describe('WorktreeManager mutex helpers', () => {
@@ -182,7 +264,7 @@ describe('WorktreeManager mutex helpers', () => {
     let maxActive = 0
 
     const make = (label: string) =>
-      WorktreeManager.withRepoLock(repoDir, async () => {
+      withRepoLock(repoDir, async () => {
         active++
         maxActive = Math.max(maxActive, active)
         events.push(`start:${label}`)

@@ -1,51 +1,40 @@
-import { execSync } from 'child_process';
+import { execFileSync } from 'child_process';
 import { existsSync } from 'fs';
 import path from 'path';
 import os from 'os';
+import { withMergeTargetLock, withRepoLock, withTaskLock } from './repo-lock.js';
 const CONFLICT_STATUS_PREFIXES = ['UU', 'AA', 'DD', 'AU', 'UA', 'DU', 'UD'];
+function git(cwd, args) {
+    return execFileSync('git', args, { cwd, stdio: 'pipe' }).toString();
+}
+function tryGit(cwd, args) {
+    try {
+        return { ok: true, stdout: git(cwd, args) };
+    }
+    catch (error) {
+        return { ok: false, error };
+    }
+}
 export class WorktreeManager {
     repoDir;
-    static repoMutex = new Map();
-    static mergeTargetMutex = new Map();
     worktrees = new Map();
     constructor(repoDir) {
         this.repoDir = repoDir;
     }
-    static async withRepoLock(repoDir, fn) {
-        return WorktreeManager.runExclusive(WorktreeManager.repoMutex, repoDir, fn);
-    }
-    static async withMergeTargetLock(targetPath, fn) {
-        return WorktreeManager.runExclusive(WorktreeManager.mergeTargetMutex, targetPath, fn);
-    }
-    static async runExclusive(mutex, key, fn) {
-        const prev = mutex.get(key) ?? Promise.resolve();
-        let release;
-        const next = new Promise(resolve => {
-            release = resolve;
-        });
-        mutex.set(key, next);
-        try {
-            await prev;
-            return await fn();
-        }
-        finally {
-            release();
-            if (mutex.get(key) === next) {
-                mutex.delete(key);
-            }
-        }
-    }
     async create(taskId) {
         const branch = `invoke-wt-${taskId}`;
         const worktreePath = path.join(os.tmpdir(), `invoke-worktree-${taskId}-${Date.now()}`);
-        await WorktreeManager.withRepoLock(this.repoDir, async () => {
-            execSync(`git worktree add "${worktreePath}" -b "${branch}"`, { cwd: this.repoDir, stdio: 'pipe' });
+        await withRepoLock(this.repoDir, async () => {
+            git(this.repoDir, ['worktree', 'add', worktreePath, '-b', branch]);
         });
         const info = { taskId, worktreePath, branch };
         this.worktrees.set(taskId, info);
         return info;
     }
     async merge(taskId, options) {
+        return withTaskLock(taskId, () => this.mergeLocked(taskId, options));
+    }
+    async mergeLocked(taskId, options) {
         const info = this.worktrees.get(taskId);
         if (!info) {
             throw new Error(`No worktree found for task: ${taskId}`);
@@ -53,63 +42,75 @@ export class WorktreeManager {
         const mergeTargetPath = options?.mergeTargetPath ?? this.repoDir;
         const message = options?.commitMessage ?? `feat: ${taskId}`;
         // Auto-commit any uncommitted changes in the worktree
-        // (agents in sandboxed environments may not be able to commit)
-        try {
-            execSync('git add -A', { cwd: info.worktreePath, stdio: 'pipe' });
-            execSync(`git diff --cached --quiet`, { cwd: info.worktreePath, stdio: 'pipe' });
-            // If diff --quiet exits 0, there are no staged changes — nothing to commit
-        }
-        catch {
-            // diff --quiet exits 1 when there ARE staged changes — commit them
+        // (agents in sandboxed environments may not be able to commit).
+        // Stage everything first — staging failures are real and must throw.
+        git(info.worktreePath, ['add', '-A']);
+        // `git diff --cached --quiet` exits 0 when there are no staged changes,
+        // and exits 1 when there ARE staged changes. Any other exit code is an error.
+        const diff = tryGit(info.worktreePath, ['diff', '--cached', '--quiet']);
+        if (!diff.ok) {
+            // Exit code 1 means there are staged changes to commit. Exit code >1 is a real error.
+            const code = diff.error?.status;
+            if (code !== 1) {
+                throw new Error(`Failed to inspect staged changes in ${info.worktreePath}: ${diff.error?.message ?? diff.error}`);
+            }
             try {
-                execSync(`git commit -m "agent work: ${taskId}"`, { cwd: info.worktreePath, stdio: 'pipe' });
+                git(info.worktreePath, ['commit', '-m', `agent work: ${taskId}`]);
             }
-            catch {
-                // Commit might fail if there's truly nothing to commit
+            catch (commitError) {
+                throw new Error(`Failed to auto-commit agent work for task ${taskId}: ${commitError?.message ?? commitError}`);
             }
         }
-        return WorktreeManager.withMergeTargetLock(mergeTargetPath, async () => {
-            try {
-                execSync(`git merge --squash "${info.branch}"`, { cwd: mergeTargetPath, stdio: 'pipe' });
-            }
-            catch {
+        return withMergeTargetLock(mergeTargetPath, async () => {
+            const mergeAttempt = tryGit(mergeTargetPath, ['merge', '--squash', info.branch]);
+            if (!mergeAttempt.ok) {
                 const conflictingFiles = this.collectConflictingFiles(mergeTargetPath);
                 // Squash merges do NOT set MERGE_HEAD, so `git merge --abort` is unavailable.
-                // Reset the working tree and clean untracked files instead.
-                execSync('git reset --hard HEAD', { cwd: mergeTargetPath, stdio: 'pipe' });
-                execSync('git clean -fd', { cwd: mergeTargetPath, stdio: 'pipe' });
+                // Reset the working tree to discard the half-applied merge.
+                git(mergeTargetPath, ['reset', '--hard', 'HEAD']);
+                // Only run `git clean -fd` against merge targets that invoke owns
+                // (i.e. session worktrees). The default target is the user's repo
+                // directory, which may contain untracked files belonging to the user;
+                // wiping them would be data loss.
+                if (mergeTargetPath !== this.repoDir) {
+                    git(mergeTargetPath, ['clean', '-fd']);
+                }
+                if (conflictingFiles.length === 0) {
+                    // The merge failed for a reason other than file conflicts (e.g.
+                    // dirty target, missing ref, broken filesystem). Surface it.
+                    const original = mergeAttempt.error;
+                    throw new Error(`git merge --squash ${info.branch} into ${mergeTargetPath} failed: ${original?.message ?? original}`);
+                }
                 return { status: 'conflict', conflictingFiles, mergeTargetPath };
             }
-            execSync(`git commit -m "${message.replace(/"/g, '\\"')}"`, { cwd: mergeTargetPath, stdio: 'pipe' });
+            git(mergeTargetPath, ['commit', '-m', message]);
             return { status: 'merged' };
         });
     }
     collectConflictingFiles(targetPath) {
-        try {
-            const status = execSync('git status --porcelain', {
-                cwd: targetPath,
-                stdio: 'pipe',
-            }).toString();
-            return status
-                .split('\n')
-                .filter(line => CONFLICT_STATUS_PREFIXES.some(p => line.startsWith(p)))
-                .map(line => line.slice(3));
-        }
-        catch {
+        const result = tryGit(targetPath, ['status', '--porcelain']);
+        if (!result.ok) {
             return [];
         }
+        return result.stdout
+            .split('\n')
+            .filter(line => CONFLICT_STATUS_PREFIXES.some(p => line.startsWith(p)))
+            .map(line => line.slice(3));
     }
     async cleanup(taskId) {
+        return withTaskLock(taskId, () => this.cleanupLocked(taskId));
+    }
+    async cleanupLocked(taskId) {
         const info = this.worktrees.get(taskId);
         if (!info)
             return;
         if (existsSync(info.worktreePath)) {
-            await WorktreeManager.withRepoLock(this.repoDir, async () => {
-                execSync(`git worktree remove "${info.worktreePath}" --force`, { cwd: this.repoDir, stdio: 'pipe' });
+            await withRepoLock(this.repoDir, async () => {
+                git(this.repoDir, ['worktree', 'remove', info.worktreePath, '--force']);
             });
         }
         try {
-            execSync(`git branch -D "${info.branch}"`, { cwd: this.repoDir, stdio: 'pipe' });
+            git(this.repoDir, ['branch', '-D', info.branch]);
         }
         catch {
             // Branch may already be deleted
@@ -125,34 +126,29 @@ export class WorktreeManager {
         return [...this.worktrees.values()];
     }
     async discoverOrphaned() {
-        try {
-            const output = execSync('git worktree list --porcelain', {
-                cwd: this.repoDir,
-                stdio: 'pipe',
-            }).toString();
-            const orphaned = [];
-            const blocks = output.split('\n\n').filter(Boolean);
-            for (const block of blocks) {
-                const lines = block.split('\n');
-                const worktreeLine = lines.find(l => l.startsWith('worktree '));
-                const branchLine = lines.find(l => l.startsWith('branch '));
-                if (!worktreeLine || !branchLine)
-                    continue;
-                const worktreePath = worktreeLine.replace('worktree ', '');
-                const fullBranch = branchLine.replace('branch ', '');
-                const branch = fullBranch.replace('refs/heads/', '');
-                if (!branch.startsWith('invoke-wt-'))
-                    continue;
-                const taskId = branch.replace('invoke-wt-', '');
-                if (this.worktrees.has(taskId))
-                    continue;
-                orphaned.push({ taskId, worktreePath, branch });
-            }
-            return orphaned;
-        }
-        catch {
+        const result = tryGit(this.repoDir, ['worktree', 'list', '--porcelain']);
+        if (!result.ok) {
             return [];
         }
+        const orphaned = [];
+        const blocks = result.stdout.split('\n\n').filter(Boolean);
+        for (const block of blocks) {
+            const lines = block.split('\n');
+            const worktreeLine = lines.find(l => l.startsWith('worktree '));
+            const branchLine = lines.find(l => l.startsWith('branch '));
+            if (!worktreeLine || !branchLine)
+                continue;
+            const worktreePath = worktreeLine.replace('worktree ', '');
+            const fullBranch = branchLine.replace('branch ', '');
+            const branch = fullBranch.replace('refs/heads/', '');
+            if (!branch.startsWith('invoke-wt-'))
+                continue;
+            const taskId = branch.replace('invoke-wt-', '');
+            if (this.worktrees.has(taskId))
+                continue;
+            orphaned.push({ taskId, worktreePath, branch });
+        }
+        return orphaned;
     }
 }
 //# sourceMappingURL=manager.js.map
