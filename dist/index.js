@@ -39692,7 +39692,7 @@ function cloneAgentResult(result) {
 
 // src/worktree/manager.ts
 import { execFileSync as execFileSync2 } from "child_process";
-import { existsSync } from "fs";
+import { existsSync, realpathSync as realpathSync2 } from "fs";
 import path4 from "path";
 import os from "os";
 
@@ -39738,6 +39738,24 @@ function canonicalize(targetPath) {
 
 // src/worktree/manager.ts
 var CONFLICT_STATUS_PREFIXES = ["UU", "AA", "DD", "AU", "UA", "DU", "UD"];
+function isSafeSessionWorktreeTarget(targetPath) {
+  let canonicalTarget;
+  let canonicalTmp;
+  try {
+    canonicalTarget = realpathSync2(targetPath);
+  } catch {
+    return false;
+  }
+  try {
+    canonicalTmp = realpathSync2(os.tmpdir());
+  } catch {
+    canonicalTmp = os.tmpdir();
+  }
+  if (canonicalTarget !== canonicalTmp && !canonicalTarget.startsWith(canonicalTmp + path4.sep)) {
+    return false;
+  }
+  return path4.basename(canonicalTarget).startsWith("invoke-session-");
+}
 function git(cwd, args) {
   return execFileSync2("git", args, { cwd, stdio: "pipe" }).toString();
 }
@@ -39795,6 +39813,12 @@ var WorktreeManager = class {
       const mergeAttempt = tryGit(mergeTargetPath, ["merge", "--squash", info.branch]);
       if (!mergeAttempt.ok) {
         const conflictingFiles = this.collectConflictingFiles(mergeTargetPath);
+        if (mergeTargetPath !== this.repoDir && !isSafeSessionWorktreeTarget(mergeTargetPath)) {
+          const original = mergeAttempt.error;
+          throw new Error(
+            `Refusing destructive cleanup on unsafe merge target ${mergeTargetPath}: ${original?.message ?? original}`
+          );
+        }
         git(mergeTargetPath, ["reset", "--hard", "HEAD"]);
         if (mergeTargetPath !== this.repoDir) {
           git(mergeTargetPath, ["clean", "-fd"]);
@@ -39870,7 +39894,7 @@ var WorktreeManager = class {
 // src/worktree/session-worktree.ts
 init_branch_prefix();
 import { execFileSync as execFileSync3 } from "child_process";
-import { existsSync as existsSync2, lstatSync, mkdtempSync, realpathSync as realpathSync2 } from "fs";
+import { existsSync as existsSync2, lstatSync, mkdtempSync, realpathSync as realpathSync3 } from "fs";
 import os2 from "os";
 import path5 from "path";
 
@@ -39921,7 +39945,7 @@ function isWithinPathRoot(targetPath, rootPath) {
   return targetPath === rootPath || targetPath.startsWith(rootPath + path5.sep);
 }
 function toKnownPath(worktreePath) {
-  return existsSync2(worktreePath) ? realpathSync2(worktreePath) : worktreePath;
+  return existsSync2(worktreePath) ? realpathSync3(worktreePath) : worktreePath;
 }
 var SessionWorktreeManager = class {
   constructor(repoDir) {
@@ -40118,7 +40142,7 @@ var SessionWorktreeManager = class {
       if (stat.isSymbolicLink()) {
         throw new Error(`Session worktree path cannot be a symlink: ${worktreePath}`);
       }
-      const realWorktreePath = realpathSync2(worktreePath);
+      const realWorktreePath = realpathSync3(worktreePath);
       if (isWithinPathRoot(realWorktreePath, this.realTmpdirPath)) {
         return;
       }
@@ -40132,7 +40156,7 @@ var SessionWorktreeManager = class {
   }
   resolveTmpdirPath() {
     try {
-      return realpathSync2(this.tmpdirPath);
+      return realpathSync3(this.tmpdirPath);
     } catch {
       return this.tmpdirPath;
     }
@@ -40159,7 +40183,7 @@ var SessionWorktreeManager = class {
     }
   }
   realpathUnderTmpdir(worktreePath) {
-    const resolvedWorktreePath = realpathSync2(worktreePath);
+    const resolvedWorktreePath = realpathSync3(worktreePath);
     if (isWithinPathRoot(resolvedWorktreePath, this.realTmpdirPath)) {
       return resolvedWorktreePath;
     }

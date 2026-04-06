@@ -1,9 +1,29 @@
 import { execFileSync } from 'child_process';
-import { existsSync } from 'fs';
+import { existsSync, realpathSync } from 'fs';
 import path from 'path';
 import os from 'os';
 import { withMergeTargetLock, withRepoLock, withTaskLock } from './repo-lock.js';
 const CONFLICT_STATUS_PREFIXES = ['UU', 'AA', 'DD', 'AU', 'UA', 'DU', 'UD'];
+function isSafeSessionWorktreeTarget(targetPath) {
+    let canonicalTarget;
+    let canonicalTmp;
+    try {
+        canonicalTarget = realpathSync(targetPath);
+    }
+    catch {
+        return false;
+    }
+    try {
+        canonicalTmp = realpathSync(os.tmpdir());
+    }
+    catch {
+        canonicalTmp = os.tmpdir();
+    }
+    if (canonicalTarget !== canonicalTmp && !canonicalTarget.startsWith(canonicalTmp + path.sep)) {
+        return false;
+    }
+    return path.basename(canonicalTarget).startsWith('invoke-session-');
+}
 function git(cwd, args) {
     return execFileSync('git', args, { cwd, stdio: 'pipe' }).toString();
 }
@@ -65,6 +85,10 @@ export class WorktreeManager {
             const mergeAttempt = tryGit(mergeTargetPath, ['merge', '--squash', info.branch]);
             if (!mergeAttempt.ok) {
                 const conflictingFiles = this.collectConflictingFiles(mergeTargetPath);
+                if (mergeTargetPath !== this.repoDir && !isSafeSessionWorktreeTarget(mergeTargetPath)) {
+                    const original = mergeAttempt.error;
+                    throw new Error(`Refusing destructive cleanup on unsafe merge target ${mergeTargetPath}: ${original?.message ?? original}`);
+                }
                 // Squash merges do NOT set MERGE_HEAD, so `git merge --abort` is unavailable.
                 // Reset the working tree to discard the half-applied merge.
                 git(mergeTargetPath, ['reset', '--hard', 'HEAD']);

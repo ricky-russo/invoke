@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { WorktreeManager } from '../../src/worktree/manager.js'
+import { SessionWorktreeManager } from '../../src/worktree/session-worktree.js'
 import { withRepoLock } from '../../src/worktree/repo-lock.js'
 import { execSync } from 'child_process'
 import { mkdtemp, rm, writeFile } from 'fs/promises'
@@ -173,6 +174,87 @@ describe('WorktreeManager merge with custom target', () => {
     // Target should be fully clean after the reset
     const status = execSync('git status --porcelain', { cwd: repoDir }).toString().trim()
     expect(status).toBe('')
+  })
+
+  it('refuses destructive cleanup for an unsafe custom merge target and preserves its files', async () => {
+    execSync('git checkout -b unsafe-target-base', { cwd: repoDir })
+    await writeFile(path.join(repoDir, 'shared.ts'), 'export const s = "base"')
+    execSync('git add . && git commit -m "base shared"', { cwd: repoDir })
+
+    const wt = await manager.create('task-unsafe-target')
+    await writeFile(path.join(wt.worktreePath, 'shared.ts'), 'export const s = "from-task"')
+    execSync('git add . && git commit -m "task changes shared"', { cwd: wt.worktreePath })
+
+    const attackerPath = await mkdtemp(path.join(os.tmpdir(), 'evil-target-'))
+    const attackerBranch = 'evil-target-branch'
+
+    execSync(`git worktree add "${attackerPath}" -b "${attackerBranch}"`, {
+      cwd: repoDir,
+      stdio: 'pipe',
+    })
+
+    try {
+      await writeFile(path.join(attackerPath, 'shared.ts'), 'export const s = "from-attacker"')
+      execSync('git add . && git commit -m "attacker changes shared"', { cwd: attackerPath })
+
+      const untrackedPath = path.join(attackerPath, 'keep.me')
+      await writeFile(untrackedPath, 'do not delete')
+
+      await expect(
+        manager.merge('task-unsafe-target', { mergeTargetPath: attackerPath })
+      ).rejects.toThrow(/Refusing destructive cleanup on unsafe merge target/)
+
+      expect(existsSync(untrackedPath)).toBe(true)
+
+      const status = execSync('git status --porcelain', { cwd: attackerPath }).toString()
+      expect(status).toContain('UU shared.ts')
+    } finally {
+      execSync(`git worktree remove "${attackerPath}" --force`, {
+        cwd: repoDir,
+        stdio: 'pipe',
+      })
+      execSync(`git branch -D "${attackerBranch}"`, { cwd: repoDir, stdio: 'pipe' })
+    }
+  })
+
+  it('allows destructive cleanup for a valid session worktree merge target', async () => {
+    execSync('git checkout -b session-target-base', { cwd: repoDir })
+    await writeFile(path.join(repoDir, 'shared.ts'), 'export const s = "base"')
+    execSync('git add . && git commit -m "base shared"', { cwd: repoDir })
+
+    const wt = await manager.create('task-session-target')
+    await writeFile(path.join(wt.worktreePath, 'shared.ts'), 'export const s = "from-task"')
+    execSync('git add . && git commit -m "task changes shared"', { cwd: wt.worktreePath })
+
+    const sessionManager = new SessionWorktreeManager(repoDir)
+    const sessionInfo = await sessionManager.create('safe-session', 'invoke/sessions', 'session-target-base')
+
+    try {
+      await writeFile(path.join(sessionInfo.worktreePath, 'shared.ts'), 'export const s = "from-session"')
+      execSync('git add . && git commit -m "session changes shared"', { cwd: sessionInfo.worktreePath })
+
+      const untrackedPath = path.join(sessionInfo.worktreePath, 'scratch.tmp')
+      await writeFile(untrackedPath, 'delete me')
+
+      const result = await manager.merge('task-session-target', {
+        mergeTargetPath: sessionInfo.worktreePath,
+      })
+
+      expect(result.status).toBe('conflict')
+      if (result.status === 'conflict') {
+        expect(result.conflictingFiles).toContain('shared.ts')
+        expect(result.mergeTargetPath).toBe(sessionInfo.worktreePath)
+      }
+
+      expect(existsSync(untrackedPath)).toBe(false)
+
+      const status = execSync('git status --porcelain', { cwd: sessionInfo.worktreePath })
+        .toString()
+        .trim()
+      expect(status).toBe('')
+    } finally {
+      await sessionManager.cleanup(sessionInfo.sessionId, sessionInfo.workBranch, true)
+    }
   })
 
   it('preserves untracked files in the default repo target when a merge conflicts', async () => {
