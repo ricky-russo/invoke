@@ -23,6 +23,45 @@ Then call `invoke_set_state` to create or verify pipeline state:
 
 Once the pipeline exists, use the returned `pipeline_id` as `session_id` for all subsequent `invoke_get_state` and `invoke_set_state` calls. The tools remain backward-compatible because `session_id` is optional, but do not omit it in this flow.
 
+#### 1b. Initialize Session Worktree
+
+**Guard:** If `state.work_branch` is already set, skip this sub-step — the session worktree was initialized in a prior conversation (resume case).
+
+For new sessions, run this before proceeding to step 2 or dispatching any researchers:
+
+1. Call `invoke_get_base_branch_candidates` (no arguments). Parse the response to extract `current_head`, `default_branch`, and `all_local_branches`.
+
+2. Build an `AskUserQuestion` from the candidates. Rules:
+   - Always include `current_head` as an option when non-null.
+   - Always include `default_branch` as an option when non-null **and** different from `current_head` (dedupe: if they are equal, show it only once).
+   - Always include an `Other` option so the user can specify any branch not already listed.
+   - Do not exceed the 4-option maximum. `current_head`, `default_branch`, and `Other` occupy up to 3 slots; one additional slot may be used for another entry from `all_local_branches` if helpful.
+
+   ```
+   AskUserQuestion({
+     questions: [{
+       question: "Which branch should this session work be based on?",
+       header: "Select base branch",
+       multiSelect: false,
+       options: [
+         { label: "<current_head>", description: "Current HEAD" },
+         { label: "<default_branch>", description: "Default branch" },  // omit if same as current_head
+         { label: "Other", description: "Enter a branch name" }
+       ]
+     }]
+   })
+   ```
+
+3. If the user picks `Other`, follow up with a second `AskUserQuestion` to collect the branch name. If `all_local_branches` contains 3 or fewer entries not already listed, present them as options plus a free-text fallback; otherwise ask for a plain text response.
+
+4. Call `invoke_session_init_worktree({ session_id: <pipeline_id>, base_branch: <chosen branch> })`.
+
+5. Verify the response includes `work_branch`, `base_branch`, and `work_branch_path`. If the tool returns an error (e.g., the specified branch does not exist), surface the error to the user and allow them to choose a different base branch by repeating from step 2.
+
+6. Print a confirmation: `Session worktree initialized: <work_branch> based on <base_branch>`
+
+This sub-step fires unconditionally for every new session and must complete before any researcher is dispatched.
+
 ### 2. Initialize Project Context (if needed)
 
 Call `invoke_get_context` to check if context.md exists.
