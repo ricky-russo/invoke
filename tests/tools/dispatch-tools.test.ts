@@ -302,6 +302,7 @@ describe('registerDispatchTools', () => {
   it('uses a session-scoped state manager when session_id is provided', async () => {
     vi.mocked(loadConfig).mockResolvedValue(createConfig())
     const sessionManager = {
+      exists: vi.fn().mockReturnValue(true),
       resolve: vi.fn().mockReturnValue('/tmp/validated/session-9'),
     } as unknown as SessionManager
 

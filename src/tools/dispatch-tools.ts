@@ -22,7 +22,7 @@ export function registerDispatchTools(
   metricsManager: MetricsManager,
   sessionManager?: SessionManager
 ): void {
-  function resolveBatchManager(sessionId?: string): BatchManager {
+  async function resolveBatchManager(sessionId?: string): Promise<BatchManager> {
     if (!sessionId) {
       return batchManager
     }
@@ -31,14 +31,15 @@ export function registerDispatchTools(
       throw new Error('Session manager is required for session-scoped dispatch')
     }
 
+    const sessionDir = sessionManager.exists(sessionId)
+      ? sessionManager.resolve(sessionId)
+      : await sessionManager.create(sessionId)
+
     return Object.assign(
       Object.create(Object.getPrototypeOf(batchManager)),
       batchManager,
       {
-        stateManager: new StateManager(
-          projectDir,
-          sessionManager.resolve(sessionId)
-        ),
+        stateManager: new StateManager(projectDir, sessionDir),
       }
     ) as BatchManager
   }
@@ -134,7 +135,7 @@ export function registerDispatchTools(
       }
 
       const maxParallel = config?.settings?.max_parallel_agents
-      const activeBatchManager = resolveBatchManager(session_id)
+      const activeBatchManager = await resolveBatchManager(session_id)
 
       const batchId = await activeBatchManager.dispatchBatch({
         tasks: tasks.map(t => ({
