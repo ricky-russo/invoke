@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import type { BugManager } from '../../src/bugs/manager.js'
 import { registerBugTools } from '../../src/tools/bug-tools.js'
@@ -53,10 +53,16 @@ describe('registerBugTools', () => {
   let report: ReturnType<typeof vi.fn>
   let list: ReturnType<typeof vi.fn>
   let update: ReturnType<typeof vi.fn>
+  let consoleError: ReturnType<typeof vi.spyOn>
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
 
   beforeEach(() => {
     registeredTools = new Map()
     registerTool.mockClear()
+    consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
     report = vi.fn()
     list = vi.fn()
     update = vi.fn()
@@ -209,7 +215,8 @@ describe('registerBugTools', () => {
 
   it('returns isError when bugManager.report() throws', async () => {
     const tool = getTool('invoke_report_bug')
-    report.mockRejectedValue(new Error('report failed'))
+    const error = new Error('EACCES: permission denied, open /tmp/project/.invoke/bugs.yaml')
+    report.mockRejectedValue(error)
 
     const input = parseToolInput(tool, {
       title: 'Crash',
@@ -218,34 +225,54 @@ describe('registerBugTools', () => {
     const result = await tool.handler(input)
 
     expect(result).toEqual({
-      content: [{ type: 'text', text: 'report failed' }],
+      content: [{ type: 'text', text: 'Failed to report bug' }],
       isError: true,
     })
+    expect(consoleError).toHaveBeenCalledWith('[bug-tools] invoke_report_bug failed', error)
   })
 
   it('returns isError when bugManager.list() throws', async () => {
     const tool = getTool('invoke_list_bugs')
-    list.mockRejectedValue(new Error('list failed'))
+    const error = new Error('YAMLParseError: Missing , or ] in flow sequence at line 4')
+    list.mockRejectedValue(error)
 
     const input = parseToolInput(tool, {})
     const result = await tool.handler(input)
 
     expect(result).toEqual({
-      content: [{ type: 'text', text: 'list failed' }],
+      content: [{ type: 'text', text: 'Failed to list bugs' }],
       isError: true,
     })
+    expect(consoleError).toHaveBeenCalledWith('[bug-tools] invoke_list_bugs failed', error)
   })
 
   it('returns isError when bugManager.update() throws', async () => {
     const tool = getTool('invoke_update_bug')
-    update.mockRejectedValue(new Error('update failed'))
+    const error = new Error('Lock file exists: /tmp/project/.invoke/bugs.yaml.lock')
+    update.mockRejectedValue(error)
 
     const input = parseToolInput(tool, { bug_id: 'BUG-999' })
     const result = await tool.handler(input)
 
     expect(result).toEqual({
-      content: [{ type: 'text', text: 'update failed' }],
+      content: [{ type: 'text', text: 'Failed to update bug' }],
       isError: true,
     })
+    expect(consoleError).toHaveBeenCalledWith('[bug-tools] invoke_update_bug failed', error)
+  })
+
+  it('returns a useful message when bugManager.update() cannot find the bug', async () => {
+    const tool = getTool('invoke_update_bug')
+    const error = new Error("Bug 'BUG-999' not found")
+    update.mockRejectedValue(error)
+
+    const input = parseToolInput(tool, { bug_id: 'BUG-999' })
+    const result = await tool.handler(input)
+
+    expect(result).toEqual({
+      content: [{ type: 'text', text: 'Bug not found: BUG-999' }],
+      isError: true,
+    })
+    expect(consoleError).toHaveBeenCalledWith('[bug-tools] invoke_update_bug failed', error)
   })
 })

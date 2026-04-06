@@ -33,10 +33,8 @@ export function registerBugTools(server: McpServer, bugManager: BugManager): voi
           content: [{ type: 'text', text: JSON.stringify(bug, null, 2) }],
         }
       } catch (err) {
-        return {
-          content: [{ type: 'text', text: err instanceof Error ? err.message : String(err) }],
-          isError: true,
-        }
+        logToolError('invoke_report_bug', err)
+        return errorResponse('Failed to report bug')
       }
     }
   )
@@ -58,10 +56,8 @@ export function registerBugTools(server: McpServer, bugManager: BugManager): voi
           content: [{ type: 'text', text: JSON.stringify(bugs, null, 2) }],
         }
       } catch (err) {
-        return {
-          content: [{ type: 'text', text: err instanceof Error ? err.message : String(err) }],
-          isError: true,
-        }
+        logToolError('invoke_list_bugs', err)
+        return errorResponse('Failed to list bugs')
       }
     }
   )
@@ -89,11 +85,29 @@ export function registerBugTools(server: McpServer, bugManager: BugManager): voi
           content: [{ type: 'text', text: JSON.stringify(bug, null, 2) }],
         }
       } catch (err) {
-        return {
-          content: [{ type: 'text', text: err instanceof Error ? err.message : String(err) }],
-          isError: true,
+        logToolError('invoke_update_bug', err)
+
+        if (isBugNotFoundError(err, bug_id)) {
+          return errorResponse(`Bug not found: ${bug_id}`)
         }
+
+        return errorResponse('Failed to update bug')
       }
     }
   )
+}
+
+function errorResponse(message: string) {
+  return {
+    content: [{ type: 'text', text: message }],
+    isError: true as const,
+  }
+}
+
+function logToolError(toolName: string, error: unknown): void {
+  console.error(`[bug-tools] ${toolName} failed`, error)
+}
+
+function isBugNotFoundError(error: unknown, bugId: string): boolean {
+  return error instanceof Error && error.message === `Bug '${bugId}' not found`
 }
