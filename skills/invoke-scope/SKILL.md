@@ -21,8 +21,6 @@ Call `invoke_init_project` to ensure the `.invoke/` directory exists with defaul
 
 #### 1b. Choose the base branch (R1 — must come before session creation)
 
-**Guard:** If `state.work_branch` is already set, skip this sub-step — the session already exists (resume case).
-
 Before creating the pipeline session, prompt the user to choose the base branch:
 
 1. Generate a candidate `pipeline_id` (e.g. `pipeline-${Date.now()}`) to use when creating the session in step 1c.
@@ -56,8 +54,6 @@ Before creating the pipeline session, prompt the user to choose the base branch:
 
 #### 1c. Create the session and initialize the worktree
 
-**Guard:** If `state.work_branch` is already set, skip this sub-step — the session already exists (resume case).
-
 Now that the user has chosen a base branch:
 
 1. Call `invoke_set_state` with `{ pipeline_id: <generated id>, current_stage: "scope" }`. This creates the session. Use the returned `pipeline_id` as `session_id` for all subsequent `invoke_get_state` and `invoke_set_state` calls.
@@ -65,7 +61,7 @@ Now that the user has chosen a base branch:
 
 2. Immediately call `invoke_session_init_worktree({ session_id: <pipeline_id>, base_branch: <chosen branch> })`.
 
-3. Verify the response includes `work_branch`, `base_branch`, and `work_branch_path`. If the tool returns an error (e.g., the specified branch does not exist), surface the error to the user and allow them to choose a different base branch by repeating from step 1b.
+3. Verify the response includes `work_branch`, `base_branch`, and `work_branch_path`. If `invoke_session_init_worktree` returns an error (e.g. base branch doesn't exist), surface the error to the user. Then re-prompt them for a different base branch by re-running the base-branch AskUserQuestion (steps 1b.2–1b.5) but KEEP the existing pipeline_id and session_id — do NOT regenerate them. After they pick a new branch, call `invoke_session_init_worktree` again with the same session_id and the new base_branch. This avoids orphaning the already-created session.
 
 4. Print a confirmation: `Session worktree initialized: <work_branch> based on <base_branch>`
 
