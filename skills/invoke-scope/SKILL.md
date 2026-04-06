@@ -15,23 +15,21 @@ You are running the scope stage of the invoke pipeline. Your job is to produce a
 
 ### 1. Initialize Project & Pipeline
 
-First, call `invoke_init_project` to ensure the `.invoke/` directory exists with default config, roles, and strategies. This is safe to re-run — it only adds files that don't already exist.
+#### 1a. Discover the project
 
-Then call `invoke_set_state` to create or verify pipeline state:
-- If no active pipeline, initialize one with `current_stage: "scope"`
-- If an active pipeline exists at a later stage, ask the user if they want to start a new pipeline
+Call `invoke_init_project` to ensure the `.invoke/` directory exists with default config, roles, and strategies. This is safe to re-run — it only adds files that don't already exist.
 
-Once the pipeline exists, use the returned `pipeline_id` as `session_id` for all subsequent `invoke_get_state` and `invoke_set_state` calls. The tools remain backward-compatible because `session_id` is optional, but do not omit it in this flow.
+#### 1b. Choose the base branch (R1 — must come before session creation)
 
-#### 1b. Initialize Session Worktree
+**Guard:** If `state.work_branch` is already set, skip this sub-step — the session already exists (resume case).
 
-**Guard:** If `state.work_branch` is already set, skip this sub-step — the session worktree was initialized in a prior conversation (resume case).
+Before creating the pipeline session, prompt the user to choose the base branch:
 
-For new sessions, run this before proceeding to step 2 or dispatching any researchers:
+1. Generate a candidate `pipeline_id` (e.g. `pipeline-${Date.now()}`) to use when creating the session in step 1c.
 
-1. Call `invoke_get_base_branch_candidates` (no arguments). Parse the response to extract `current_head`, `default_branch`, and `all_local_branches`.
+2. Call `invoke_get_base_branch_candidates` (no arguments). Parse the response to extract `current_head`, `default_branch`, and `all_local_branches`.
 
-2. Build an `AskUserQuestion` from the candidates. Rules:
+3. Build an `AskUserQuestion` from the candidates. Rules:
    - Always include `current_head` as an option when non-null.
    - Always include `default_branch` as an option when non-null **and** different from `current_head` (dedupe: if they are equal, show it only once).
    - Always include an `Other` option so the user can specify any branch not already listed.
@@ -52,15 +50,24 @@ For new sessions, run this before proceeding to step 2 or dispatching any resear
    })
    ```
 
-3. If the user picks `Other`, follow up with a second `AskUserQuestion` to collect the branch name. If `all_local_branches` contains 3 or fewer entries not already listed, present them as options plus a free-text fallback; otherwise ask for a plain text response.
+4. If the user picks `Other`, follow up with a second `AskUserQuestion` to collect the branch name. If `all_local_branches` contains 3 or fewer entries not already listed, present them as options plus a free-text fallback; otherwise ask for a plain text response.
 
-4. Call `invoke_session_init_worktree({ session_id: <pipeline_id>, base_branch: <chosen branch> })`.
+5. Save the chosen `base_branch` in conversation state for use in step 1c.
 
-5. Verify the response includes `work_branch`, `base_branch`, and `work_branch_path`. If the tool returns an error (e.g., the specified branch does not exist), surface the error to the user and allow them to choose a different base branch by repeating from step 2.
+#### 1c. Create the session and initialize the worktree
 
-6. Print a confirmation: `Session worktree initialized: <work_branch> based on <base_branch>`
+**Guard:** If `state.work_branch` is already set, skip this sub-step — the session already exists (resume case).
 
-This sub-step fires unconditionally for every new session and must complete before any researcher is dispatched.
+Now that the user has chosen a base branch:
+
+1. Call `invoke_set_state` with `{ pipeline_id: <generated id>, current_stage: "scope" }`. This creates the session. Use the returned `pipeline_id` as `session_id` for all subsequent `invoke_get_state` and `invoke_set_state` calls.
+   - If an active pipeline already exists at a later stage, ask the user if they want to start a new pipeline before calling `invoke_set_state`.
+
+2. Immediately call `invoke_session_init_worktree({ session_id: <pipeline_id>, base_branch: <chosen branch> })`.
+
+3. Verify the response includes `work_branch`, `base_branch`, and `work_branch_path`. If the tool returns an error (e.g., the specified branch does not exist), surface the error to the user and allow them to choose a different base branch by repeating from step 1b.
+
+4. Print a confirmation: `Session worktree initialized: <work_branch> based on <base_branch>`
 
 ### 2. Initialize Project Context (if needed)
 
