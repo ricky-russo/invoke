@@ -218,6 +218,491 @@ describe('registerStateTools', () => {
     ])
   })
 
+  it('accepts batch_update and review_cycle_update in invoke_set_state', () => {
+    const setStateTool = getTool('invoke_set_state')
+    const input = {
+      session_id: 'session-1',
+      batch_update: {
+        id: 1,
+        status: 'completed' as const,
+        tasks: [{ id: 'task-1', status: 'completed' as const }],
+      },
+      review_cycle_update: {
+        id: 1,
+        reviewers: ['reviewer-a'],
+        findings: [],
+        scope: 'final' as const,
+      },
+    }
+
+    expect(setStateTool.config.inputSchema.safeParse(input).success).toBe(true)
+  })
+
+  it('updates an existing batch in place without affecting other batches', async () => {
+    const sessionStateManager = new StateManager(
+      TEST_DIR,
+      await sessionManager.create('session-1')
+    )
+    await sessionStateManager.initialize('pipeline-123')
+    await sessionStateManager.update({
+      batches: [
+        {
+          id: 1,
+          status: 'pending',
+          merged_tasks: ['task-0'],
+          tasks: [{ id: 'task-1', status: 'pending' }],
+        },
+        {
+          id: 2,
+          status: 'in_progress',
+          tasks: [{ id: 'task-2', status: 'running' }],
+        },
+      ],
+    })
+
+    const result = await getTool('invoke_set_state').handler({
+      session_id: 'session-1',
+      work_branch: 'invoke/work-1234',
+      batch_update: {
+        id: 1,
+        status: 'completed',
+        tasks: [{ id: 'task-1', status: 'completed' }],
+      },
+    })
+
+    expect(result.isError).toBeUndefined()
+
+    const state = await sessionStateManager.get()
+    expect(state).toMatchObject({
+      work_branch: 'invoke/work-1234',
+      batches: [
+        {
+          id: 1,
+          status: 'completed',
+          merged_tasks: ['task-0'],
+          tasks: [{ id: 'task-1', status: 'completed' }],
+        },
+        {
+          id: 2,
+          status: 'in_progress',
+          tasks: [{ id: 'task-2', status: 'running' }],
+        },
+      ],
+    })
+  })
+
+  it('appends a batch when batch_update targets a new id', async () => {
+    const sessionStateManager = new StateManager(
+      TEST_DIR,
+      await sessionManager.create('session-1')
+    )
+    await sessionStateManager.initialize('pipeline-123')
+    await sessionStateManager.update({
+      batches: [
+        {
+          id: 1,
+          status: 'pending',
+          tasks: [{ id: 'task-1', status: 'pending' }],
+        },
+      ],
+    })
+
+    const result = await getTool('invoke_set_state').handler({
+      session_id: 'session-1',
+      batch_update: {
+        id: 99,
+        status: 'pending',
+        tasks: [],
+      },
+    })
+
+    expect(result.isError).toBeUndefined()
+
+    const state = await sessionStateManager.get()
+    expect(state?.batches).toEqual([
+      {
+        id: 1,
+        status: 'pending',
+        tasks: [{ id: 'task-1', status: 'pending' }],
+      },
+      {
+        id: 99,
+        status: 'pending',
+        tasks: [],
+      },
+    ])
+  })
+
+  it('clears batches when only an explicit batches array replacement is provided', async () => {
+    const sessionStateManager = new StateManager(
+      TEST_DIR,
+      await sessionManager.create('session-1')
+    )
+    await sessionStateManager.initialize('pipeline-123')
+    await sessionStateManager.update({
+      batches: [
+        {
+          id: 1,
+          status: 'pending',
+          tasks: [{ id: 'task-1', status: 'pending' }],
+        },
+      ],
+    })
+
+    const result = await getTool('invoke_set_state').handler({
+      session_id: 'session-1',
+      batches: [],
+    })
+
+    expect(result.isError).toBeUndefined()
+
+    const state = await sessionStateManager.get()
+    expect(state?.batches).toEqual([])
+  })
+
+  it('accepts batches and batch_update in the same invoke_set_state call and explicit batches win', async () => {
+    const setStateTool = getTool('invoke_set_state')
+    const input = {
+      session_id: 'session-1',
+      pipeline_id: 'pipeline-123',
+      batches: [
+        {
+          id: 1,
+          status: 'completed' as const,
+          tasks: [],
+        },
+      ],
+      batch_update: {
+        id: 2,
+        status: 'pending' as const,
+        tasks: [],
+      },
+    }
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    try {
+      const parsed = setStateTool.config.inputSchema.safeParse(input)
+      expect(parsed.success).toBe(true)
+
+      const result = await setStateTool.handler(input)
+      expect(result.isError).toBeUndefined()
+      expect(parseResponseText(result)).toMatchObject({
+        batches: [
+          {
+            id: 1,
+            status: 'completed',
+            tasks: [],
+          },
+        ],
+      })
+
+      const sessionStateManager = new StateManager(
+        TEST_DIR,
+        sessionManager.resolve('session-1')
+      )
+      expect((await sessionStateManager.get())?.batches).toEqual([
+        {
+          id: 1,
+          status: 'completed',
+          tasks: [],
+        },
+      ])
+      expect(warnSpy).toHaveBeenCalledWith(
+        'invoke_set_state received both batches and batch_update; batch_update will be applied before batches replaces the array'
+      )
+    } finally {
+      warnSpy.mockRestore()
+    }
+  })
+
+  it('performs batch_update and top-level fields in one atomic invoke_set_state write', async () => {
+    const sessionStateManager = new StateManager(
+      TEST_DIR,
+      await sessionManager.create('session-atomic')
+    )
+    await sessionStateManager.initialize('pipeline-123')
+    await sessionStateManager.update({
+      batches: [
+        {
+          id: 1,
+          status: 'pending',
+          tasks: [{ id: 'task-1', status: 'pending' }],
+        },
+      ],
+    })
+
+    const capturedWrites: Array<{
+      work_branch?: string
+      strategy?: string
+      batchStatus?: string
+    }> = []
+    let releaseFirstWrite: (() => void) | null = null
+    let markFirstWriteStarted: (() => void) | null = null
+    const firstWriteStarted = new Promise<void>(resolve => {
+      markFirstWriteStarted = resolve
+    })
+    const writeAtomic = (StateManager.prototype as any).writeAtomic
+    const writeAtomicSpy = vi.spyOn(StateManager.prototype as any, 'writeAtomic').mockImplementation(
+      async function (state: {
+        work_branch?: string
+        strategy?: string
+        batches: Array<{ id: number, status: string }>
+      }) {
+        capturedWrites.push({
+          work_branch: state.work_branch,
+          strategy: state.strategy,
+          batchStatus: state.batches.find(batch => batch.id === 1)?.status,
+        })
+
+        if (!releaseFirstWrite) {
+          markFirstWriteStarted?.()
+          await new Promise<void>(resolve => {
+            releaseFirstWrite = resolve
+          })
+        }
+
+        return writeAtomic.call(this, state)
+      }
+    )
+
+    try {
+      const firstCall = getTool('invoke_set_state').handler({
+        session_id: 'session-atomic',
+        work_branch: 'invoke/work-atomic',
+        batch_update: {
+          id: 1,
+          status: 'completed',
+          tasks: [{ id: 'task-1', status: 'completed' }],
+        },
+      })
+
+      await firstWriteStarted
+
+      const secondCall = getTool('invoke_set_state').handler({
+        session_id: 'session-atomic',
+        strategy: 'concurrent',
+      })
+
+      releaseFirstWrite?.()
+      await Promise.all([firstCall, secondCall])
+    } finally {
+      writeAtomicSpy.mockRestore()
+    }
+
+    expect(capturedWrites).toEqual([
+      {
+        work_branch: 'invoke/work-atomic',
+        batchStatus: 'completed',
+      },
+      {
+        work_branch: 'invoke/work-atomic',
+        strategy: 'concurrent',
+        batchStatus: 'completed',
+      },
+    ])
+  })
+
+  it('performs a mixed batch_update and batches replacement in one invoke_set_state writeAtomic call', async () => {
+    const sessionStateManager = new StateManager(
+      TEST_DIR,
+      await sessionManager.create('session-atomic-replace')
+    )
+    await sessionStateManager.initialize('pipeline-123')
+    await sessionStateManager.update({
+      batches: [
+        {
+          id: 10,
+          status: 'pending',
+          tasks: [{ id: 'task-10', status: 'pending' }],
+        },
+      ],
+    })
+
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const writeAtomicSpy = vi.spyOn(StateManager.prototype as any, 'writeAtomic')
+
+    try {
+      const result = await getTool('invoke_set_state').handler({
+        session_id: 'session-atomic-replace',
+        work_branch: 'invoke/work-replace',
+        batches: [
+          {
+            id: 1,
+            status: 'completed',
+            tasks: [],
+          },
+        ],
+        batch_update: {
+          id: 2,
+          status: 'pending',
+          tasks: [],
+        },
+      })
+
+      expect(result.isError).toBeUndefined()
+      expect(writeAtomicSpy).toHaveBeenCalledTimes(1)
+    } finally {
+      writeAtomicSpy.mockRestore()
+      warnSpy.mockRestore()
+    }
+
+    expect(await sessionStateManager.get()).toMatchObject({
+      work_branch: 'invoke/work-replace',
+      batches: [
+        {
+          id: 1,
+          status: 'completed',
+          tasks: [],
+        },
+      ],
+    })
+  })
+
+  it('upserts review cycles by id and appends when review_cycle_update is provided', async () => {
+    const sessionStateManager = new StateManager(
+      TEST_DIR,
+      await sessionManager.create('session-1')
+    )
+    await sessionStateManager.initialize('pipeline-123')
+    await sessionStateManager.update({
+      review_cycles: [
+        { id: 1, reviewers: ['reviewer-a'], findings: [], batch_id: 2, scope: 'batch' },
+      ],
+    })
+
+    const updateResult = await getTool('invoke_set_state').handler({
+      session_id: 'session-1',
+      review_cycle_update: {
+        id: 1,
+        reviewers: ['reviewer-a', 'reviewer-b'],
+        findings: [],
+        batch_id: 2,
+        scope: 'batch',
+        tier: 'critical',
+      },
+    })
+
+    expect(updateResult.isError).toBeUndefined()
+    expect((await sessionStateManager.get())?.review_cycles).toEqual([
+      {
+        id: 1,
+        reviewers: ['reviewer-a', 'reviewer-b'],
+        findings: [],
+        batch_id: 2,
+        scope: 'batch',
+        tier: 'critical',
+      },
+    ])
+
+    const appendResult = await getTool('invoke_set_state').handler({
+      session_id: 'session-1',
+      review_cycle_update: {
+        id: 2,
+        reviewers: ['reviewer-c'],
+        findings: [],
+        scope: 'final',
+      },
+    })
+
+    expect(appendResult.isError).toBeUndefined()
+    expect((await sessionStateManager.get())?.review_cycles).toEqual([
+      {
+        id: 1,
+        reviewers: ['reviewer-a', 'reviewer-b'],
+        findings: [],
+        batch_id: 2,
+        scope: 'batch',
+        tier: 'critical',
+      },
+      {
+        id: 2,
+        reviewers: ['reviewer-c'],
+        findings: [],
+        scope: 'final',
+      },
+    ])
+  })
+
+  it('clears review_cycles when only an explicit review_cycles array replacement is provided', async () => {
+    const sessionStateManager = new StateManager(
+      TEST_DIR,
+      await sessionManager.create('session-1')
+    )
+    await sessionStateManager.initialize('pipeline-123')
+    await sessionStateManager.update({
+      review_cycles: [
+        { id: 1, reviewers: ['reviewer-a'], findings: [], batch_id: 2, scope: 'batch' },
+      ],
+    })
+
+    const clearResult = await getTool('invoke_set_state').handler({
+      session_id: 'session-1',
+      review_cycles: [],
+    })
+
+    expect(clearResult.isError).toBeUndefined()
+    expect((await sessionStateManager.get())?.review_cycles).toEqual([])
+  })
+
+  it('accepts review_cycles and review_cycle_update in the same invoke_set_state call and explicit review_cycles win', async () => {
+    const setStateTool = getTool('invoke_set_state')
+    const input = {
+      session_id: 'session-1',
+      pipeline_id: 'pipeline-123',
+      review_cycles: [
+        {
+          id: 1,
+          reviewers: ['reviewer-a', 'reviewer-b'],
+          findings: [],
+          scope: 'final' as const,
+        },
+      ],
+      review_cycle_update: {
+        id: 2,
+        reviewers: ['reviewer-a'],
+        findings: [],
+        scope: 'final' as const,
+      },
+    }
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    try {
+      const parsed = setStateTool.config.inputSchema.safeParse(input)
+      expect(parsed.success).toBe(true)
+
+      const result = await setStateTool.handler(input)
+      expect(result.isError).toBeUndefined()
+      expect(parseResponseText(result)).toMatchObject({
+        review_cycles: [
+          {
+            id: 1,
+            reviewers: ['reviewer-a', 'reviewer-b'],
+            findings: [],
+            scope: 'final',
+          },
+        ],
+      })
+
+      const sessionStateManager = new StateManager(
+        TEST_DIR,
+        sessionManager.resolve('session-1')
+      )
+      expect((await sessionStateManager.get())?.review_cycles).toEqual([
+        {
+          id: 1,
+          reviewers: ['reviewer-a', 'reviewer-b'],
+          findings: [],
+          scope: 'final',
+        },
+      ])
+      expect(warnSpy).toHaveBeenCalledWith(
+        'invoke_set_state received both review_cycles and review_cycle_update; review_cycle_update will be applied before review_cycles replaces the array'
+      )
+    } finally {
+      warnSpy.mockRestore()
+    }
+  })
+
   it('round-trips valid bug_ids and rejects invalid bug_ids in invoke_set_state', async () => {
     const setStateTool = getTool('invoke_set_state')
     const validInput = {

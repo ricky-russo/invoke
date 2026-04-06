@@ -58,7 +58,14 @@ describe('BatchManager', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
+    vi.mocked(mockEngine.dispatch).mockReset()
+    vi.mocked(mockEngine.dispatch).mockResolvedValue(mockResult)
     manager = new BatchManager(mockEngine, mockWorktreeManager, undefined)
+  })
+
+  afterEach(() => {
+    manager.shutdown()
+    vi.useRealTimers()
   })
 
   it('dispatches a batch and returns a batch ID immediately', async () => {
@@ -72,6 +79,50 @@ describe('BatchManager', () => {
 
     expect(batchId).toBeTruthy()
     expect(typeof batchId).toBe('string')
+  })
+
+  it('stores the owning session ID on the batch record when a session-owned worktree batch is dispatched', async () => {
+    const batchId = await manager.dispatchBatch({
+      tasks: [
+        { taskId: 'task-1', role: 'builder', subrole: 'default', taskContext: {} },
+      ],
+      createWorktrees: true,
+      sessionId: 'session-A',
+    })
+
+    expect(manager.getBatchOwner(batchId)).toEqual({ kind: 'owned', sessionId: 'session-A' })
+  })
+
+  it('passes boundPipelineId through to the engine dispatch request', async () => {
+    await manager.dispatchBatch({
+      tasks: [
+        { taskId: 'task-1', role: 'builder', subrole: 'default', taskContext: {} },
+      ],
+      createWorktrees: false,
+      sessionId: 'session-A',
+      boundPipelineId: 'real-pipe',
+    })
+
+    await vi.waitFor(() => {
+      expect(mockEngine.dispatch).toHaveBeenCalledWith(expect.objectContaining({
+        role: 'builder',
+        subrole: 'default',
+        taskContext: {},
+        sessionId: 'session-A',
+        boundPipelineId: 'real-pipe',
+      }))
+    }, { timeout: 2000 })
+  })
+
+  it('stores a null owner when a batch is dispatched without a session', async () => {
+    const batchId = await manager.dispatchBatch({
+      tasks: [
+        { taskId: 'task-1', role: 'builder', subrole: 'default', taskContext: {} },
+      ],
+      createWorktrees: false,
+    })
+
+    expect(manager.getBatchOwner(batchId)).toEqual({ kind: 'unowned' })
   })
 
   it('tracks batch status from running to completed', async () => {
@@ -96,17 +147,11 @@ describe('BatchManager', () => {
     const finalStatus = manager.getStatus(batchId)
     expect(finalStatus!.status).toBe('completed')
     expect(finalStatus!.agents[0].status).toBe('completed')
-    expect(finalStatus!.agents[0].result).toEqual({
-      ...mockResult,
-      output: {
-        ...mockResult.output,
-        raw: undefined,
-      },
-    })
+    expect(finalStatus!.agents[0].result).toEqual(mockResult)
     expect(mockResult.output.raw).toBe('Full output')
   })
 
-  it('strips raw output after an errored batch reaches terminal status', async () => {
+  it('keeps raw output after an errored batch reaches terminal status', async () => {
     vi.mocked(mockEngine.dispatch).mockRejectedValueOnce(new Error('boom'))
 
     const batchId = await manager.dispatchBatch({
@@ -123,7 +168,7 @@ describe('BatchManager', () => {
     const finalStatus = manager.getStatus(batchId)
     expect(finalStatus!.agents[0].status).toBe('error')
     expect(finalStatus!.agents[0].result?.output.summary).toBe('boom')
-    expect(finalStatus!.agents[0].result?.output.raw).toBeUndefined()
+    expect(finalStatus!.agents[0].result?.output.raw).toBe('Error: boom')
   })
 
   it('treats resolved error results as task errors and skips merging', async () => {
@@ -142,13 +187,7 @@ describe('BatchManager', () => {
 
     const finalStatus = manager.getStatus(batchId)
     expect(finalStatus!.agents[0].status).toBe('error')
-    expect(finalStatus!.agents[0].result).toEqual({
-      ...mockErrorResult,
-      output: {
-        ...mockErrorResult.output,
-        raw: undefined,
-      },
-    })
+    expect(finalStatus!.agents[0].result).toEqual(mockErrorResult)
     expect(mockWorktreeManager.merge).not.toHaveBeenCalled()
   })
 
@@ -168,13 +207,7 @@ describe('BatchManager', () => {
 
     const finalStatus = manager.getStatus(batchId)
     expect(finalStatus!.agents[0].status).toBe('timeout')
-    expect(finalStatus!.agents[0].result).toEqual({
-      ...mockTimeoutResult,
-      output: {
-        ...mockTimeoutResult.output,
-        raw: undefined,
-      },
-    })
+    expect(finalStatus!.agents[0].result).toEqual(mockTimeoutResult)
     expect(mockWorktreeManager.merge).not.toHaveBeenCalled()
   })
 
@@ -211,6 +244,112 @@ describe('BatchManager', () => {
 
   it('returns null for unknown batch ID', () => {
     expect(manager.getStatus('nonexistent')).toBeNull()
+  })
+
+  describe('getTaskResult', () => {
+    it('returns batch_not_found for an unknown batch', () => {
+      expect(manager.getTaskResult('nonexistent', 'task-1')).toEqual({ kind: 'batch_not_found' })
+    })
+
+    it('returns task_not_found when the task does not exist in the batch', async () => {
+      const batchId = await manager.dispatchBatch({
+        tasks: [
+          { taskId: 'task-1', role: 'builder', subrole: 'default', taskContext: {} },
+        ],
+        createWorktrees: false,
+      })
+
+      expect(manager.getTaskResult(batchId, 'task-2')).toEqual({ kind: 'task_not_found' })
+    })
+
+    it('returns not_terminal while the task is still running', async () => {
+      const neverResolve = new Promise<AgentResult>(() => {})
+      vi.mocked(mockEngine.dispatch).mockReturnValueOnce(neverResolve)
+
+      const batchId = await manager.dispatchBatch({
+        tasks: [
+          { taskId: 'task-1', role: 'builder', subrole: 'default', taskContext: {} },
+        ],
+        createWorktrees: false,
+      })
+
+      await vi.waitFor(() => {
+        expect(manager.getStatus(batchId)!.agents[0].status).toBe('running')
+      }, { timeout: 2000 })
+
+      expect(manager.getTaskResult(batchId, 'task-1')).toEqual({
+        kind: 'not_terminal',
+        status: 'running',
+      })
+    })
+
+    it('returns the full terminal task result once the task completes', async () => {
+      const batchId = await manager.dispatchBatch({
+        tasks: [
+          { taskId: 'task-1', role: 'builder', subrole: 'default', taskContext: {} },
+        ],
+        createWorktrees: false,
+      })
+
+      await vi.waitFor(() => {
+        expect(manager.getStatus(batchId)!.status).toBe('completed')
+      }, { timeout: 2000 })
+
+      expect(manager.getTaskResult(batchId, 'task-1')).toEqual({
+        kind: 'ok',
+        result: mockResult,
+      })
+    })
+
+    it('returns a synthetic cancelled result after cancelling an in-flight task', async () => {
+      const neverResolve = new Promise<AgentResult>(() => {})
+      vi.mocked(mockEngine.dispatch).mockReturnValueOnce(neverResolve)
+
+      const batchId = await manager.dispatchBatch({
+        tasks: [
+          { taskId: 'task-1', role: 'builder', subrole: 'default', taskContext: {} },
+        ],
+        createWorktrees: false,
+      })
+
+      await vi.waitFor(() => {
+        expect(manager.getStatus(batchId)!.agents[0].status).toBe('running')
+      }, { timeout: 2000 })
+
+      manager.cancel(batchId)
+
+      expect(manager.getTaskResult(batchId, 'task-1')).toEqual({
+        kind: 'ok',
+        result: {
+          role: 'builder',
+          subrole: 'default',
+          provider: 'unknown',
+          model: 'unknown',
+          status: 'error',
+          output: {
+            summary: 'Cancelled',
+            raw: '',
+          },
+          duration: 0,
+        },
+      })
+    })
+
+    it('returns no_result when a task is terminal without a stored result', () => {
+      ;(manager as any).batches.set('batch-123', {
+        status: {
+          batchId: 'batch-123',
+          status: 'error',
+          agents: [{ taskId: 'task-1', status: 'error' }],
+        },
+        abortController: new AbortController(),
+        batchIndex: 0,
+        ownerSessionId: null,
+        tasks: [{ taskId: 'task-1', role: 'builder', subrole: 'default' }],
+      })
+
+      expect(manager.getTaskResult('batch-123', 'task-1')).toEqual({ kind: 'no_result' })
+    })
   })
 
   describe('waitForStatus', () => {
@@ -289,6 +428,77 @@ describe('BatchManager', () => {
       expect(elapsed).toBeLessThan(4000)
     })
   })
+
+  it('evicts terminal batches after the retention TTL', async () => {
+    vi.useFakeTimers()
+    manager = new BatchManager(mockEngine, mockWorktreeManager, undefined, {
+      terminalRetentionMs: 10 * 60 * 1000,
+    })
+
+    const batchId = 'batch-123'
+    ;(manager as any).batches.set(batchId, {
+      status: {
+        batchId,
+        status: 'completed',
+        agents: [
+          {
+            taskId: 'task-1',
+            status: 'completed',
+            result: mockResult,
+          },
+        ],
+      },
+      abortController: new AbortController(),
+      batchIndex: 0,
+      ownerSessionId: null,
+      tasks: [{ taskId: 'task-1', role: 'builder', subrole: 'default' }],
+    })
+
+    ;(manager as any).scheduleTerminalEviction(batchId)
+
+    expect(manager.getTaskResult(batchId, 'task-1')).toEqual({
+      kind: 'ok',
+      result: mockResult,
+    })
+
+    await vi.advanceTimersByTimeAsync(10 * 60 * 1000)
+
+    expect(manager.getTaskResult(batchId, 'task-1')).toEqual({ kind: 'batch_not_found' })
+  })
+
+  it('does not reset terminal eviction when cancel is called on an already-terminal batch', async () => {
+    vi.useFakeTimers()
+    manager = new BatchManager(mockEngine, mockWorktreeManager, undefined, {
+      terminalRetentionMs: 1000,
+    })
+
+    const batchId = 'batch-123'
+    ;(manager as any).batches.set(batchId, {
+      status: {
+        batchId,
+        status: 'completed',
+        agents: [
+          {
+            taskId: 'task-1',
+            status: 'completed',
+            result: mockResult,
+          },
+        ],
+      },
+      abortController: new AbortController(),
+      batchIndex: 0,
+      ownerSessionId: null,
+      tasks: [{ taskId: 'task-1', role: 'builder', subrole: 'default' }],
+    })
+
+    ;(manager as any).scheduleTerminalEviction(batchId)
+
+    await vi.advanceTimersByTimeAsync(900)
+    manager.cancel(batchId)
+    await vi.advanceTimersByTimeAsync(100)
+
+    expect(manager.getTaskResult(batchId, 'task-1')).toEqual({ kind: 'batch_not_found' })
+  })
 })
 
 describe('max_parallel_agents', () => {
@@ -296,10 +506,16 @@ describe('max_parallel_agents', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
+    vi.mocked(mockEngine.dispatch).mockReset()
     vi.mocked(mockEngine.dispatch).mockImplementation(() =>
       new Promise(resolve => setTimeout(() => resolve(mockResult), 50))
     )
     manager = new BatchManager(mockEngine, mockWorktreeManager, undefined)
+  })
+
+  afterEach(() => {
+    manager.shutdown()
+    vi.useRealTimers()
   })
 
   it('limits concurrent dispatches when maxParallel is set', async () => {
@@ -755,6 +971,8 @@ describe('BatchManager with state persistence', () => {
   })
 
   afterEach(() => {
+    statefulManager.shutdown()
+    vi.useRealTimers()
     vi.restoreAllMocks()
   })
 
@@ -854,6 +1072,66 @@ describe('BatchManager with state persistence', () => {
     expect((statefulManager as any).batches.get(secondBatchId).batchIndex).toBe(3)
   })
 
+  it('serializes concurrent same-session batch registration on the root manager', async () => {
+    const rootManager = new BatchManager(mockEngine, mockWorktreeManager)
+    const gate = createDeferred<void>()
+    let firstAddBatch = true
+
+    addBatch.mockImplementation(async (batch) => {
+      if (firstAddBatch) {
+        firstAddBatch = false
+        await gate.promise
+      }
+
+      persistedState = {
+        ...persistedState,
+        last_updated: new Date().toISOString(),
+        batches: [...persistedState.batches, { ...batch, tasks: batch.tasks.map(task => ({ ...task })) }],
+      }
+      return persistedState
+    })
+
+    const firstDispatch = rootManager.dispatchBatch({
+      tasks: [
+        { taskId: 'task-2', role: 'builder', subrole: 'default', taskContext: {} },
+      ],
+      createWorktrees: false,
+      sessionId: 'session-A',
+    }, {
+      stateManager,
+    })
+    const secondDispatch = rootManager.dispatchBatch({
+      tasks: [
+        { taskId: 'task-3', role: 'builder', subrole: 'default', taskContext: {} },
+      ],
+      createWorktrees: false,
+      sessionId: 'session-A',
+    }, {
+      stateManager,
+    })
+
+    await vi.waitFor(() => {
+      expect(addBatch).toHaveBeenCalledTimes(1)
+    }, { timeout: 2000 })
+
+    gate.resolve()
+
+    const [firstBatchId, secondBatchId] = await Promise.all([firstDispatch, secondDispatch])
+
+    await vi.waitFor(() => {
+      expect(addBatch).toHaveBeenCalledTimes(2)
+    }, { timeout: 3000 })
+
+    expect(addBatch.mock.calls.map(([batch]) => batch.id)).toEqual([2, 3])
+    expect(rootManager.getBatchOwner(firstBatchId)).toEqual({ kind: 'owned', sessionId: 'session-A' })
+    expect(rootManager.getBatchOwner(secondBatchId)).toEqual({ kind: 'owned', sessionId: 'session-A' })
+    expect((rootManager as any).batches.size).toBe(2)
+    expect((rootManager as any).batches.has(firstBatchId)).toBe(true)
+    expect((rootManager as any).batches.has(secondBatchId)).toBe(true)
+
+    rootManager.shutdown()
+  })
+
   it('persists batch completion status', async () => {
     await statefulManager.dispatchBatch({
       tasks: [
@@ -935,5 +1213,6 @@ describe('BatchManager with state persistence', () => {
 
     expect((statelessManager as any).batches.get(firstBatchId).batchIndex).toBe(0)
     expect((statelessManager as any).batches.get(secondBatchId).batchIndex).toBe(1)
+    statelessManager.shutdown()
   })
 })

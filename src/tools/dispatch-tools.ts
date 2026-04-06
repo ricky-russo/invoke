@@ -7,11 +7,23 @@ import type { SessionManager } from '../session/manager.js'
 import type { InvokeConfig, ProviderMode } from '../types.js'
 import { loadConfig } from '../config.js'
 import { StateManager } from './state.js'
+import { getSessionScopedMetrics } from './session-metrics.js'
 
 type TaskProviderInfo = {
   task_id: string
   providers: { provider: string; model: string; effort: string }[]
   provider_mode: ProviderMode
+}
+
+type LimitStatus = {
+  dispatches_used: number
+  max_dispatches?: number
+  at_limit: boolean
+}
+
+type ToolErrorResponse = {
+  content: Array<{ type: 'text'; text: string }>
+  isError: true
 }
 
 export function registerDispatchTools(
@@ -22,9 +34,24 @@ export function registerDispatchTools(
   metricsManager: MetricsManager,
   sessionManager?: SessionManager
 ): void {
-  async function resolveBatchManager(sessionId?: string): Promise<BatchManager> {
+  const scopedStateManagers = new Map<string, StateManager>()
+
+  function getScopedStateManager(sessionDir: string): StateManager {
+    const existing = scopedStateManagers.get(sessionDir)
+    if (existing) {
+      return existing
+    }
+
+    const stateManager = new StateManager(projectDir, sessionDir)
+    scopedStateManagers.set(sessionDir, stateManager)
+    return stateManager
+  }
+
+  async function resolveSessionScope(
+    sessionId?: string
+  ): Promise<{ sessionDir: string; stateManager: StateManager } | undefined> {
     if (!sessionId) {
-      return batchManager
+      return undefined
     }
 
     if (!sessionManager) {
@@ -35,13 +62,69 @@ export function registerDispatchTools(
       ? sessionManager.resolve(sessionId)
       : await sessionManager.create(sessionId)
 
-    return Object.assign(
-      Object.create(Object.getPrototypeOf(batchManager)),
-      batchManager,
-      {
-        stateManager: new StateManager(projectDir, sessionDir),
-      }
-    ) as BatchManager
+    return {
+      sessionDir,
+      stateManager: getScopedStateManager(sessionDir),
+    }
+  }
+
+  function errorResponse(text: string): ToolErrorResponse {
+    return {
+      content: [{ type: 'text' as const, text }],
+      isError: true as const,
+    }
+  }
+
+  function validateBatchOwnership(
+    batchId: string,
+    sessionId?: string
+  ): ReturnType<typeof errorResponse> | null {
+    const owner = batchManager.getBatchOwner(batchId)
+
+    switch (owner.kind) {
+      case 'not_found':
+        return errorResponse(`Batch not found: ${batchId}`)
+      case 'unowned':
+        return null
+      case 'owned':
+        if (sessionId === undefined) {
+          return errorResponse(
+            `Batch ${batchId} is owned by a session and requires session_id parameter`
+          )
+        }
+
+        if (owner.sessionId !== sessionId) {
+          return errorResponse(`Batch ${batchId} is not owned by session ${sessionId}`)
+        }
+
+        return null
+    }
+  }
+
+  async function resolveLimitStatus(
+    config: InvokeConfig,
+    pipelineId: string | null,
+    sessionDir?: string
+  ): Promise<LimitStatus> {
+    const limitStatus = await metricsManager.getLimitStatus(config, pipelineId)
+    if (!sessionDir || pipelineId === null || limitStatus.dispatches_used > 0) {
+      return limitStatus
+    }
+
+    const sessionMetrics = await getSessionScopedMetrics(
+      metricsManager,
+      pipelineId,
+      sessionDir
+    )
+    const dispatchesUsed = sessionMetrics.length
+
+    return {
+      dispatches_used: dispatchesUsed,
+      max_dispatches: limitStatus.max_dispatches,
+      at_limit: limitStatus.max_dispatches !== undefined
+        ? dispatchesUsed >= limitStatus.max_dispatches
+        : false,
+    }
   }
 
   server.registerTool(
@@ -91,6 +174,15 @@ export function registerDispatchTools(
       }),
     },
     async ({ tasks, create_worktrees, session_id }) => {
+      const sessionScope = await resolveSessionScope(session_id)
+      const sessionStateManager = sessionScope?.stateManager
+      let boundPipelineId: string | null | undefined
+
+      if (sessionStateManager) {
+        const state = await sessionStateManager.get()
+        boundPipelineId = state?.pipeline_id ?? null
+      }
+
       // Read current config to report accurate provider info
       let taskProviders: TaskProviderInfo[] = []
       let config: InvokeConfig | undefined
@@ -120,8 +212,33 @@ export function registerDispatchTools(
       }, 0)
 
       if (config?.settings.max_dispatches !== undefined) {
+        const pipelineId = sessionStateManager
+          ? (boundPipelineId ?? null)
+          : ((await new StateManager(projectDir).get())?.pipeline_id ?? null)
+        let limitStatus: LimitStatus
+
         try {
-          const limitStatus = await metricsManager.getLimitStatus(config)
+          // Session-scoped metrics fall back to legacy sessions/<id>/metrics.json when the
+          // migrated root metrics store is still empty. Remove this compatibility path after
+          // legacy session metrics files have been cleaned up.
+          limitStatus = await resolveLimitStatus(config, pipelineId, sessionScope?.sessionDir)
+        } catch (err) {
+          console.error('Failed to evaluate dispatch limit — failing closed', err)
+          return errorResponse('Dispatch blocked: failed to evaluate dispatch limit')
+        }
+
+        if (limitStatus.at_limit) {
+          const pipelineLabel = pipelineId ? `pipeline ${pipelineId}` : 'active pipeline'
+          return {
+            content: [{
+              type: 'text',
+              text: `Dispatch blocked: ${pipelineLabel} has reached the max_dispatches limit (${limitStatus.dispatches_used}/${limitStatus.max_dispatches} dispatches used).`,
+            }],
+            isError: true,
+          }
+        }
+
+        try {
           const projectedDispatches = limitStatus.dispatches_used + estimatedDispatches
 
           if (projectedDispatches > limitStatus.max_dispatches!) {
@@ -130,14 +247,12 @@ export function registerDispatchTools(
             warning = `Approaching max_dispatches limit (${projectedDispatches}/${limitStatus.max_dispatches})`
           }
         } catch {
-          // Metrics lookup failed — omit warning without blocking dispatch
+          // Warning-only path stays fail-open.
         }
       }
 
       const maxParallel = config?.settings?.max_parallel_agents
-      const activeBatchManager = await resolveBatchManager(session_id)
-
-      const batchId = await activeBatchManager.dispatchBatch({
+      const batchId = await batchManager.dispatchBatch({
         tasks: tasks.map(t => ({
           taskId: t.task_id,
           role: t.role,
@@ -146,6 +261,9 @@ export function registerDispatchTools(
         })),
         createWorktrees: create_worktrees,
         maxParallel,
+        ...(session_id ? { sessionId: session_id, boundPipelineId } : {}),
+      }, {
+        stateManager: sessionStateManager,
       })
 
       return {
@@ -167,9 +285,17 @@ export function registerDispatchTools(
       inputSchema: z.object({
         batch_id: z.string().describe('The batch ID returned by invoke_dispatch_batch'),
         wait: z.number().optional().describe('Max seconds to wait for a status change (default 60, 0 for immediate)'),
+        session_id: z.string().optional().describe(
+          'Session ID required for session-owned batches; optional for legacy unowned batches'
+        ),
       }),
     },
-    async ({ batch_id, wait }) => {
+    async ({ batch_id, wait, session_id }) => {
+      const ownershipError = validateBatchOwnership(batch_id, session_id)
+      if (ownershipError) {
+        return ownershipError
+      }
+
       const waitSeconds = wait ?? 60
 
       const status = waitSeconds > 0
@@ -177,13 +303,59 @@ export function registerDispatchTools(
         : batchManager.getStatus(batch_id)
 
       if (!status) {
-        return {
-          content: [{ type: 'text', text: `Batch not found: ${batch_id}` }],
-          isError: true,
-        }
+        return errorResponse(`Batch not found: ${batch_id}`)
       }
+
+      const projectedStatus = {
+        batchId: status.batchId,
+        status: status.status,
+        agents: status.agents.map(agent => ({
+          taskId: agent.taskId,
+          status: agent.status,
+        })),
+      }
+
       return {
-        content: [{ type: 'text', text: JSON.stringify(status, null, 2) }],
+        content: [{ type: 'text', text: JSON.stringify(projectedStatus, null, 2) }],
+      }
+    }
+  )
+
+  server.registerTool(
+    'invoke_get_task_result',
+    {
+      description: 'Get the full result for a terminal task in a dispatched batch.',
+      inputSchema: z.object({
+        batch_id: z.string().describe('The batch ID returned by invoke_dispatch_batch'),
+        task_id: z.string().describe('The task ID to fetch the terminal result for'),
+        session_id: z.string().optional().describe(
+          'Session ID required for session-owned batches; optional for legacy unowned batches'
+        ),
+      }),
+    },
+    async ({ batch_id, task_id, session_id }) => {
+      const ownershipError = validateBatchOwnership(batch_id, session_id)
+      if (ownershipError) {
+        return ownershipError
+      }
+
+      const result = batchManager.getTaskResult(batch_id, task_id)
+
+      switch (result.kind) {
+        case 'ok':
+          return {
+            content: [{ type: 'text', text: JSON.stringify(result.result, null, 2) }],
+          }
+        case 'batch_not_found':
+          return errorResponse(`Batch not found: ${batch_id}`)
+        case 'task_not_found':
+          return errorResponse(`Task not found in batch ${batch_id}: ${task_id}`)
+        case 'not_terminal':
+          return errorResponse(`Task not in terminal state; keep polling (current status: ${result.status})`)
+        case 'no_result':
+          return errorResponse(
+            `Task reached terminal state without a stored result in batch ${batch_id}: ${task_id}`
+          )
       }
     }
   )
@@ -194,9 +366,17 @@ export function registerDispatchTools(
       description: 'Cancel a running batch and kill its agents.',
       inputSchema: z.object({
         batch_id: z.string().describe('The batch ID to cancel'),
+        session_id: z.string().optional().describe(
+          'Session ID required for session-owned batches; optional for legacy unowned batches'
+        ),
       }),
     },
-    async ({ batch_id }) => {
+    async ({ batch_id, session_id }) => {
+      const ownershipError = validateBatchOwnership(batch_id, session_id)
+      if (ownershipError) {
+        return ownershipError
+      }
+
       batchManager.cancel(batch_id)
       return {
         content: [{ type: 'text', text: JSON.stringify({ batch_id, status: 'cancelled' }) }],

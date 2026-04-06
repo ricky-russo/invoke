@@ -117,23 +117,34 @@ export class DispatchEngine {
         }
         const outputSizeChars = result.output.raw?.length ?? stdout.length;
         const costEstimate = estimateCost(entry.model, prompt.length, outputSizeChars);
-        this.onDispatchComplete?.({
-            pipeline_id: request.taskContext.pipeline_id ?? null,
-            stage: request.taskContext.stage ?? 'unknown',
-            role: request.role,
-            subrole: request.subrole,
-            provider: entry.provider,
-            model: entry.model,
-            effort: entry.effort,
-            prompt_size_chars: prompt.length,
-            output_size_chars: outputSizeChars,
-            duration_ms: duration,
-            status: result.status,
-            started_at: startedAt,
-            estimated_input_tokens: costEstimate?.input_tokens,
-            estimated_output_tokens: costEstimate?.output_tokens,
-            estimated_cost_usd: costEstimate?.cost_usd,
-        });
+        const isSessionBound = request.sessionId !== undefined;
+        const pipelineIdForMetric = isSessionBound
+            ? (request.boundPipelineId ?? null)
+            : (request.taskContext.pipeline_id ?? null);
+        if (pipelineIdForMetric === null) {
+            if (isSessionBound) {
+                console.warn('Skipping metric record - session dispatch missing bound pipeline_id');
+            }
+        }
+        else {
+            this.onDispatchComplete?.({
+                pipeline_id: pipelineIdForMetric,
+                stage: request.taskContext.stage ?? 'unknown',
+                role: request.role,
+                subrole: request.subrole,
+                provider: entry.provider,
+                model: entry.model,
+                effort: entry.effort,
+                prompt_size_chars: prompt.length,
+                output_size_chars: outputSizeChars,
+                duration_ms: duration,
+                status: result.status,
+                started_at: startedAt,
+                estimated_input_tokens: costEstimate?.input_tokens,
+                estimated_output_tokens: costEstimate?.output_tokens,
+                estimated_cost_usd: costEstimate?.cost_usd,
+            });
+        }
         return result;
     }
     mergeResults(results, request) {
@@ -160,7 +171,7 @@ export class DispatchEngine {
                 duration: Math.max(...results.map(r => r.duration)),
             };
         }
-        // Non-reviewer: concatenate reports
+        // Non-reviewer: concatenate raw output
         return {
             role: request.role,
             subrole: request.subrole,
@@ -169,7 +180,6 @@ export class DispatchEngine {
             status: results.every(r => r.status === 'success') ? 'success' : 'error',
             output: {
                 summary: `Combined results from ${results.length} providers`,
-                report: results.map(r => `## ${r.provider} (${r.model})\n\n${r.output.report ?? r.output.raw}`).join('\n\n---\n\n'),
                 raw: results.map(r => `--- ${r.provider} ---\n${r.output.raw}`).join('\n\n'),
             },
             duration: Math.max(...results.map(r => r.duration)),

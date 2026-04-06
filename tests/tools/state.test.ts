@@ -176,6 +176,212 @@ describe('StateManager', () => {
     expect(state!.batches[0].tasks).toHaveLength(2)
   })
 
+  it('upserts an existing batch by id without truncating other batches', async () => {
+    await stateManager.initialize('pipeline-123')
+    await stateManager.update({
+      batches: [
+        {
+          id: 1,
+          status: 'pending',
+          merged_tasks: ['task-0'],
+          tasks: [{ id: 'task-1', status: 'pending' }],
+        },
+        {
+          id: 2,
+          status: 'in_progress',
+          tasks: [{ id: 'task-2', status: 'running' }],
+        },
+      ],
+    })
+
+    await stateManager.applyComposite({
+      batchUpdate: {
+        id: 1,
+        status: 'completed',
+        tasks: [{ id: 'task-1', status: 'completed' }],
+      },
+    })
+
+    const state = await stateManager.get()
+    expect(state?.batches).toEqual([
+      {
+        id: 1,
+        status: 'completed',
+        merged_tasks: ['task-0'],
+        tasks: [{ id: 'task-1', status: 'completed' }],
+      },
+      {
+        id: 2,
+        status: 'in_progress',
+        tasks: [{ id: 'task-2', status: 'running' }],
+      },
+    ])
+  })
+
+  it('appends a batch when batchUpdate does not find a matching id', async () => {
+    await stateManager.initialize('pipeline-123')
+    await stateManager.update({
+      batches: [
+        {
+          id: 1,
+          status: 'pending',
+          tasks: [{ id: 'task-1', status: 'pending' }],
+        },
+      ],
+    })
+
+    await stateManager.applyComposite({
+      batchUpdate: {
+        id: 99,
+        status: 'pending',
+        tasks: [],
+      },
+    })
+
+    const state = await stateManager.get()
+    expect(state?.batches).toEqual([
+      {
+        id: 1,
+        status: 'pending',
+        tasks: [{ id: 'task-1', status: 'pending' }],
+      },
+      {
+        id: 99,
+        status: 'pending',
+        tasks: [],
+      },
+    ])
+  })
+
+  it('applies batch, review cycle, and top-level updates in a single composite write', async () => {
+    await stateManager.initialize('pipeline-123')
+    await stateManager.update({
+      batches: [
+        {
+          id: 1,
+          status: 'pending',
+          tasks: [{ id: 'task-1', status: 'pending' }],
+        },
+      ],
+      review_cycles: [
+        { id: 1, reviewers: ['reviewer-a'], findings: [], batch_id: 1, scope: 'batch' },
+      ],
+    })
+
+    const writeAtomicSpy = vi.spyOn(stateManager as any, 'writeAtomic')
+
+    await stateManager.applyComposite({
+      batchUpdate: {
+        id: 1,
+        status: 'completed',
+        tasks: [{ id: 'task-1', status: 'completed' }],
+      },
+      reviewCycleUpdate: {
+        id: 1,
+        reviewers: ['reviewer-a', 'reviewer-b'],
+        findings: [],
+        batch_id: 1,
+        scope: 'batch',
+        tier: 'critical',
+      },
+      partial: {
+        work_branch: 'invoke/work-1234',
+        strategy: 'tdd',
+      },
+    })
+
+    expect(writeAtomicSpy).toHaveBeenCalledTimes(1)
+    expect(await stateManager.get()).toMatchObject({
+      work_branch: 'invoke/work-1234',
+      strategy: 'tdd',
+      batches: [
+        {
+          id: 1,
+          status: 'completed',
+          tasks: [{ id: 'task-1', status: 'completed' }],
+        },
+      ],
+      review_cycles: [
+        {
+          id: 1,
+          reviewers: ['reviewer-a', 'reviewer-b'],
+          findings: [],
+          batch_id: 1,
+          scope: 'batch',
+          tier: 'critical',
+        },
+      ],
+    })
+  })
+
+  it('applies upserts before explicit batch and review cycle replacements in a single composite write', async () => {
+    await stateManager.initialize('pipeline-123')
+    await stateManager.update({
+      batches: [
+        {
+          id: 10,
+          status: 'pending',
+          tasks: [{ id: 'task-10', status: 'pending' }],
+        },
+      ],
+      review_cycles: [
+        { id: 10, reviewers: ['reviewer-a'], findings: [], batch_id: 10, scope: 'batch' },
+      ],
+    })
+
+    const writeAtomicSpy = vi.spyOn(stateManager as any, 'writeAtomic')
+
+    await stateManager.applyComposite({
+      batchUpdate: {
+        id: 2,
+        status: 'pending',
+        tasks: [],
+      },
+      reviewCycleUpdate: {
+        id: 2,
+        reviewers: ['reviewer-b'],
+        findings: [],
+        scope: 'final',
+      },
+      partial: {
+        batches: [
+          {
+            id: 1,
+            status: 'completed',
+            tasks: [],
+          },
+        ],
+        review_cycles: [
+          {
+            id: 1,
+            reviewers: ['reviewer-c'],
+            findings: [],
+            scope: 'final',
+          },
+        ],
+      },
+    })
+
+    expect(writeAtomicSpy).toHaveBeenCalledTimes(1)
+    expect(await stateManager.get()).toMatchObject({
+      batches: [
+        {
+          id: 1,
+          status: 'completed',
+          tasks: [],
+        },
+      ],
+      review_cycles: [
+        {
+          id: 1,
+          reviewers: ['reviewer-c'],
+          findings: [],
+          scope: 'final',
+        },
+      ],
+    })
+  })
+
   it('updates a batch via updateBatch', async () => {
     await stateManager.initialize('pipeline-123')
     await stateManager.addBatch({
@@ -318,6 +524,68 @@ describe('StateManager', () => {
     await expect(stateManager.getReviewCycleCount(1)).resolves.toBe(1)
     await expect(stateManager.getReviewCycleCount(2)).resolves.toBe(2)
     await expect(stateManager.getReviewCycleCount(99)).resolves.toBe(0)
+  })
+
+  it('upserts review cycles by id and appends when the cycle is new', async () => {
+    await stateManager.initialize('pipeline-123')
+    await stateManager.update({
+      review_cycles: [
+        { id: 1, reviewers: ['reviewer-a'], findings: [], batch_id: 1, scope: 'batch' },
+      ],
+    })
+
+    await stateManager.applyComposite({
+      reviewCycleUpdate: {
+        id: 1,
+        reviewers: ['reviewer-a', 'reviewer-b'],
+        findings: [],
+        batch_id: 1,
+        scope: 'batch',
+        tier: 'critical',
+      },
+    })
+    await stateManager.applyComposite({
+      reviewCycleUpdate: {
+        id: 2,
+        reviewers: ['reviewer-c'],
+        findings: [],
+        scope: 'final',
+      },
+    })
+
+    const state = await stateManager.get()
+    expect(state?.review_cycles).toEqual([
+      {
+        id: 1,
+        reviewers: ['reviewer-a', 'reviewer-b'],
+        findings: [],
+        batch_id: 1,
+        scope: 'batch',
+        tier: 'critical',
+      },
+      {
+        id: 2,
+        reviewers: ['reviewer-c'],
+        findings: [],
+        scope: 'final',
+      },
+    ])
+  })
+
+  it('throws when applyComposite is called without an active pipeline', async () => {
+    await expect(
+      stateManager.applyComposite({ partial: { current_stage: 'build' } })
+    ).rejects.toThrow('No active pipeline. Call initialize() first.')
+    await expect(
+      stateManager.applyComposite({
+        batchUpdate: { id: 1, status: 'pending', tasks: [] },
+      })
+    ).rejects.toThrow('No active pipeline. Call initialize() first.')
+    await expect(
+      stateManager.applyComposite({
+        reviewCycleUpdate: { id: 1, reviewers: ['reviewer-a'], findings: [] },
+      })
+    ).rejects.toThrow('No active pipeline. Call initialize() first.')
   })
 })
 

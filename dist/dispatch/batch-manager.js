@@ -6,43 +6,62 @@ const persistedBatchStatusMap = {
     completed: 'completed',
     error: 'error',
 };
+// Terminal batch records (completed, errored, cancelled) are kept in memory so
+// invoke_get_task_result can serve results after a batch finishes. To prevent
+// unbounded memory growth, each terminal record is evicted after this duration.
+// After eviction, BatchManager.getTaskResult returns `kind: 'batch_not_found'`,
+// which invoke_get_task_result surfaces to callers as `Batch not found: <id>`.
+// To retain a result beyond this window, save it via invoke_save_artifact
+// immediately after dispatch. See docs/troubleshooting.md for details.
+const DEFAULT_TERMINAL_RETENTION_MS = 10 * 60 * 1000;
 export class BatchManager {
     engine;
     worktreeManager;
-    stateManager;
+    defaultStateManager;
     batches = new Map();
     batchRegistrationQueue = Promise.resolve();
-    constructor(engine, worktreeManager, stateManager) {
+    evictionTimers = new Map();
+    isShutdown = false;
+    terminalRetentionMs;
+    constructor(engine, worktreeManager, defaultStateManager, options = {}) {
         this.engine = engine;
         this.worktreeManager = worktreeManager;
-        this.stateManager = stateManager;
+        this.defaultStateManager = defaultStateManager;
+        this.terminalRetentionMs = options.terminalRetentionMs ?? DEFAULT_TERMINAL_RETENTION_MS;
     }
-    async dispatchBatch(request) {
+    async dispatchBatch(request, options = {}) {
         const batchId = randomUUID().slice(0, 8);
+        const stateManager = options.stateManager ?? this.defaultStateManager;
         const agents = request.tasks.map(task => ({
             taskId: task.taskId,
             status: 'pending',
         }));
         const abortController = new AbortController();
         const record = await this.enqueueBatchRegistration(async () => {
-            const currentBatchIndex = this.stateManager
-                ? await this.getPersistedBatchIndex()
+            const currentBatchIndex = stateManager
+                ? await this.getPersistedBatchIndex(stateManager)
                 : this.batches.size;
             const nextRecord = {
                 status: { batchId, status: 'running', agents },
                 abortController,
                 batchIndex: currentBatchIndex,
+                ownerSessionId: request.sessionId ?? null,
+                tasks: request.tasks.map(task => ({
+                    taskId: task.taskId,
+                    role: task.role,
+                    subrole: task.subrole,
+                })),
             };
-            await this.addPersistedBatch(currentBatchIndex, request);
+            await this.addPersistedBatch(stateManager, currentBatchIndex, request);
             this.batches.set(batchId, nextRecord);
             return nextRecord;
         });
         // Fire and forget — run the batch asynchronously.
-        void this.runBatch(batchId, request, abortController.signal, record.batchIndex);
+        void this.runBatch(batchId, request, abortController.signal, record.batchIndex, stateManager);
         return batchId;
     }
-    async getPersistedBatchIndex() {
-        const state = await this.stateManager?.get();
+    async getPersistedBatchIndex(stateManager) {
+        const state = await stateManager?.get();
         return state ? state.batches.length : 0;
     }
     enqueueBatchRegistration(operation) {
@@ -53,6 +72,33 @@ export class BatchManager {
     getStatus(batchId) {
         const record = this.batches.get(batchId);
         return record ? record.status : null;
+    }
+    getBatchOwner(batchId) {
+        const record = this.batches.get(batchId);
+        if (!record) {
+            return { kind: 'not_found' };
+        }
+        if (record.ownerSessionId === null) {
+            return { kind: 'unowned' };
+        }
+        return { kind: 'owned', sessionId: record.ownerSessionId };
+    }
+    getTaskResult(batchId, taskId) {
+        const record = this.batches.get(batchId);
+        if (!record) {
+            return { kind: 'batch_not_found' };
+        }
+        const agent = record.status.agents.find(candidate => candidate.taskId === taskId);
+        if (!agent) {
+            return { kind: 'task_not_found' };
+        }
+        if (!this.isTerminalAgentStatus(agent.status)) {
+            return { kind: 'not_terminal', status: agent.status };
+        }
+        if (!agent.result) {
+            return { kind: 'no_result' };
+        }
+        return { kind: 'ok', result: agent.result };
     }
     async waitForStatus(batchId, waitSeconds) {
         const record = this.batches.get(batchId);
@@ -81,14 +127,24 @@ export class BatchManager {
         const record = this.batches.get(batchId);
         if (!record)
             return;
+        if (this.isTerminalBatchStatus(record.status.status))
+            return;
+        this.clearEvictionTimer(batchId);
         record.abortController.abort();
         record.status.status = 'cancelled';
         for (const agent of record.status.agents) {
-            if (agent.status === 'pending' || agent.status === 'dispatched' || agent.status === 'running') {
+            if (!this.isTerminalAgentStatus(agent.status)) {
                 agent.status = 'error';
+                agent.result = this.createCancelledResult(record, agent.taskId);
             }
         }
-        this.stripRawOutput(record.status.agents);
+        this.scheduleTerminalEviction(batchId);
+    }
+    shutdown() {
+        this.isShutdown = true;
+        for (const batchId of this.evictionTimers.keys()) {
+            this.clearEvictionTimer(batchId);
+        }
     }
     isTerminalBatchStatus(status) {
         return status === 'completed' || status === 'error' || status === 'cancelled';
@@ -108,10 +164,10 @@ export class BatchManager {
     toPersistedBatchStatus(status) {
         return persistedBatchStatusMap[status];
     }
-    async addPersistedBatch(batchIndex, request) {
-        if (!this.stateManager)
+    async addPersistedBatch(stateManager, batchIndex, request) {
+        if (!stateManager)
             return;
-        await this.stateManager.addBatch({
+        await stateManager.addBatch({
             id: batchIndex,
             status: this.toPersistedBatchStatus('running'),
             tasks: request.tasks.map(task => {
@@ -124,21 +180,21 @@ export class BatchManager {
             }),
         });
     }
-    async persistTaskUpdate(batchIndex, taskId, updates) {
-        if (!this.stateManager)
+    async persistTaskUpdate(stateManager, batchIndex, taskId, updates) {
+        if (!stateManager)
             return;
         try {
-            await this.stateManager.updateTask(batchIndex, taskId, updates);
+            await stateManager.updateTask(batchIndex, taskId, updates);
         }
         catch {
             // Non-critical — don't fail dispatch if state persistence fails
         }
     }
-    async persistBatchStatus(batchIndex, status) {
-        if (!this.stateManager || status === 'cancelled')
+    async persistBatchStatus(stateManager, batchIndex, status) {
+        if (!stateManager || status === 'cancelled')
             return;
         try {
-            await this.stateManager.updateBatch(batchIndex, {
+            await stateManager.updateBatch(batchIndex, {
                 status: this.toPersistedBatchStatus(status),
             });
         }
@@ -146,7 +202,7 @@ export class BatchManager {
             // Non-critical — don't fail dispatch if state persistence fails
         }
     }
-    async updateBatchStatus(record) {
+    async updateBatchStatus(record, stateManager) {
         if (record.status.status === 'cancelled')
             return;
         const nextStatus = this.computeBatchStatus(record.status.agents);
@@ -154,12 +210,53 @@ export class BatchManager {
             return;
         record.status.status = nextStatus;
         if (this.isTerminalBatchStatus(nextStatus)) {
-            this.stripRawOutput(record.status.agents);
+            this.scheduleTerminalEviction(record.status.batchId);
         }
-        await this.persistBatchStatus(record.batchIndex, nextStatus);
+        await this.persistBatchStatus(stateManager, record.batchIndex, nextStatus);
     }
-    async persistTaskStatus(batchIndex, taskId, status, result) {
-        await this.persistTaskUpdate(batchIndex, taskId, {
+    createCancelledResult(record, taskId) {
+        const task = record.tasks.find(candidate => candidate.taskId === taskId);
+        return {
+            role: task?.role ?? 'unknown',
+            subrole: task?.subrole ?? 'unknown',
+            provider: 'unknown',
+            model: 'unknown',
+            status: 'error',
+            output: {
+                summary: 'Cancelled',
+                raw: '',
+            },
+            duration: 0,
+        };
+    }
+    clearEvictionTimer(batchId) {
+        const timer = this.evictionTimers.get(batchId);
+        if (!timer)
+            return;
+        clearTimeout(timer);
+        this.evictionTimers.delete(batchId);
+    }
+    scheduleTerminalEviction(batchId) {
+        const record = this.batches.get(batchId);
+        if (this.isShutdown || !record || !this.isTerminalBatchStatus(record.status.status)) {
+            return;
+        }
+        this.clearEvictionTimer(batchId);
+        // BUG-003 made raw output survive past terminal status so invoke_get_task_result can serve it.
+        // To prevent unbounded memory growth, terminal batch records are now evicted after
+        // terminalRetentionMs (default 10 minutes). After eviction, invoke_get_task_result will
+        // return kind: batch_not_found with a clear error.
+        const timer = setTimeout(() => {
+            this.batches.delete(batchId);
+            this.evictionTimers.delete(batchId);
+        }, this.terminalRetentionMs);
+        if (typeof timer === 'object' && timer !== null && 'unref' in timer && typeof timer.unref === 'function') {
+            timer.unref();
+        }
+        this.evictionTimers.set(batchId, timer);
+    }
+    async persistTaskStatus(stateManager, batchIndex, taskId, status, result) {
+        await this.persistTaskUpdate(stateManager, batchIndex, taskId, {
             status,
             result_summary: result?.output.summary,
             result_status: result?.status,
@@ -227,7 +324,7 @@ export class BatchManager {
         }
         await Promise.allSettled(tasks.map(task => runTask(task)));
     }
-    async runBatch(batchId, request, signal, batchIndex) {
+    async runBatch(batchId, request, signal, batchIndex, stateManager) {
         const record = this.batches.get(batchId);
         const maxParallel = request.maxParallel ?? 0; // 0 = unlimited
         const scheduledTasks = request.tasks.map((task, index) => ({
@@ -241,8 +338,8 @@ export class BatchManager {
             const agentStatus = record.status.agents[task.index];
             agentStatus.status = status;
             agentStatus.result = cloneAgentResult(result);
-            await this.persistTaskStatus(batchIndex, task.taskId, status, result);
-            await this.updateBatchStatus(record);
+            await this.persistTaskStatus(stateManager, batchIndex, task.taskId, status, result);
+            await this.updateBatchStatus(record, stateManager);
         };
         const runTask = async (task) => {
             if (signal.aborted)
@@ -274,14 +371,14 @@ export class BatchManager {
                 let workDir;
                 if (request.createWorktrees) {
                     agentStatus.status = 'dispatched';
-                    await this.persistTaskStatus(batchIndex, task.taskId, 'dispatched');
+                    await this.persistTaskStatus(stateManager, batchIndex, task.taskId, 'dispatched');
                     if (signal.aborted)
                         return;
                     const wt = await this.worktreeManager.create(task.taskId);
                     if (signal.aborted)
                         return;
                     workDir = wt.worktreePath;
-                    await this.persistTaskUpdate(batchIndex, task.taskId, {
+                    await this.persistTaskUpdate(stateManager, batchIndex, task.taskId, {
                         worktree_path: wt.worktreePath,
                         worktree_branch: wt.branch,
                     });
@@ -289,7 +386,7 @@ export class BatchManager {
                 if (signal.aborted)
                     return;
                 agentStatus.status = 'running';
-                await this.persistTaskStatus(batchIndex, task.taskId, 'running');
+                await this.persistTaskStatus(stateManager, batchIndex, task.taskId, 'running');
                 if (signal.aborted)
                     return;
                 const result = await this.engine.dispatch({
@@ -297,6 +394,8 @@ export class BatchManager {
                     subrole: task.subrole,
                     taskContext: task.taskContext,
                     workDir,
+                    sessionId: request.sessionId,
+                    boundPipelineId: request.boundPipelineId,
                 });
                 if (signal.aborted)
                     return;
@@ -341,21 +440,14 @@ export class BatchManager {
                 await this.runLayer(scheduledTasks, maxParallel, signal, runTask);
             }
             if (!signal.aborted) {
-                await this.updateBatchStatus(record);
+                await this.updateBatchStatus(record, stateManager);
             }
         }
         catch {
             if (record.status.status !== 'cancelled') {
                 record.status.status = 'error';
-                this.stripRawOutput(record.status.agents);
-                await this.persistBatchStatus(batchIndex, 'error');
-            }
-        }
-    }
-    stripRawOutput(agents) {
-        for (const agent of agents) {
-            if (agent.result) {
-                agent.result.output.raw = undefined;
+                this.scheduleTerminalEviction(batchId);
+                await this.persistBatchStatus(stateManager, batchIndex, 'error');
             }
         }
     }

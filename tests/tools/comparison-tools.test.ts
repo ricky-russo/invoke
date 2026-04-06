@@ -60,10 +60,16 @@ describe('registerComparisonTools', () => {
     await writeFile(path.join(sessionDir, 'state.json'), JSON.stringify(state, null, 2) + '\n')
   }
 
-  async function writeSessionMetrics(sessionId: string, metrics: DispatchMetric[]): Promise<void> {
+  async function writeSessionStateRaw(sessionId: string, state: Record<string, unknown>): Promise<void> {
     const sessionDir = path.join(projectDir, '.invoke', 'sessions', sessionId)
     await mkdir(sessionDir, { recursive: true })
-    await writeFile(path.join(sessionDir, 'metrics.json'), JSON.stringify(metrics, null, 2) + '\n')
+    await writeFile(path.join(sessionDir, 'state.json'), JSON.stringify(state, null, 2) + '\n')
+  }
+
+  async function writeRootMetrics(metrics: DispatchMetric[]): Promise<void> {
+    const invokeDir = path.join(projectDir, '.invoke')
+    await mkdir(invokeDir, { recursive: true })
+    await writeFile(path.join(invokeDir, 'metrics.json'), JSON.stringify(metrics, null, 2) + '\n')
   }
 
   beforeEach(async () => {
@@ -88,7 +94,7 @@ describe('registerComparisonTools', () => {
   it('returns a markdown comparison table for two or more sessions', async () => {
     await writeSessionState('session-a', createState({ pipeline_id: 'pipeline-a' }))
     await writeSessionState('session-b', createState({ pipeline_id: 'pipeline-b' }))
-    await writeSessionMetrics('session-a', [
+    await writeRootMetrics([
       {
         pipeline_id: 'pipeline-a',
         stage: 'build',
@@ -103,8 +109,6 @@ describe('registerComparisonTools', () => {
         started_at: '2026-04-04T12:00:00.000Z',
         estimated_cost_usd: 0.05,
       },
-    ])
-    await writeSessionMetrics('session-b', [
       {
         pipeline_id: 'pipeline-b',
         stage: 'build',
@@ -159,5 +163,59 @@ describe('registerComparisonTools', () => {
 
     expect(result.isError).toBe(true)
     expect(result.content[0].text).toBe("Comparison error: Session 'missing-session' does not exist")
+  })
+
+  it('treats sessions without a bound pipeline_id as having no metrics', async () => {
+    await writeSessionStateRaw('session-a', {
+      started: '2026-04-01T08:00:00.000Z',
+      last_updated: '2026-04-05T09:00:00.000Z',
+      current_stage: 'build',
+      batches: [],
+      review_cycles: [],
+    })
+    await writeSessionState('session-b', createState({ pipeline_id: 'pipeline-b' }))
+    await writeRootMetrics([
+      {
+        pipeline_id: null,
+        stage: 'build',
+        role: 'builder',
+        subrole: 'default',
+        provider: 'claude',
+        model: 'opus-4.6',
+        effort: 'medium',
+        prompt_size_chars: 999,
+        duration_ms: 999,
+        status: 'success',
+        started_at: '2026-04-04T12:00:00.000Z',
+      },
+      {
+        pipeline_id: 'pipeline-b',
+        stage: 'build',
+        role: 'builder',
+        subrole: 'default',
+        provider: 'codex',
+        model: 'gpt-5',
+        effort: 'high',
+        prompt_size_chars: 100,
+        duration_ms: 200,
+        status: 'success',
+        started_at: '2026-04-04T12:01:00.000Z',
+      },
+    ])
+
+    const result = await getTool('invoke_compare_sessions').handler({
+      session_ids: ['session-a', 'session-b'],
+    })
+
+    expect(result.isError).toBeUndefined()
+    expect(result.content[0].text).toBe(
+      [
+        '| Session | Dispatches | Success Rate | Duration | Prompt Chars | Est. Cost |',
+        '| --- | ---: | ---: | ---: | ---: | ---: |',
+        '| session-a | 0 | 0.0% | 0 | 0 | 0 |',
+        '| session-b | 1 | 100.0% | 200 | 100 | 0 |',
+        '| Delta | 1 (N/A) | 100.0 pts (N/A) | 200 (N/A) | 100 (N/A) | 0 (0.0%) |',
+      ].join('\n')
+    )
   })
 })

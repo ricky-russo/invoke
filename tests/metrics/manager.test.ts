@@ -4,7 +4,6 @@ import { mkdir, mkdtemp, readFile, readdir, rm } from 'fs/promises'
 import os from 'os'
 import path from 'path'
 import { MetricsManager } from '../../src/metrics/manager.js'
-import { StateManager } from '../../src/tools/state.js'
 import type { DispatchMetric, InvokeConfig } from '../../src/types.js'
 
 function createMetric(overrides: Partial<DispatchMetric> = {}): DispatchMetric {
@@ -50,8 +49,6 @@ describe('MetricsManager', () => {
     metricsPath = path.join(testDir, '.invoke', 'metrics.json')
 
     await mkdir(path.join(testDir, '.invoke'), { recursive: true })
-    const stateManager = new StateManager(testDir)
-    await stateManager.initialize('pipeline-123')
   })
 
   afterEach(async () => {
@@ -93,14 +90,12 @@ describe('MetricsManager', () => {
     expect(writtenMetrics).toEqual([metric])
 
     const reloadedManager = new MetricsManager(testDir)
-    await expect(reloadedManager.getCurrentPipelineMetrics()).resolves.toEqual([metric])
+    await expect(reloadedManager.getMetricsByPipelineId('pipeline-123')).resolves.toEqual([metric])
   })
 
-  it('writes metrics to the provided session directory and uses session-scoped state', async () => {
+  it('writes metrics to the provided session directory', async () => {
     const sessionDir = path.join(testDir, '.invoke', 'sessions', 'session-1')
     const sessionMetricsPath = path.join(sessionDir, 'metrics.json')
-    const sessionStateManager = new StateManager(testDir, sessionDir)
-    await sessionStateManager.initialize('session-pipeline-456')
 
     const manager = new MetricsManager(testDir, sessionDir)
     const metric = createMetric({
@@ -115,22 +110,51 @@ describe('MetricsManager', () => {
     expect(existsSync(metricsPath)).toBe(false)
 
     const reloadedManager = new MetricsManager(testDir, sessionDir)
-    await expect(reloadedManager.getCurrentPipelineMetrics()).resolves.toEqual([metric])
+    await expect(reloadedManager.getMetricsByPipelineId('session-pipeline-456')).resolves.toEqual([
+      metric,
+    ])
   })
 
-  it('filters current pipeline metrics by stage', async () => {
+  it('filters metrics by pipeline id and stage and does not match legacy null-bucket entries', async () => {
     const manager = new MetricsManager(testDir)
 
     manager.record(createMetric({ stage: 'build', started_at: '2026-04-04T12:00:00.000Z' }))
     manager.record(createMetric({ stage: 'review', started_at: '2026-04-04T12:01:00.000Z' }))
     manager.record(createMetric({ pipeline_id: 'pipeline-999', stage: 'build', started_at: '2026-04-04T12:02:00.000Z' }))
+    manager.record(createMetric({ pipeline_id: null, stage: 'build', started_at: '2026-04-04T12:03:00.000Z' }))
 
-    await waitForMetricsCount(3)
+    await waitForMetricsCount(4)
 
-    await expect(manager.getCurrentPipelineMetrics()).resolves.toHaveLength(2)
-    await expect(manager.getCurrentPipelineMetrics({ stage: 'review' })).resolves.toEqual([
+    await expect(manager.getMetricsByPipelineId('pipeline-123')).resolves.toHaveLength(2)
+    await expect(manager.getMetricsByPipelineId('pipeline-123', { stage: 'review' })).resolves.toEqual([
       createMetric({ stage: 'review', started_at: '2026-04-04T12:01:00.000Z' }),
     ])
+    await expect(manager.getMetricsByPipelineId(null)).resolves.toEqual([])
+    await expect(manager.getMetricsByPipelineId('pipeline-foo')).resolves.toEqual([])
+  })
+
+  it('returns empty summaries and limit status for null pipeline ids', async () => {
+    const manager = new MetricsManager(testDir)
+
+    manager.record(createMetric({ started_at: '2026-04-04T12:00:00.000Z' }))
+    manager.record(createMetric({ pipeline_id: null, started_at: '2026-04-04T12:01:00.000Z' }))
+
+    await waitForMetricsCount(2)
+
+    await expect(manager.getSummaryByPipelineId(null)).resolves.toEqual({
+      total_dispatches: 0,
+      total_prompt_chars: 0,
+      total_duration_ms: 0,
+      total_estimated_cost_usd: 0,
+      by_stage: {},
+      by_provider_model: {},
+    })
+
+    await expect(manager.getLimitStatus(createConfig(2), null)).resolves.toEqual({
+      dispatches_used: 0,
+      max_dispatches: 2,
+      at_limit: false,
+    })
   })
 
   it('computes summary totals and breakdowns', async () => {
@@ -180,7 +204,7 @@ describe('MetricsManager', () => {
 
     await waitForMetricsCount(4)
 
-    await expect(manager.getSummary()).resolves.toEqual({
+    await expect(manager.getSummaryByPipelineId('pipeline-123')).resolves.toEqual({
       total_dispatches: 3,
       total_prompt_chars: 300,
       total_duration_ms: 900,
@@ -205,7 +229,7 @@ describe('MetricsManager', () => {
       },
     })
 
-    await expect(manager.getSummary({ stage: 'build' })).resolves.toEqual({
+    await expect(manager.getSummaryByPipelineId('pipeline-123', { stage: 'build' })).resolves.toEqual({
       total_dispatches: 2,
       total_prompt_chars: 250,
       total_duration_ms: 500,
@@ -228,6 +252,109 @@ describe('MetricsManager', () => {
         },
       },
     })
+  })
+
+  it('summarizes requested pipeline ids in bulk and supports direct summarization', async () => {
+    const manager = new MetricsManager(testDir)
+
+    manager.record(
+      createMetric({
+        pipeline_id: 'pipeline-a',
+        stage: 'build',
+        prompt_size_chars: 90,
+        duration_ms: 120,
+        estimated_cost_usd: 0.03,
+        started_at: '2026-04-04T12:00:00.000Z',
+      })
+    )
+    manager.record(
+      createMetric({
+        pipeline_id: 'pipeline-a',
+        stage: 'review',
+        provider: 'codex',
+        model: 'gpt-5',
+        prompt_size_chars: 110,
+        duration_ms: 180,
+        estimated_cost_usd: 0.04,
+        started_at: '2026-04-04T12:01:00.000Z',
+      })
+    )
+    manager.record(
+      createMetric({
+        pipeline_id: 'pipeline-b',
+        stage: 'build',
+        prompt_size_chars: 50,
+        duration_ms: 75,
+        estimated_cost_usd: 0.02,
+        started_at: '2026-04-04T12:02:00.000Z',
+      })
+    )
+    manager.record(
+      createMetric({
+        pipeline_id: null,
+        stage: 'build',
+        prompt_size_chars: 999,
+        duration_ms: 999,
+        estimated_cost_usd: 0.99,
+        started_at: '2026-04-04T12:03:00.000Z',
+      })
+    )
+
+    await waitForMetricsCount(4)
+
+    const summaries = await manager.getSummariesByPipelineIds(['pipeline-a', 'pipeline-b', 'missing'])
+    const pipelineAMetrics = await manager.getMetricsByPipelineId('pipeline-a')
+
+    expect(summaries.get('pipeline-a')).toEqual({
+      total_dispatches: 2,
+      total_prompt_chars: 200,
+      total_duration_ms: 300,
+      total_estimated_cost_usd: 0.07,
+      by_stage: {
+        build: { dispatches: 1, duration_ms: 120, prompt_chars: 90, estimated_cost_usd: 0.03 },
+        review: { dispatches: 1, duration_ms: 180, prompt_chars: 110, estimated_cost_usd: 0.04 },
+      },
+      by_provider_model: {
+        'claude:opus-4.6': {
+          dispatches: 1,
+          duration_ms: 120,
+          prompt_chars: 90,
+          estimated_cost_usd: 0.03,
+        },
+        'codex:gpt-5': {
+          dispatches: 1,
+          duration_ms: 180,
+          prompt_chars: 110,
+          estimated_cost_usd: 0.04,
+        },
+      },
+    })
+    expect(summaries.get('pipeline-b')).toEqual({
+      total_dispatches: 1,
+      total_prompt_chars: 50,
+      total_duration_ms: 75,
+      total_estimated_cost_usd: 0.02,
+      by_stage: {
+        build: { dispatches: 1, duration_ms: 75, prompt_chars: 50, estimated_cost_usd: 0.02 },
+      },
+      by_provider_model: {
+        'claude:opus-4.6': {
+          dispatches: 1,
+          duration_ms: 75,
+          prompt_chars: 50,
+          estimated_cost_usd: 0.02,
+        },
+      },
+    })
+    expect(summaries.get('missing')).toEqual({
+      total_dispatches: 0,
+      total_prompt_chars: 0,
+      total_duration_ms: 0,
+      total_estimated_cost_usd: 0,
+      by_stage: {},
+      by_provider_model: {},
+    })
+    expect(manager.summarize(pipelineAMetrics)).toEqual(summaries.get('pipeline-a'))
   })
 
   it('serializes concurrent record calls without corrupting the metrics file', async () => {
@@ -360,13 +487,13 @@ describe('MetricsManager', () => {
 
     await waitForMetricsCount(3)
 
-    await expect(manager.getLimitStatus(createConfig(2))).resolves.toEqual({
+    await expect(manager.getLimitStatus(createConfig(2), 'pipeline-123')).resolves.toEqual({
       dispatches_used: 2,
       max_dispatches: 2,
       at_limit: true,
     })
 
-    await expect(manager.getLimitStatus(createConfig(3))).resolves.toEqual({
+    await expect(manager.getLimitStatus(createConfig(3), 'pipeline-123')).resolves.toEqual({
       dispatches_used: 2,
       max_dispatches: 3,
       at_limit: false,

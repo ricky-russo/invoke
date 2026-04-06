@@ -197,6 +197,21 @@ Any worktree with a path under your `work_branch_prefix` (default: `invoke/work`
 
 ---
 
+## Completed batch results expire after ~10 minutes
+
+The MCP server retains terminal batch results in memory so the orchestrator
+can call `invoke_get_task_result` after a task finishes. To prevent unbounded
+memory growth, terminal batches are evicted ~10 minutes after they reach a
+terminal state (configurable via the `terminalRetentionMs` constructor option
+on BatchManager, currently not exposed via pipeline.yaml).
+
+If you call `invoke_get_task_result` more than 10 minutes after a batch
+finishes, you'll see `Batch not found: <id>`. To avoid this, save the result
+to an artifact via `invoke_save_artifact` immediately after each dispatch you
+care about.
+
+---
+
 ## Metrics and cost tracking
 
 ### Where metrics are stored

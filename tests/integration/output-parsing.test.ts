@@ -93,7 +93,6 @@ The project uses a layered architecture with Express.js.
       })
 
       expect(result.status).toBe('success')
-      expect(result.output.report).toBe(output)
       expect(result.output.findings).toBeUndefined()
     })
   })

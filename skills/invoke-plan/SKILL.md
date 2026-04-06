@@ -35,13 +35,17 @@ Wait for user selection, then dispatch selected planners using `invoke_dispatch_
 - `create_worktrees: false`
 - `task_context: { task_description: "<full spec content>", research_context: "<research summaries from step 1 if available>" }`
 
-Call `invoke_get_batch_status` with the batch ID — it will wait up to 60 seconds for a status change before returning. Keep calling until complete. Do NOT use `sleep` between calls.
+> **Session ownership:** Always pass `session_id: <pipeline_id>` on `invoke_get_batch_status` and `invoke_get_task_result` calls. The MCP server enforces session ownership on these tools to prevent cross-session data leakage.
+
+Call `invoke_get_batch_status` with `{ batch_id, session_id: <pipeline_id> }` — it will wait up to 60 seconds for a status change before returning. The response contains `{ batchId, status, agents: [{ taskId, status }] }` — status information only, no result data. Keep calling until all planner tasks are terminal. Do NOT use `sleep` between calls.
 
 **CRITICAL: Do NOT proceed to step 3 while any dispatched agents are still running.** You must wait for all agents to complete or fail. If agents have been running for more than 5 minutes, use `AskUserQuestion` to ask the user whether to keep waiting, proceed with partial results, or cancel.
 
+After `invoke_get_batch_status` shows the batch is `completed` or `partial`, call `invoke_get_task_result({ batch_id, task_id, session_id: <pipeline_id> })` for each terminal planner task to fetch its full output. Use `result.output.raw` for the full plan, or `result.output.summary` for a quick gist. **Never call `invoke_get_task_result` inside the polling loop for tasks still `pending`, `dispatched`, or `running` — the tool errors for non-terminal tasks.**
+
 ### 3. Present Plans
 
-**Print the full plan comparison as text output first** so the user can read it. Use the `📐 Plan Comparison` format from `invoke-messaging`.
+**Print the full plan comparison as text output first** so the user can read it. Build the comparison from the planner outputs fetched via `invoke_get_task_result`. Use the `📐 Plan Comparison` format from `invoke-messaging`.
 
 For each plan, show:
 - **Approach summary** — 2-3 sentences describing the overall strategy and how it solves the problem

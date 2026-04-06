@@ -1,7 +1,63 @@
 import { z } from 'zod';
 import { loadConfig } from '../config.js';
 import { StateManager } from './state.js';
+const TaskSchema = z.object({
+    id: z.string(),
+    status: z.enum(['pending', 'dispatched', 'running', 'completed', 'error', 'timeout', 'conflict']),
+    worktree_path: z.string().optional(),
+    worktree_branch: z.string().optional(),
+    conflict_attempts: z.number().optional(),
+    result_summary: z.string().optional(),
+    result_status: z.enum(['success', 'error', 'timeout']).optional(),
+    merged: z.boolean().optional(),
+});
+const BatchSchema = z.object({
+    id: z.number(),
+    status: z.enum(['pending', 'in_progress', 'partial', 'completed', 'error']),
+    merged_tasks: z.array(z.string()).optional(),
+    tasks: z.array(TaskSchema),
+});
+const ReviewCycleSchema = z.object({
+    id: z.number(),
+    reviewers: z.array(z.string()),
+    findings: z.array(z.any()),
+    batch_id: z.number().optional(),
+    scope: z.enum(['batch', 'final']).optional(),
+    tier: z.string().optional(),
+    triaged: z.object({
+        accepted: z.array(z.any()),
+        dismissed: z.array(z.any()),
+        deferred: z.array(z.any()).optional(),
+    }).optional(),
+});
+const SetStateInputSchema = z.object({
+    session_id: z.string().optional(),
+    pipeline_id: z.string().optional(),
+    current_stage: z.enum(['scope', 'plan', 'orchestrate', 'build', 'review', 'complete']).optional(),
+    work_branch: z.string().optional(),
+    base_branch: z.string().optional(),
+    work_branch_path: z.string().optional(),
+    spec: z.string().optional(),
+    plan: z.string().optional(),
+    tasks: z.string().optional(),
+    strategy: z.string().optional(),
+    batches: z.array(BatchSchema).optional(),
+    batch_update: BatchSchema.optional(),
+    review_cycles: z.array(ReviewCycleSchema).optional(),
+    review_cycle_update: ReviewCycleSchema.optional(),
+    bug_ids: z.array(z.string().regex(/^BUG-\d+$/, 'bug_ids must be BUG-NNN format')).optional(),
+});
 export function registerStateTools(server, stateManager, projectDir, sessionManager) {
+    const scopedStateManagers = new Map();
+    function getScopedStateManager(sessionDir) {
+        const existing = scopedStateManagers.get(sessionDir);
+        if (existing) {
+            return existing;
+        }
+        const scopedManager = new StateManager(projectDir, sessionDir);
+        scopedStateManagers.set(sessionDir, scopedManager);
+        return scopedManager;
+    }
     function resolveStateManager(sessionId) {
         if (!sessionId) {
             return stateManager;
@@ -9,7 +65,7 @@ export function registerStateTools(server, stateManager, projectDir, sessionMana
         if (!sessionManager.exists(sessionId)) {
             return stateManager;
         }
-        return new StateManager(projectDir, sessionManager.resolve(sessionId));
+        return getScopedStateManager(sessionManager.resolve(sessionId));
     }
     async function resolveWritableStateManager(sessionId) {
         if (!sessionId) {
@@ -18,7 +74,7 @@ export function registerStateTools(server, stateManager, projectDir, sessionMana
         const sessionDir = sessionManager.exists(sessionId)
             ? sessionManager.resolve(sessionId)
             : await sessionManager.create(sessionId);
-        return new StateManager(projectDir, sessionDir);
+        return getScopedStateManager(sessionDir);
     }
     server.registerTool('invoke_get_state', {
         description: 'Get the current pipeline state.',
@@ -51,47 +107,7 @@ export function registerStateTools(server, stateManager, projectDir, sessionMana
     });
     server.registerTool('invoke_set_state', {
         description: 'Update pipeline state fields. Pass only the fields to update. Supports nested batches and review_cycles.',
-        inputSchema: z.object({
-            session_id: z.string().optional(),
-            pipeline_id: z.string().optional(),
-            current_stage: z.enum(['scope', 'plan', 'orchestrate', 'build', 'review', 'complete']).optional(),
-            work_branch: z.string().optional(),
-            base_branch: z.string().optional(),
-            work_branch_path: z.string().optional(),
-            spec: z.string().optional(),
-            plan: z.string().optional(),
-            tasks: z.string().optional(),
-            strategy: z.string().optional(),
-            batches: z.array(z.object({
-                id: z.number(),
-                status: z.enum(['pending', 'in_progress', 'partial', 'completed', 'error']),
-                merged_tasks: z.array(z.string()).optional(),
-                tasks: z.array(z.object({
-                    id: z.string(),
-                    status: z.enum(['pending', 'dispatched', 'running', 'completed', 'error', 'timeout', 'conflict']),
-                    worktree_path: z.string().optional(),
-                    worktree_branch: z.string().optional(),
-                    conflict_attempts: z.number().optional(),
-                    result_summary: z.string().optional(),
-                    result_status: z.enum(['success', 'error', 'timeout']).optional(),
-                    merged: z.boolean().optional(),
-                })),
-            })).optional(),
-            review_cycles: z.array(z.object({
-                id: z.number(),
-                reviewers: z.array(z.string()),
-                findings: z.array(z.any()),
-                batch_id: z.number().optional(),
-                scope: z.enum(['batch', 'final']).optional(),
-                tier: z.string().optional(),
-                triaged: z.object({
-                    accepted: z.array(z.any()),
-                    dismissed: z.array(z.any()),
-                    deferred: z.array(z.any()).optional(),
-                }).optional(),
-            })).optional(),
-            bug_ids: z.array(z.string().regex(/^BUG-\d+$/, 'bug_ids must be BUG-NNN format')).optional(),
-        }),
+        inputSchema: SetStateInputSchema,
     }, async (updates) => {
         try {
             const { session_id, ...stateUpdates } = updates;
@@ -110,7 +126,18 @@ export function registerStateTools(server, stateManager, projectDir, sessionMana
             if (!state) {
                 state = await scopedStateManager.initialize(resolvedSessionId ?? `pipeline-${Date.now()}`);
             }
-            const updated = await scopedStateManager.update(stateUpdates);
+            if (stateUpdates.batches !== undefined && stateUpdates.batch_update !== undefined) {
+                console.warn('invoke_set_state received both batches and batch_update; batch_update will be applied before batches replaces the array');
+            }
+            if (stateUpdates.review_cycles !== undefined && stateUpdates.review_cycle_update !== undefined) {
+                console.warn('invoke_set_state received both review_cycles and review_cycle_update; review_cycle_update will be applied before review_cycles replaces the array');
+            }
+            const { batch_update, review_cycle_update, ...rest } = stateUpdates;
+            const updated = await scopedStateManager.applyComposite({
+                batchUpdate: batch_update,
+                reviewCycleUpdate: review_cycle_update,
+                partial: rest,
+            });
             return {
                 content: [{ type: 'text', text: JSON.stringify(updated, null, 2) }],
             };

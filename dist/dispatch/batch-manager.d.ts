@@ -1,20 +1,52 @@
 import type { DispatchEngine } from './engine.js';
 import type { WorktreeManager } from '../worktree/manager.js';
 import type { StateManager } from '../tools/state.js';
-import type { BatchRequest, BatchStatus } from '../types.js';
+import type { BatchRequest, BatchStatus, AgentStatus, AgentResult } from '../types.js';
+interface BatchManagerOptions {
+    terminalRetentionMs?: number;
+}
+type DispatchBatchOptions = {
+    stateManager?: StateManager;
+};
+type BatchOwner = {
+    kind: 'not_found';
+} | {
+    kind: 'unowned';
+} | {
+    kind: 'owned';
+    sessionId: string;
+};
 export declare class BatchManager {
     private engine;
     private worktreeManager;
-    private stateManager?;
+    private defaultStateManager?;
     private batches;
     private batchRegistrationQueue;
-    constructor(engine: DispatchEngine, worktreeManager: WorktreeManager, stateManager?: StateManager | undefined);
-    dispatchBatch(request: BatchRequest): Promise<string>;
+    private evictionTimers;
+    private isShutdown;
+    private readonly terminalRetentionMs;
+    constructor(engine: DispatchEngine, worktreeManager: WorktreeManager, defaultStateManager?: StateManager | undefined, options?: BatchManagerOptions);
+    dispatchBatch(request: BatchRequest, options?: DispatchBatchOptions): Promise<string>;
     private getPersistedBatchIndex;
     private enqueueBatchRegistration;
     getStatus(batchId: string): BatchStatus | null;
+    getBatchOwner(batchId: string): BatchOwner;
+    getTaskResult(batchId: string, taskId: string): {
+        kind: 'batch_not_found';
+    } | {
+        kind: 'task_not_found';
+    } | {
+        kind: 'not_terminal';
+        status: AgentStatus['status'];
+    } | {
+        kind: 'no_result';
+    } | {
+        kind: 'ok';
+        result: AgentResult;
+    };
     waitForStatus(batchId: string, waitSeconds: number): Promise<BatchStatus | null>;
     cancel(batchId: string): void;
+    shutdown(): void;
     private isTerminalBatchStatus;
     private isTerminalAgentStatus;
     private computeBatchStatus;
@@ -23,10 +55,13 @@ export declare class BatchManager {
     private persistTaskUpdate;
     private persistBatchStatus;
     private updateBatchStatus;
+    private createCancelledResult;
+    private clearEvictionTimer;
+    private scheduleTerminalEviction;
     private persistTaskStatus;
     private getTaskDependencies;
     private runLayer;
     private runBatch;
-    private stripRawOutput;
 }
+export {};
 //# sourceMappingURL=batch-manager.d.ts.map

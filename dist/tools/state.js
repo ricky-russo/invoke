@@ -35,15 +35,7 @@ export class StateManager {
         });
     }
     async update(updates) {
-        return this.enqueueWrite(async () => {
-            const current = await this.get();
-            if (!current) {
-                throw new Error('No active pipeline. Call initialize() first.');
-            }
-            const updated = { ...current, ...updates, last_updated: new Date().toISOString() };
-            await this.writeAtomic(updated);
-            return updated;
-        });
+        return this.applyComposite({ partial: updates });
     }
     async addBatch(batch) {
         return this.enqueueWrite(async () => {
@@ -55,6 +47,30 @@ export class StateManager {
             current.last_updated = new Date().toISOString();
             await this.writeAtomic(current);
             return current;
+        });
+    }
+    async batchUpsert(batch) {
+        return this.applyComposite({ batchUpdate: batch });
+    }
+    async applyComposite(updates) {
+        return this.enqueueWrite(async () => {
+            const current = await this.get();
+            if (!current) {
+                throw new Error('No active pipeline. Call initialize() first.');
+            }
+            let next = { ...current };
+            if (updates.batchUpdate) {
+                this.applyBatchUpsert(next, updates.batchUpdate);
+            }
+            if (updates.reviewCycleUpdate) {
+                this.applyReviewCycleUpsert(next, updates.reviewCycleUpdate);
+            }
+            if (updates.partial) {
+                next = { ...next, ...updates.partial };
+            }
+            next.last_updated = new Date().toISOString();
+            await this.writeAtomic(next);
+            return next;
         });
     }
     async updateBatch(batchIndex, updates) {
@@ -91,6 +107,9 @@ export class StateManager {
             return current;
         });
     }
+    async reviewCycleUpsert(cycle) {
+        return this.applyComposite({ reviewCycleUpdate: cycle });
+    }
     async getReviewCycleCount(batchId) {
         const state = await this.get();
         if (!state)
@@ -121,6 +140,31 @@ export class StateManager {
         const content = JSON.stringify(state, null, 2) + '\n';
         await writeFile(this.tmpPath, content);
         await rename(this.tmpPath, this.statePath);
+    }
+    applyBatchUpsert(state, batch) {
+        const batches = [...state.batches];
+        const existingIndex = batches.findIndex(existingBatch => existingBatch.id === batch.id);
+        if (existingIndex >= 0) {
+            batches[existingIndex] = { ...batches[existingIndex], ...batch };
+        }
+        else {
+            batches.push(batch);
+        }
+        state.batches = batches;
+    }
+    applyReviewCycleUpsert(state, cycle) {
+        const reviewCycles = [...state.review_cycles];
+        const existingIndex = reviewCycles.findIndex(existingCycle => existingCycle.id === cycle.id);
+        if (existingIndex >= 0) {
+            reviewCycles[existingIndex] = {
+                ...reviewCycles[existingIndex],
+                ...cycle,
+            };
+        }
+        else {
+            reviewCycles.push(cycle);
+        }
+        state.review_cycles = reviewCycles;
     }
 }
 //# sourceMappingURL=state.js.map

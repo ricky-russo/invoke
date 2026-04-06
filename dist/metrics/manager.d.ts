@@ -3,9 +3,9 @@ export declare class MetricsManager {
     private readonly projectDir;
     private readonly metricsPath;
     private readonly tmpPath;
-    private readonly stateManager;
     private readonly beforeExitHandler;
     private metrics;
+    private metricsByPipelineId;
     private loaded;
     private loadPromise;
     private writeChain;
@@ -14,13 +14,15 @@ export declare class MetricsManager {
     private beforeExitRegistered;
     constructor(projectDir: string, sessionDir?: string);
     record(metric: DispatchMetric): void;
-    getCurrentPipelineMetrics(opts?: {
+    getMetricsByPipelineId(pipelineId: string | null, opts?: {
         stage?: string;
     }): Promise<DispatchMetric[]>;
-    getSummary(opts?: {
+    getSummaryByPipelineId(pipelineId: string | null, opts?: {
         stage?: string;
     }): Promise<MetricsSummary>;
-    getLimitStatus(config: InvokeConfig): Promise<{
+    getSummariesByPipelineIds(pipelineIds: string[]): Promise<Map<string, MetricsSummary>>;
+    summarize(metrics: DispatchMetric[]): MetricsSummary;
+    getLimitStatus(config: InvokeConfig, pipelineId: string | null): Promise<{
         dispatches_used: number;
         max_dispatches?: number;
         at_limit: boolean;
@@ -33,5 +35,8 @@ export declare class MetricsManager {
     private writeAtomic;
     private logWriteError;
     private ensureBeforeExitHandler;
+    private indexMetric;
+    private rebuildIndex;
 }
+export declare function createEmptySummary(): MetricsSummary;
 //# sourceMappingURL=manager.d.ts.map

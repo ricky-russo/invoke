@@ -420,6 +420,10 @@ post_merge_commands:
 
 Each command is executed sequentially in a shell. If a command fails, invoke surfaces the error. Further merges are blocked until the failure is resolved.
 
+### `terminalRetentionMs` (not in pipeline.yaml)
+
+The MCP server's `BatchManager` accepts a `terminalRetentionMs` constructor option that controls how long completed, errored, and cancelled batch records are kept in memory before being evicted. The default is 10 minutes (600 000 ms). This option is not exposed via `pipeline.yaml` today. See [Completed batch results expire after ~10 minutes](./troubleshooting.md#completed-batch-results-expire-after-10-minutes) in troubleshooting for user-visible behaviour and workarounds.
+
 ---
 
 ## Presets

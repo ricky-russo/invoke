@@ -61,6 +61,8 @@ export interface DispatchRequest {
     subrole: string;
     taskContext: Record<string, string>;
     workDir?: string;
+    sessionId?: string;
+    boundPipelineId?: string | null;
 }
 export interface AgentResult {
     role: string;
@@ -71,7 +73,6 @@ export interface AgentResult {
     output: {
         summary: string;
         findings?: Finding[];
-        report?: string;
         changes?: FileChange[];
         raw?: string;
     };
@@ -129,6 +130,8 @@ export interface BatchRequest {
     tasks: BatchTask[];
     createWorktrees: boolean;
     maxParallel?: number;
+    sessionId?: string;
+    boundPipelineId?: string | null;
 }
 export interface BatchTask {
     taskId: string;

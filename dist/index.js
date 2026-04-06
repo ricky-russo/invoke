@@ -291,10 +291,10 @@ function mergeDefs(...defs) {
 function cloneDef(schema) {
   return mergeDefs(schema._zod.def);
 }
-function getElementAtPath(obj, path16) {
-  if (!path16)
+function getElementAtPath(obj, path17) {
+  if (!path17)
     return obj;
-  return path16.reduce((acc, key) => acc?.[key], obj);
+  return path17.reduce((acc, key) => acc?.[key], obj);
 }
 function promiseAllObject(promisesObj) {
   const keys = Object.keys(promisesObj);
@@ -606,11 +606,11 @@ function aborted(x, startIndex = 0) {
   }
   return false;
 }
-function prefixIssues(path16, issues) {
+function prefixIssues(path17, issues) {
   return issues.map((iss) => {
     var _a2;
     (_a2 = iss).path ?? (_a2.path = []);
-    iss.path.unshift(path16);
+    iss.path.unshift(path17);
     return iss;
   });
 }
@@ -852,7 +852,7 @@ function formatError(error48, mapper = (issue2) => issue2.message) {
 }
 function treeifyError(error48, mapper = (issue2) => issue2.message) {
   const result = { errors: [] };
-  const processError = (error49, path16 = []) => {
+  const processError = (error49, path17 = []) => {
     var _a2, _b;
     for (const issue2 of error49.issues) {
       if (issue2.code === "invalid_union" && issue2.errors.length) {
@@ -862,7 +862,7 @@ function treeifyError(error48, mapper = (issue2) => issue2.message) {
       } else if (issue2.code === "invalid_element") {
         processError({ issues: issue2.issues }, issue2.path);
       } else {
-        const fullpath = [...path16, ...issue2.path];
+        const fullpath = [...path17, ...issue2.path];
         if (fullpath.length === 0) {
           result.errors.push(mapper(issue2));
           continue;
@@ -894,8 +894,8 @@ function treeifyError(error48, mapper = (issue2) => issue2.message) {
 }
 function toDotPath(_path) {
   const segs = [];
-  const path16 = _path.map((seg) => typeof seg === "object" ? seg.key : seg);
-  for (const seg of path16) {
+  const path17 = _path.map((seg) => typeof seg === "object" ? seg.key : seg);
+  for (const seg of path17) {
     if (typeof seg === "number")
       segs.push(`[${seg}]`);
     else if (typeof seg === "symbol")
@@ -13589,13 +13589,13 @@ function resolveRef(ref, ctx) {
   if (!ref.startsWith("#")) {
     throw new Error("External $ref is not supported, only local refs (#/...) are allowed");
   }
-  const path16 = ref.slice(1).split("/").filter(Boolean);
-  if (path16.length === 0) {
+  const path17 = ref.slice(1).split("/").filter(Boolean);
+  if (path17.length === 0) {
     return ctx.rootSchema;
   }
   const defsKey = ctx.version === "draft-2020-12" ? "$defs" : "definitions";
-  if (path16[0] === defsKey) {
-    const key = path16[1];
+  if (path17[0] === defsKey) {
+    const key = path17[1];
     if (!key || !ctx.defs[key]) {
       throw new Error(`Reference not found: ${ref}`);
     }
@@ -17539,8 +17539,8 @@ var require_utils = __commonJS({
       }
       return ind;
     }
-    function removeDotSegments(path16) {
-      let input = path16;
+    function removeDotSegments(path17) {
+      let input = path17;
       const output = [];
       let nextSlash = -1;
       let len = 0;
@@ -17739,8 +17739,8 @@ var require_schemes = __commonJS({
         wsComponent.secure = void 0;
       }
       if (wsComponent.resourceName) {
-        const [path16, query] = wsComponent.resourceName.split("?");
-        wsComponent.path = path16 && path16 !== "/" ? path16 : void 0;
+        const [path17, query] = wsComponent.resourceName.split("?");
+        wsComponent.path = path17 && path17 !== "/" ? path17 : void 0;
         wsComponent.query = query;
         wsComponent.resourceName = void 0;
       }
@@ -21200,17 +21200,17 @@ var require_visit = __commonJS({
     visit.BREAK = BREAK;
     visit.SKIP = SKIP;
     visit.REMOVE = REMOVE;
-    function visit_(key, node, visitor, path16) {
-      const ctrl = callVisitor(key, node, visitor, path16);
+    function visit_(key, node, visitor, path17) {
+      const ctrl = callVisitor(key, node, visitor, path17);
       if (identity.isNode(ctrl) || identity.isPair(ctrl)) {
-        replaceNode(key, path16, ctrl);
-        return visit_(key, ctrl, visitor, path16);
+        replaceNode(key, path17, ctrl);
+        return visit_(key, ctrl, visitor, path17);
       }
       if (typeof ctrl !== "symbol") {
         if (identity.isCollection(node)) {
-          path16 = Object.freeze(path16.concat(node));
+          path17 = Object.freeze(path17.concat(node));
           for (let i = 0; i < node.items.length; ++i) {
-            const ci = visit_(i, node.items[i], visitor, path16);
+            const ci = visit_(i, node.items[i], visitor, path17);
             if (typeof ci === "number")
               i = ci - 1;
             else if (ci === BREAK)
@@ -21221,13 +21221,13 @@ var require_visit = __commonJS({
             }
           }
         } else if (identity.isPair(node)) {
-          path16 = Object.freeze(path16.concat(node));
-          const ck = visit_("key", node.key, visitor, path16);
+          path17 = Object.freeze(path17.concat(node));
+          const ck = visit_("key", node.key, visitor, path17);
           if (ck === BREAK)
             return BREAK;
           else if (ck === REMOVE)
             node.key = null;
-          const cv = visit_("value", node.value, visitor, path16);
+          const cv = visit_("value", node.value, visitor, path17);
           if (cv === BREAK)
             return BREAK;
           else if (cv === REMOVE)
@@ -21248,17 +21248,17 @@ var require_visit = __commonJS({
     visitAsync.BREAK = BREAK;
     visitAsync.SKIP = SKIP;
     visitAsync.REMOVE = REMOVE;
-    async function visitAsync_(key, node, visitor, path16) {
-      const ctrl = await callVisitor(key, node, visitor, path16);
+    async function visitAsync_(key, node, visitor, path17) {
+      const ctrl = await callVisitor(key, node, visitor, path17);
       if (identity.isNode(ctrl) || identity.isPair(ctrl)) {
-        replaceNode(key, path16, ctrl);
-        return visitAsync_(key, ctrl, visitor, path16);
+        replaceNode(key, path17, ctrl);
+        return visitAsync_(key, ctrl, visitor, path17);
       }
       if (typeof ctrl !== "symbol") {
         if (identity.isCollection(node)) {
-          path16 = Object.freeze(path16.concat(node));
+          path17 = Object.freeze(path17.concat(node));
           for (let i = 0; i < node.items.length; ++i) {
-            const ci = await visitAsync_(i, node.items[i], visitor, path16);
+            const ci = await visitAsync_(i, node.items[i], visitor, path17);
             if (typeof ci === "number")
               i = ci - 1;
             else if (ci === BREAK)
@@ -21269,13 +21269,13 @@ var require_visit = __commonJS({
             }
           }
         } else if (identity.isPair(node)) {
-          path16 = Object.freeze(path16.concat(node));
-          const ck = await visitAsync_("key", node.key, visitor, path16);
+          path17 = Object.freeze(path17.concat(node));
+          const ck = await visitAsync_("key", node.key, visitor, path17);
           if (ck === BREAK)
             return BREAK;
           else if (ck === REMOVE)
             node.key = null;
-          const cv = await visitAsync_("value", node.value, visitor, path16);
+          const cv = await visitAsync_("value", node.value, visitor, path17);
           if (cv === BREAK)
             return BREAK;
           else if (cv === REMOVE)
@@ -21302,23 +21302,23 @@ var require_visit = __commonJS({
       }
       return visitor;
     }
-    function callVisitor(key, node, visitor, path16) {
+    function callVisitor(key, node, visitor, path17) {
       if (typeof visitor === "function")
-        return visitor(key, node, path16);
+        return visitor(key, node, path17);
       if (identity.isMap(node))
-        return visitor.Map?.(key, node, path16);
+        return visitor.Map?.(key, node, path17);
       if (identity.isSeq(node))
-        return visitor.Seq?.(key, node, path16);
+        return visitor.Seq?.(key, node, path17);
       if (identity.isPair(node))
-        return visitor.Pair?.(key, node, path16);
+        return visitor.Pair?.(key, node, path17);
       if (identity.isScalar(node))
-        return visitor.Scalar?.(key, node, path16);
+        return visitor.Scalar?.(key, node, path17);
       if (identity.isAlias(node))
-        return visitor.Alias?.(key, node, path16);
+        return visitor.Alias?.(key, node, path17);
       return void 0;
     }
-    function replaceNode(key, path16, node) {
-      const parent = path16[path16.length - 1];
+    function replaceNode(key, path17, node) {
+      const parent = path17[path17.length - 1];
       if (identity.isCollection(parent)) {
         parent.items[key] = node;
       } else if (identity.isPair(parent)) {
@@ -21926,10 +21926,10 @@ var require_Collection = __commonJS({
     var createNode = require_createNode();
     var identity = require_identity();
     var Node = require_Node();
-    function collectionFromPath(schema, path16, value) {
+    function collectionFromPath(schema, path17, value) {
       let v = value;
-      for (let i = path16.length - 1; i >= 0; --i) {
-        const k = path16[i];
+      for (let i = path17.length - 1; i >= 0; --i) {
+        const k = path17[i];
         if (typeof k === "number" && Number.isInteger(k) && k >= 0) {
           const a = [];
           a[k] = v;
@@ -21948,7 +21948,7 @@ var require_Collection = __commonJS({
         sourceObjects: /* @__PURE__ */ new Map()
       });
     }
-    var isEmptyPath = (path16) => path16 == null || typeof path16 === "object" && !!path16[Symbol.iterator]().next().done;
+    var isEmptyPath = (path17) => path17 == null || typeof path17 === "object" && !!path17[Symbol.iterator]().next().done;
     var Collection = class extends Node.NodeBase {
       constructor(type, schema) {
         super(type);
@@ -21978,11 +21978,11 @@ var require_Collection = __commonJS({
        * be a Pair instance or a `{ key, value }` object, which may not have a key
        * that already exists in the map.
        */
-      addIn(path16, value) {
-        if (isEmptyPath(path16))
+      addIn(path17, value) {
+        if (isEmptyPath(path17))
           this.add(value);
         else {
-          const [key, ...rest] = path16;
+          const [key, ...rest] = path17;
           const node = this.get(key, true);
           if (identity.isCollection(node))
             node.addIn(rest, value);
@@ -21996,8 +21996,8 @@ var require_Collection = __commonJS({
        * Removes a value from the collection.
        * @returns `true` if the item was found and removed.
        */
-      deleteIn(path16) {
-        const [key, ...rest] = path16;
+      deleteIn(path17) {
+        const [key, ...rest] = path17;
         if (rest.length === 0)
           return this.delete(key);
         const node = this.get(key, true);
@@ -22011,8 +22011,8 @@ var require_Collection = __commonJS({
        * scalar values from their surrounding node; to disable set `keepScalar` to
        * `true` (collections are always returned intact).
        */
-      getIn(path16, keepScalar) {
-        const [key, ...rest] = path16;
+      getIn(path17, keepScalar) {
+        const [key, ...rest] = path17;
         const node = this.get(key, true);
         if (rest.length === 0)
           return !keepScalar && identity.isScalar(node) ? node.value : node;
@@ -22030,8 +22030,8 @@ var require_Collection = __commonJS({
       /**
        * Checks if the collection includes a value with the key `key`.
        */
-      hasIn(path16) {
-        const [key, ...rest] = path16;
+      hasIn(path17) {
+        const [key, ...rest] = path17;
         if (rest.length === 0)
           return this.has(key);
         const node = this.get(key, true);
@@ -22041,8 +22041,8 @@ var require_Collection = __commonJS({
        * Sets a value in this collection. For `!!set`, `value` needs to be a
        * boolean to add/remove the item from the set.
        */
-      setIn(path16, value) {
-        const [key, ...rest] = path16;
+      setIn(path17, value) {
+        const [key, ...rest] = path17;
         if (rest.length === 0) {
           this.set(key, value);
         } else {
@@ -24554,9 +24554,9 @@ var require_Document = __commonJS({
           this.contents.add(value);
       }
       /** Adds a value to the document. */
-      addIn(path16, value) {
+      addIn(path17, value) {
         if (assertCollection(this.contents))
-          this.contents.addIn(path16, value);
+          this.contents.addIn(path17, value);
       }
       /**
        * Create a new `Alias` node, ensuring that the target `node` has the required anchor.
@@ -24631,14 +24631,14 @@ var require_Document = __commonJS({
        * Removes a value from the document.
        * @returns `true` if the item was found and removed.
        */
-      deleteIn(path16) {
-        if (Collection.isEmptyPath(path16)) {
+      deleteIn(path17) {
+        if (Collection.isEmptyPath(path17)) {
           if (this.contents == null)
             return false;
           this.contents = null;
           return true;
         }
-        return assertCollection(this.contents) ? this.contents.deleteIn(path16) : false;
+        return assertCollection(this.contents) ? this.contents.deleteIn(path17) : false;
       }
       /**
        * Returns item at `key`, or `undefined` if not found. By default unwraps
@@ -24653,10 +24653,10 @@ var require_Document = __commonJS({
        * scalar values from their surrounding node; to disable set `keepScalar` to
        * `true` (collections are always returned intact).
        */
-      getIn(path16, keepScalar) {
-        if (Collection.isEmptyPath(path16))
+      getIn(path17, keepScalar) {
+        if (Collection.isEmptyPath(path17))
           return !keepScalar && identity.isScalar(this.contents) ? this.contents.value : this.contents;
-        return identity.isCollection(this.contents) ? this.contents.getIn(path16, keepScalar) : void 0;
+        return identity.isCollection(this.contents) ? this.contents.getIn(path17, keepScalar) : void 0;
       }
       /**
        * Checks if the document includes a value with the key `key`.
@@ -24667,10 +24667,10 @@ var require_Document = __commonJS({
       /**
        * Checks if the document includes a value at `path`.
        */
-      hasIn(path16) {
-        if (Collection.isEmptyPath(path16))
+      hasIn(path17) {
+        if (Collection.isEmptyPath(path17))
           return this.contents !== void 0;
-        return identity.isCollection(this.contents) ? this.contents.hasIn(path16) : false;
+        return identity.isCollection(this.contents) ? this.contents.hasIn(path17) : false;
       }
       /**
        * Sets a value in this document. For `!!set`, `value` needs to be a
@@ -24687,13 +24687,13 @@ var require_Document = __commonJS({
        * Sets a value in this document. For `!!set`, `value` needs to be a
        * boolean to add/remove the item from the set.
        */
-      setIn(path16, value) {
-        if (Collection.isEmptyPath(path16)) {
+      setIn(path17, value) {
+        if (Collection.isEmptyPath(path17)) {
           this.contents = value;
         } else if (this.contents == null) {
-          this.contents = Collection.collectionFromPath(this.schema, Array.from(path16), value);
+          this.contents = Collection.collectionFromPath(this.schema, Array.from(path17), value);
         } else if (assertCollection(this.contents)) {
-          this.contents.setIn(path16, value);
+          this.contents.setIn(path17, value);
         }
       }
       /**
@@ -26650,9 +26650,9 @@ var require_cst_visit = __commonJS({
     visit.BREAK = BREAK;
     visit.SKIP = SKIP;
     visit.REMOVE = REMOVE;
-    visit.itemAtPath = (cst, path16) => {
+    visit.itemAtPath = (cst, path17) => {
       let item = cst;
-      for (const [field, index] of path16) {
+      for (const [field, index] of path17) {
         const tok = item?.[field];
         if (tok && "items" in tok) {
           item = tok.items[index];
@@ -26661,23 +26661,23 @@ var require_cst_visit = __commonJS({
       }
       return item;
     };
-    visit.parentCollection = (cst, path16) => {
-      const parent = visit.itemAtPath(cst, path16.slice(0, -1));
-      const field = path16[path16.length - 1][0];
+    visit.parentCollection = (cst, path17) => {
+      const parent = visit.itemAtPath(cst, path17.slice(0, -1));
+      const field = path17[path17.length - 1][0];
       const coll = parent?.[field];
       if (coll && "items" in coll)
         return coll;
       throw new Error("Parent collection not found");
     };
-    function _visit(path16, item, visitor) {
-      let ctrl = visitor(item, path16);
+    function _visit(path17, item, visitor) {
+      let ctrl = visitor(item, path17);
       if (typeof ctrl === "symbol")
         return ctrl;
       for (const field of ["key", "value"]) {
         const token = item[field];
         if (token && "items" in token) {
           for (let i = 0; i < token.items.length; ++i) {
-            const ci = _visit(Object.freeze(path16.concat([[field, i]])), token.items[i], visitor);
+            const ci = _visit(Object.freeze(path17.concat([[field, i]])), token.items[i], visitor);
             if (typeof ci === "number")
               i = ci - 1;
             else if (ci === BREAK)
@@ -26688,10 +26688,10 @@ var require_cst_visit = __commonJS({
             }
           }
           if (typeof ctrl === "function" && field === "key")
-            ctrl = ctrl(item, path16);
+            ctrl = ctrl(item, path17);
         }
       }
-      return typeof ctrl === "function" ? ctrl(item, path16) : ctrl;
+      return typeof ctrl === "function" ? ctrl(item, path17) : ctrl;
     }
     exports.visit = visit;
   }
@@ -29097,8 +29097,8 @@ function getErrorMap() {
 
 // node_modules/zod/v3/helpers/parseUtil.js
 var makeIssue = (params) => {
-  const { data, path: path16, errorMaps, issueData } = params;
-  const fullPath = [...path16, ...issueData.path || []];
+  const { data, path: path17, errorMaps, issueData } = params;
+  const fullPath = [...path17, ...issueData.path || []];
   const fullIssue = {
     ...issueData,
     path: fullPath
@@ -29213,11 +29213,11 @@ var errorUtil;
 
 // node_modules/zod/v3/types.js
 var ParseInputLazyPath = class {
-  constructor(parent, value, path16, key) {
+  constructor(parent, value, path17, key) {
     this._cachedPath = [];
     this.parent = parent;
     this.data = value;
-    this._path = path16;
+    this._path = path17;
     this._key = key;
   }
   get path() {
@@ -38605,7 +38605,6 @@ var ClaudeParser = class {
       output: {
         summary,
         findings: context.role === "reviewer" ? findings ?? [] : void 0,
-        report: rawOutput,
         raw: rawOutput
       }
     };
@@ -38673,7 +38672,6 @@ var CodexParser = class {
       output: {
         summary,
         findings: context.role === "reviewer" ? findings ?? [] : void 0,
-        report: rawOutput,
         raw: rawOutput
       }
     };
@@ -39129,23 +39127,31 @@ var DispatchEngine = class {
     }
     const outputSizeChars = result.output.raw?.length ?? stdout.length;
     const costEstimate = estimateCost(entry.model, prompt.length, outputSizeChars);
-    this.onDispatchComplete?.({
-      pipeline_id: request.taskContext.pipeline_id ?? null,
-      stage: request.taskContext.stage ?? "unknown",
-      role: request.role,
-      subrole: request.subrole,
-      provider: entry.provider,
-      model: entry.model,
-      effort: entry.effort,
-      prompt_size_chars: prompt.length,
-      output_size_chars: outputSizeChars,
-      duration_ms: duration3,
-      status: result.status,
-      started_at: startedAt,
-      estimated_input_tokens: costEstimate?.input_tokens,
-      estimated_output_tokens: costEstimate?.output_tokens,
-      estimated_cost_usd: costEstimate?.cost_usd
-    });
+    const isSessionBound = request.sessionId !== void 0;
+    const pipelineIdForMetric = isSessionBound ? request.boundPipelineId ?? null : request.taskContext.pipeline_id ?? null;
+    if (pipelineIdForMetric === null) {
+      if (isSessionBound) {
+        console.warn("Skipping metric record - session dispatch missing bound pipeline_id");
+      }
+    } else {
+      this.onDispatchComplete?.({
+        pipeline_id: pipelineIdForMetric,
+        stage: request.taskContext.stage ?? "unknown",
+        role: request.role,
+        subrole: request.subrole,
+        provider: entry.provider,
+        model: entry.model,
+        effort: entry.effort,
+        prompt_size_chars: prompt.length,
+        output_size_chars: outputSizeChars,
+        duration_ms: duration3,
+        status: result.status,
+        started_at: startedAt,
+        estimated_input_tokens: costEstimate?.input_tokens,
+        estimated_output_tokens: costEstimate?.output_tokens,
+        estimated_cost_usd: costEstimate?.cost_usd
+      });
+    }
     return result;
   }
   mergeResults(results, request) {
@@ -39179,9 +39185,6 @@ ${r.output.raw}`).join("\n\n")
       status: results.every((r) => r.status === "success") ? "success" : "error",
       output: {
         summary: `Combined results from ${results.length} providers`,
-        report: results.map((r) => `## ${r.provider} (${r.model})
-
-${r.output.report ?? r.output.raw}`).join("\n\n---\n\n"),
         raw: results.map((r) => `--- ${r.provider} ---
 ${r.output.raw}`).join("\n\n")
       },
@@ -39282,40 +39285,52 @@ var persistedBatchStatusMap = {
   completed: "completed",
   error: "error"
 };
+var DEFAULT_TERMINAL_RETENTION_MS = 10 * 60 * 1e3;
 var BatchManager = class {
-  constructor(engine, worktreeManager, stateManager) {
+  constructor(engine, worktreeManager, defaultStateManager, options = {}) {
     this.engine = engine;
     this.worktreeManager = worktreeManager;
-    this.stateManager = stateManager;
+    this.defaultStateManager = defaultStateManager;
+    this.terminalRetentionMs = options.terminalRetentionMs ?? DEFAULT_TERMINAL_RETENTION_MS;
   }
   engine;
   worktreeManager;
-  stateManager;
+  defaultStateManager;
   batches = /* @__PURE__ */ new Map();
   batchRegistrationQueue = Promise.resolve();
-  async dispatchBatch(request) {
+  evictionTimers = /* @__PURE__ */ new Map();
+  isShutdown = false;
+  terminalRetentionMs;
+  async dispatchBatch(request, options = {}) {
     const batchId = randomUUID().slice(0, 8);
+    const stateManager = options.stateManager ?? this.defaultStateManager;
     const agents = request.tasks.map((task) => ({
       taskId: task.taskId,
       status: "pending"
     }));
     const abortController = new AbortController();
     const record2 = await this.enqueueBatchRegistration(async () => {
-      const currentBatchIndex = this.stateManager ? await this.getPersistedBatchIndex() : this.batches.size;
+      const currentBatchIndex = stateManager ? await this.getPersistedBatchIndex(stateManager) : this.batches.size;
       const nextRecord = {
         status: { batchId, status: "running", agents },
         abortController,
-        batchIndex: currentBatchIndex
+        batchIndex: currentBatchIndex,
+        ownerSessionId: request.sessionId ?? null,
+        tasks: request.tasks.map((task) => ({
+          taskId: task.taskId,
+          role: task.role,
+          subrole: task.subrole
+        }))
       };
-      await this.addPersistedBatch(currentBatchIndex, request);
+      await this.addPersistedBatch(stateManager, currentBatchIndex, request);
       this.batches.set(batchId, nextRecord);
       return nextRecord;
     });
-    void this.runBatch(batchId, request, abortController.signal, record2.batchIndex);
+    void this.runBatch(batchId, request, abortController.signal, record2.batchIndex, stateManager);
     return batchId;
   }
-  async getPersistedBatchIndex() {
-    const state = await this.stateManager?.get();
+  async getPersistedBatchIndex(stateManager) {
+    const state = await stateManager?.get();
     return state ? state.batches.length : 0;
   }
   enqueueBatchRegistration(operation) {
@@ -39329,6 +39344,33 @@ var BatchManager = class {
   getStatus(batchId) {
     const record2 = this.batches.get(batchId);
     return record2 ? record2.status : null;
+  }
+  getBatchOwner(batchId) {
+    const record2 = this.batches.get(batchId);
+    if (!record2) {
+      return { kind: "not_found" };
+    }
+    if (record2.ownerSessionId === null) {
+      return { kind: "unowned" };
+    }
+    return { kind: "owned", sessionId: record2.ownerSessionId };
+  }
+  getTaskResult(batchId, taskId) {
+    const record2 = this.batches.get(batchId);
+    if (!record2) {
+      return { kind: "batch_not_found" };
+    }
+    const agent = record2.status.agents.find((candidate) => candidate.taskId === taskId);
+    if (!agent) {
+      return { kind: "task_not_found" };
+    }
+    if (!this.isTerminalAgentStatus(agent.status)) {
+      return { kind: "not_terminal", status: agent.status };
+    }
+    if (!agent.result) {
+      return { kind: "no_result" };
+    }
+    return { kind: "ok", result: agent.result };
   }
   async waitForStatus(batchId, waitSeconds) {
     const record2 = this.batches.get(batchId);
@@ -39347,14 +39389,23 @@ var BatchManager = class {
   cancel(batchId) {
     const record2 = this.batches.get(batchId);
     if (!record2) return;
+    if (this.isTerminalBatchStatus(record2.status.status)) return;
+    this.clearEvictionTimer(batchId);
     record2.abortController.abort();
     record2.status.status = "cancelled";
     for (const agent of record2.status.agents) {
-      if (agent.status === "pending" || agent.status === "dispatched" || agent.status === "running") {
+      if (!this.isTerminalAgentStatus(agent.status)) {
         agent.status = "error";
+        agent.result = this.createCancelledResult(record2, agent.taskId);
       }
     }
-    this.stripRawOutput(record2.status.agents);
+    this.scheduleTerminalEviction(batchId);
+  }
+  shutdown() {
+    this.isShutdown = true;
+    for (const batchId of this.evictionTimers.keys()) {
+      this.clearEvictionTimer(batchId);
+    }
   }
   isTerminalBatchStatus(status) {
     return status === "completed" || status === "error" || status === "cancelled";
@@ -39374,9 +39425,9 @@ var BatchManager = class {
   toPersistedBatchStatus(status) {
     return persistedBatchStatusMap[status];
   }
-  async addPersistedBatch(batchIndex, request) {
-    if (!this.stateManager) return;
-    await this.stateManager.addBatch({
+  async addPersistedBatch(stateManager, batchIndex, request) {
+    if (!stateManager) return;
+    await stateManager.addBatch({
       id: batchIndex,
       status: this.toPersistedBatchStatus("running"),
       tasks: request.tasks.map((task) => {
@@ -39389,34 +39440,70 @@ var BatchManager = class {
       })
     });
   }
-  async persistTaskUpdate(batchIndex, taskId, updates) {
-    if (!this.stateManager) return;
+  async persistTaskUpdate(stateManager, batchIndex, taskId, updates) {
+    if (!stateManager) return;
     try {
-      await this.stateManager.updateTask(batchIndex, taskId, updates);
+      await stateManager.updateTask(batchIndex, taskId, updates);
     } catch {
     }
   }
-  async persistBatchStatus(batchIndex, status) {
-    if (!this.stateManager || status === "cancelled") return;
+  async persistBatchStatus(stateManager, batchIndex, status) {
+    if (!stateManager || status === "cancelled") return;
     try {
-      await this.stateManager.updateBatch(batchIndex, {
+      await stateManager.updateBatch(batchIndex, {
         status: this.toPersistedBatchStatus(status)
       });
     } catch {
     }
   }
-  async updateBatchStatus(record2) {
+  async updateBatchStatus(record2, stateManager) {
     if (record2.status.status === "cancelled") return;
     const nextStatus = this.computeBatchStatus(record2.status.agents);
     if (record2.status.status === nextStatus) return;
     record2.status.status = nextStatus;
     if (this.isTerminalBatchStatus(nextStatus)) {
-      this.stripRawOutput(record2.status.agents);
+      this.scheduleTerminalEviction(record2.status.batchId);
     }
-    await this.persistBatchStatus(record2.batchIndex, nextStatus);
+    await this.persistBatchStatus(stateManager, record2.batchIndex, nextStatus);
   }
-  async persistTaskStatus(batchIndex, taskId, status, result) {
-    await this.persistTaskUpdate(batchIndex, taskId, {
+  createCancelledResult(record2, taskId) {
+    const task = record2.tasks.find((candidate) => candidate.taskId === taskId);
+    return {
+      role: task?.role ?? "unknown",
+      subrole: task?.subrole ?? "unknown",
+      provider: "unknown",
+      model: "unknown",
+      status: "error",
+      output: {
+        summary: "Cancelled",
+        raw: ""
+      },
+      duration: 0
+    };
+  }
+  clearEvictionTimer(batchId) {
+    const timer = this.evictionTimers.get(batchId);
+    if (!timer) return;
+    clearTimeout(timer);
+    this.evictionTimers.delete(batchId);
+  }
+  scheduleTerminalEviction(batchId) {
+    const record2 = this.batches.get(batchId);
+    if (this.isShutdown || !record2 || !this.isTerminalBatchStatus(record2.status.status)) {
+      return;
+    }
+    this.clearEvictionTimer(batchId);
+    const timer = setTimeout(() => {
+      this.batches.delete(batchId);
+      this.evictionTimers.delete(batchId);
+    }, this.terminalRetentionMs);
+    if (typeof timer === "object" && timer !== null && "unref" in timer && typeof timer.unref === "function") {
+      timer.unref();
+    }
+    this.evictionTimers.set(batchId, timer);
+  }
+  async persistTaskStatus(stateManager, batchIndex, taskId, status, result) {
+    await this.persistTaskUpdate(stateManager, batchIndex, taskId, {
       status,
       result_summary: result?.output.summary,
       result_status: result?.status
@@ -39478,7 +39565,7 @@ var BatchManager = class {
     }
     await Promise.allSettled(tasks.map((task) => runTask(task)));
   }
-  async runBatch(batchId, request, signal, batchIndex) {
+  async runBatch(batchId, request, signal, batchIndex, stateManager) {
     const record2 = this.batches.get(batchId);
     const maxParallel = request.maxParallel ?? 0;
     const scheduledTasks = request.tasks.map((task, index) => ({
@@ -39492,8 +39579,8 @@ var BatchManager = class {
       const agentStatus = record2.status.agents[task.index];
       agentStatus.status = status;
       agentStatus.result = cloneAgentResult(result);
-      await this.persistTaskStatus(batchIndex, task.taskId, status, result);
-      await this.updateBatchStatus(record2);
+      await this.persistTaskStatus(stateManager, batchIndex, task.taskId, status, result);
+      await this.updateBatchStatus(record2, stateManager);
     };
     const runTask = async (task) => {
       if (signal.aborted) return;
@@ -39524,25 +39611,27 @@ var BatchManager = class {
         let workDir;
         if (request.createWorktrees) {
           agentStatus.status = "dispatched";
-          await this.persistTaskStatus(batchIndex, task.taskId, "dispatched");
+          await this.persistTaskStatus(stateManager, batchIndex, task.taskId, "dispatched");
           if (signal.aborted) return;
           const wt = await this.worktreeManager.create(task.taskId);
           if (signal.aborted) return;
           workDir = wt.worktreePath;
-          await this.persistTaskUpdate(batchIndex, task.taskId, {
+          await this.persistTaskUpdate(stateManager, batchIndex, task.taskId, {
             worktree_path: wt.worktreePath,
             worktree_branch: wt.branch
           });
         }
         if (signal.aborted) return;
         agentStatus.status = "running";
-        await this.persistTaskStatus(batchIndex, task.taskId, "running");
+        await this.persistTaskStatus(stateManager, batchIndex, task.taskId, "running");
         if (signal.aborted) return;
         const result = await this.engine.dispatch({
           role: task.role,
           subrole: task.subrole,
           taskContext: task.taskContext,
-          workDir
+          workDir,
+          sessionId: request.sessionId,
+          boundPipelineId: request.boundPipelineId
         });
         if (signal.aborted) return;
         if (result.status === "success") {
@@ -39581,20 +39670,13 @@ var BatchManager = class {
         await this.runLayer(scheduledTasks, maxParallel, signal, runTask);
       }
       if (!signal.aborted) {
-        await this.updateBatchStatus(record2);
+        await this.updateBatchStatus(record2, stateManager);
       }
     } catch {
       if (record2.status.status !== "cancelled") {
         record2.status.status = "error";
-        this.stripRawOutput(record2.status.agents);
-        await this.persistBatchStatus(batchIndex, "error");
-      }
-    }
-  }
-  stripRawOutput(agents) {
-    for (const agent of agents) {
-      if (agent.result) {
-        agent.result.output.raw = void 0;
+        this.scheduleTerminalEviction(batchId);
+        await this.persistBatchStatus(stateManager, batchIndex, "error");
       }
     }
   }
@@ -40128,153 +40210,17 @@ var SessionWorktreeManager = class {
 };
 
 // src/metrics/manager.ts
-import { existsSync as existsSync4 } from "fs";
-import { mkdir as mkdir2, readFile as readFile4, rename as rename2, writeFile as writeFile2 } from "fs/promises";
-import path7 from "path";
-
-// src/tools/state.ts
-import { mkdir, readFile as readFile3, writeFile, rename } from "fs/promises";
 import { existsSync as existsSync3 } from "fs";
+import { mkdir, readFile as readFile3, rename, writeFile } from "fs/promises";
 import path6 from "path";
-var StateManager = class {
-  statePath;
-  tmpPath;
-  storageDir;
-  dirEnsured = false;
-  writeQueue = Promise.resolve();
-  constructor(projectDir, sessionDir) {
-    this.storageDir = sessionDir ?? path6.join(projectDir, ".invoke");
-    this.statePath = path6.join(this.storageDir, "state.json");
-    this.tmpPath = path6.join(this.storageDir, "state.json.tmp");
-  }
-  async get() {
-    if (!existsSync3(this.statePath)) {
-      return null;
-    }
-    const content = await readFile3(this.statePath, "utf-8");
-    return JSON.parse(content);
-  }
-  async initialize(pipelineId) {
-    return this.enqueueWrite(async () => {
-      const now = (/* @__PURE__ */ new Date()).toISOString();
-      const state = {
-        pipeline_id: pipelineId,
-        started: now,
-        last_updated: now,
-        current_stage: "scope",
-        batches: [],
-        review_cycles: []
-      };
-      await this.writeAtomic(state);
-      return state;
-    });
-  }
-  async update(updates) {
-    return this.enqueueWrite(async () => {
-      const current = await this.get();
-      if (!current) {
-        throw new Error("No active pipeline. Call initialize() first.");
-      }
-      const updated = { ...current, ...updates, last_updated: (/* @__PURE__ */ new Date()).toISOString() };
-      await this.writeAtomic(updated);
-      return updated;
-    });
-  }
-  async addBatch(batch) {
-    return this.enqueueWrite(async () => {
-      const current = await this.get();
-      if (!current) {
-        throw new Error("No active pipeline. Call initialize() first.");
-      }
-      current.batches.push(batch);
-      current.last_updated = (/* @__PURE__ */ new Date()).toISOString();
-      await this.writeAtomic(current);
-      return current;
-    });
-  }
-  async updateBatch(batchIndex, updates) {
-    return this.enqueueWrite(async () => {
-      const current = await this.get();
-      if (!current) {
-        throw new Error("No active pipeline. Call initialize() first.");
-      }
-      if (batchIndex >= current.batches.length) {
-        throw new Error(
-          `Batch index ${batchIndex} out of range (${current.batches.length} batches)`
-        );
-      }
-      current.batches[batchIndex] = { ...current.batches[batchIndex], ...updates };
-      current.last_updated = (/* @__PURE__ */ new Date()).toISOString();
-      await this.writeAtomic(current);
-      return current;
-    });
-  }
-  async updateTask(batchIndex, taskId, updates) {
-    return this.enqueueWrite(async () => {
-      const current = await this.get();
-      if (!current) {
-        throw new Error("No active pipeline. Call initialize() first.");
-      }
-      if (batchIndex >= current.batches.length) {
-        throw new Error(
-          `Batch index ${batchIndex} out of range (${current.batches.length} batches)`
-        );
-      }
-      const task = current.batches[batchIndex].tasks.find((t) => t.id === taskId);
-      if (!task) {
-        throw new Error(`Task '${taskId}' not found in batch ${batchIndex}`);
-      }
-      Object.assign(task, updates);
-      current.last_updated = (/* @__PURE__ */ new Date()).toISOString();
-      await this.writeAtomic(current);
-      return current;
-    });
-  }
-  async getReviewCycleCount(batchId) {
-    const state = await this.get();
-    if (!state) return 0;
-    if (batchId !== void 0) {
-      return state.review_cycles.filter((rc) => rc.batch_id === batchId).length;
-    }
-    return state.review_cycles.length;
-  }
-  async reset() {
-    await this.enqueueWrite(async () => {
-      if (existsSync3(this.statePath)) {
-        const { unlink: unlink2 } = await import("fs/promises");
-        await unlink2(this.statePath);
-      }
-    });
-  }
-  enqueueWrite(operation) {
-    const queuedOperation = this.writeQueue.then(operation);
-    this.writeQueue = queuedOperation.then(
-      () => void 0,
-      () => void 0
-    );
-    return queuedOperation;
-  }
-  async writeAtomic(state) {
-    if (!this.dirEnsured) {
-      await mkdir(this.storageDir, { recursive: true });
-      this.dirEnsured = true;
-    }
-    const content = JSON.stringify(state, null, 2) + "\n";
-    await writeFile(this.tmpPath, content);
-    await rename(this.tmpPath, this.statePath);
-  }
-};
-
-// src/metrics/manager.ts
 var COST_PRECISION = 1e9;
 var FLUSH_DEBOUNCE_MS = 100;
 var MetricsManager = class {
   constructor(projectDir, sessionDir) {
     this.projectDir = projectDir;
-    const metricsDir = sessionDir ?? path7.join(projectDir, ".invoke");
-    this.metricsPath = path7.join(metricsDir, "metrics.json");
-    this.tmpPath = path7.join(metricsDir, "metrics.json.tmp");
-    this.stateManager = new StateManager(projectDir, sessionDir);
+    const metricsDir = sessionDir ?? path6.join(projectDir, ".invoke");
+    this.metricsPath = path6.join(metricsDir, "metrics.json");
+    this.tmpPath = path6.join(metricsDir, "metrics.json.tmp");
     this.beforeExitHandler = () => {
       void this.flushPendingWrites();
     };
@@ -40282,9 +40228,9 @@ var MetricsManager = class {
   projectDir;
   metricsPath;
   tmpPath;
-  stateManager;
   beforeExitHandler;
   metrics = [];
+  metricsByPipelineId = /* @__PURE__ */ new Map();
   loaded = false;
   loadPromise = null;
   writeChain = Promise.resolve();
@@ -40295,69 +40241,60 @@ var MetricsManager = class {
     try {
       this.ensureBeforeExitHandler();
       this.metrics.push(metric);
+      this.indexMetric(metric);
       this.queueFlush();
     } catch (error48) {
       this.logWriteError(error48);
     }
   }
-  async getCurrentPipelineMetrics(opts) {
+  async getMetricsByPipelineId(pipelineId, opts) {
+    if (pipelineId == null) {
+      return [];
+    }
     await this.ensureLoaded();
-    const state = await this.stateManager.get();
-    const pipelineId = state?.pipeline_id ?? null;
-    return this.metrics.filter((metric) => {
-      if (metric.pipeline_id !== pipelineId) {
-        return false;
-      }
-      if (opts?.stage && metric.stage !== opts.stage) {
-        return false;
-      }
-      return true;
-    });
+    const bucket = this.metricsByPipelineId.get(pipelineId) ?? [];
+    if (!opts?.stage) {
+      return [...bucket];
+    }
+    return bucket.filter((metric) => metric.stage === opts.stage);
   }
-  async getSummary(opts) {
-    const metrics = await this.getCurrentPipelineMetrics(opts);
-    const summary = {
-      total_dispatches: metrics.length,
-      total_prompt_chars: 0,
-      total_duration_ms: 0,
-      total_estimated_cost_usd: 0,
-      by_stage: {},
-      by_provider_model: {}
-    };
+  async getSummaryByPipelineId(pipelineId, opts) {
+    if (pipelineId == null) {
+      return createEmptySummary();
+    }
+    const metrics = await this.getMetricsByPipelineId(pipelineId, opts);
+    return this.summarize(metrics);
+  }
+  async getSummariesByPipelineIds(pipelineIds) {
+    await this.ensureLoaded();
+    const summaries = /* @__PURE__ */ new Map();
+    for (const pipelineId of new Set(pipelineIds)) {
+      const summary = createEmptySummary();
+      const bucket = this.metricsByPipelineId.get(pipelineId) ?? [];
+      for (const metric of bucket) {
+        accumulateMetric(summary, metric);
+      }
+      summaries.set(pipelineId, summary);
+    }
+    return summaries;
+  }
+  summarize(metrics) {
+    const summary = createEmptySummary();
     for (const metric of metrics) {
-      const cost = normalizeCost(metric.estimated_cost_usd ?? 0);
-      summary.total_prompt_chars += metric.prompt_size_chars;
-      summary.total_duration_ms += metric.duration_ms;
-      summary.total_estimated_cost_usd = normalizeCost(summary.total_estimated_cost_usd + cost);
-      const stageEntry = summary.by_stage[metric.stage] ?? {
-        dispatches: 0,
-        duration_ms: 0,
-        prompt_chars: 0,
-        estimated_cost_usd: 0
-      };
-      stageEntry.dispatches += 1;
-      stageEntry.duration_ms += metric.duration_ms;
-      stageEntry.prompt_chars += metric.prompt_size_chars;
-      stageEntry.estimated_cost_usd = normalizeCost(stageEntry.estimated_cost_usd + cost);
-      summary.by_stage[metric.stage] = stageEntry;
-      const providerModelKey = `${metric.provider}:${metric.model}`;
-      const providerEntry = summary.by_provider_model[providerModelKey] ?? {
-        dispatches: 0,
-        duration_ms: 0,
-        prompt_chars: 0,
-        estimated_cost_usd: 0
-      };
-      providerEntry.dispatches += 1;
-      providerEntry.duration_ms += metric.duration_ms;
-      providerEntry.prompt_chars += metric.prompt_size_chars;
-      providerEntry.estimated_cost_usd = normalizeCost(providerEntry.estimated_cost_usd + cost);
-      summary.by_provider_model[providerModelKey] = providerEntry;
+      accumulateMetric(summary, metric);
     }
     return summary;
   }
-  async getLimitStatus(config2) {
-    const metrics = await this.getCurrentPipelineMetrics();
-    const dispatchesUsed = metrics.length;
+  async getLimitStatus(config2, pipelineId) {
+    if (pipelineId == null) {
+      return {
+        dispatches_used: 0,
+        max_dispatches: config2.settings.max_dispatches,
+        at_limit: false
+      };
+    }
+    await this.ensureLoaded();
+    const dispatchesUsed = (this.metricsByPipelineId.get(pipelineId) ?? []).length;
     const maxDispatches = config2.settings.max_dispatches;
     return {
       dispatches_used: dispatchesUsed,
@@ -40406,23 +40343,22 @@ var MetricsManager = class {
     await this.loadPromise;
   }
   async loadFromDisk() {
-    if (!existsSync4(this.metricsPath)) {
-      this.loaded = true;
-      return;
+    if (existsSync3(this.metricsPath)) {
+      const content = await readFile3(this.metricsPath, "utf-8");
+      const parsed = JSON.parse(content);
+      this.metrics = [...parsed, ...this.metrics];
     }
-    const content = await readFile4(this.metricsPath, "utf-8");
-    const parsed = JSON.parse(content);
-    this.metrics = [...parsed, ...this.metrics];
+    this.rebuildIndex();
     this.loaded = true;
   }
   async writeAtomic(metrics) {
     if (!this.dirEnsured) {
-      await mkdir2(path7.dirname(this.metricsPath), { recursive: true });
+      await mkdir(path6.dirname(this.metricsPath), { recursive: true });
       this.dirEnsured = true;
     }
     const content = JSON.stringify(metrics, null, 2) + "\n";
-    await writeFile2(this.tmpPath, content);
-    await rename2(this.tmpPath, this.metricsPath);
+    await writeFile(this.tmpPath, content);
+    await rename(this.tmpPath, this.metricsPath);
   }
   logWriteError(error48) {
     console.error(
@@ -40436,39 +40372,92 @@ var MetricsManager = class {
     process.on("beforeExit", this.beforeExitHandler);
     this.beforeExitRegistered = true;
   }
+  indexMetric(metric) {
+    const key = metric.pipeline_id ?? null;
+    let bucket = this.metricsByPipelineId.get(key);
+    if (!bucket) {
+      bucket = [];
+      this.metricsByPipelineId.set(key, bucket);
+    }
+    bucket.push(metric);
+  }
+  rebuildIndex() {
+    this.metricsByPipelineId.clear();
+    for (const metric of this.metrics) {
+      this.indexMetric(metric);
+    }
+  }
 };
 function normalizeCost(value) {
   return Math.round(value * COST_PRECISION) / COST_PRECISION;
 }
+function createEmptySummaryBucket() {
+  return {
+    dispatches: 0,
+    duration_ms: 0,
+    prompt_chars: 0,
+    estimated_cost_usd: 0
+  };
+}
+function accumulateMetric(summary, metric) {
+  const cost = normalizeCost(metric.estimated_cost_usd ?? 0);
+  summary.total_dispatches += 1;
+  summary.total_prompt_chars += metric.prompt_size_chars;
+  summary.total_duration_ms += metric.duration_ms;
+  summary.total_estimated_cost_usd = normalizeCost(summary.total_estimated_cost_usd + cost);
+  const stageEntry = summary.by_stage[metric.stage] ?? createEmptySummaryBucket();
+  stageEntry.dispatches += 1;
+  stageEntry.duration_ms += metric.duration_ms;
+  stageEntry.prompt_chars += metric.prompt_size_chars;
+  stageEntry.estimated_cost_usd = normalizeCost(stageEntry.estimated_cost_usd + cost);
+  summary.by_stage[metric.stage] = stageEntry;
+  const providerModelKey = `${metric.provider}:${metric.model}`;
+  const providerEntry = summary.by_provider_model[providerModelKey] ?? createEmptySummaryBucket();
+  providerEntry.dispatches += 1;
+  providerEntry.duration_ms += metric.duration_ms;
+  providerEntry.prompt_chars += metric.prompt_size_chars;
+  providerEntry.estimated_cost_usd = normalizeCost(providerEntry.estimated_cost_usd + cost);
+  summary.by_provider_model[providerModelKey] = providerEntry;
+}
+function createEmptySummary() {
+  return {
+    total_dispatches: 0,
+    total_prompt_chars: 0,
+    total_duration_ms: 0,
+    total_estimated_cost_usd: 0,
+    by_stage: {},
+    by_provider_model: {}
+  };
+}
 
 // src/session/manager.ts
-import { existsSync as existsSync5 } from "fs";
-import { mkdir as mkdir3, readFile as readFile5, readdir as readdir2, rename as rename3, rm } from "fs/promises";
-import path8 from "path";
+import { existsSync as existsSync4 } from "fs";
+import { mkdir as mkdir2, readFile as readFile4, readdir as readdir2, rename as rename2, rm } from "fs/promises";
+import path7 from "path";
 var MS_PER_DAY = 24 * 60 * 60 * 1e3;
 var SessionManager = class {
   invokeDir;
   sessionsDir;
   constructor(projectDir) {
-    this.invokeDir = path8.resolve(projectDir, ".invoke");
-    this.sessionsDir = path8.join(this.invokeDir, "sessions");
+    this.invokeDir = path7.resolve(projectDir, ".invoke");
+    this.sessionsDir = path7.join(this.invokeDir, "sessions");
   }
   async create(sessionId) {
     this.validateSessionId(sessionId);
     const sessionDir = this.getSessionDir(sessionId);
-    await mkdir3(sessionDir, { recursive: true });
+    await mkdir2(sessionDir, { recursive: true });
     return sessionDir;
   }
   resolve(sessionId) {
     this.validateSessionId(sessionId);
     const sessionDir = this.getSessionDir(sessionId);
-    if (!existsSync5(sessionDir)) {
+    if (!existsSync4(sessionDir)) {
       throw new Error(`Session '${sessionId}' does not exist`);
     }
     return sessionDir;
   }
   async list(staleDays = 7) {
-    if (!existsSync5(this.sessionsDir)) {
+    if (!existsSync4(this.sessionsDir)) {
       return [];
     }
     const entries = await readdir2(this.sessionsDir, { withFileTypes: true });
@@ -40484,10 +40473,10 @@ var SessionManager = class {
   }
   async migrate() {
     const legacyStatePath = this.getLegacyStatePath();
-    if (!existsSync5(legacyStatePath)) {
+    if (!existsSync4(legacyStatePath)) {
       return { migrated: false };
     }
-    const state = JSON.parse(await readFile5(legacyStatePath, "utf-8"));
+    const state = JSON.parse(await readFile4(legacyStatePath, "utf-8"));
     const sessionId = state.pipeline_id;
     try {
       this.validateSessionId(sessionId);
@@ -40495,9 +40484,9 @@ var SessionManager = class {
       return { migrated: false };
     }
     const sessionDir = this.getSessionDir(sessionId);
-    await mkdir3(sessionDir, { recursive: true });
+    await mkdir2(sessionDir, { recursive: true });
     try {
-      await rename3(legacyStatePath, this.getStatePath(sessionId));
+      await rename2(legacyStatePath, this.getStatePath(sessionId));
     } catch (error48) {
       if (this.isMissingFileError(error48)) {
         return { migrated: false };
@@ -40505,9 +40494,9 @@ var SessionManager = class {
       throw error48;
     }
     const legacyMetricsPath = this.getLegacyMetricsPath();
-    if (existsSync5(legacyMetricsPath)) {
+    if (existsSync4(legacyMetricsPath)) {
       try {
-        await rename3(legacyMetricsPath, path8.join(sessionDir, "metrics.json"));
+        await rename2(legacyMetricsPath, path7.join(sessionDir, "metrics.json"));
       } catch (error48) {
         if (!this.isMissingFileError(error48)) {
           throw error48;
@@ -40522,27 +40511,27 @@ var SessionManager = class {
   }
   exists(sessionId) {
     this.validateSessionId(sessionId);
-    return existsSync5(this.getSessionDir(sessionId));
+    return existsSync4(this.getSessionDir(sessionId));
   }
   getSessionDir(sessionId) {
-    return path8.join(this.sessionsDir, sessionId);
+    return path7.join(this.sessionsDir, sessionId);
   }
   getStatePath(sessionId) {
-    return path8.join(this.getSessionDir(sessionId), "state.json");
+    return path7.join(this.getSessionDir(sessionId), "state.json");
   }
   getLegacyStatePath() {
-    return path8.join(this.invokeDir, "state.json");
+    return path7.join(this.invokeDir, "state.json");
   }
   getLegacyMetricsPath() {
-    return path8.join(this.invokeDir, "metrics.json");
+    return path7.join(this.invokeDir, "metrics.json");
   }
   async readState(sessionId) {
-    const content = await readFile5(this.getStatePath(sessionId), "utf-8");
+    const content = await readFile4(this.getStatePath(sessionId), "utf-8");
     return JSON.parse(content);
   }
   async readSessionInfo(sessionId, staleDays = 7) {
     const statePath = this.getStatePath(sessionId);
-    if (!existsSync5(statePath)) {
+    if (!existsSync4(statePath)) {
       return null;
     }
     const state = await this.readState(sessionId);
@@ -40571,8 +40560,8 @@ var SessionManager = class {
 // src/bugs/manager.ts
 init_zod();
 var import_yaml2 = __toESM(require_dist2(), 1);
-import { lstat, mkdir as mkdir4, readFile as readFile6, rename as rename4, writeFile as writeFile3 } from "fs/promises";
-import path9 from "path";
+import { lstat, mkdir as mkdir3, readFile as readFile5, rename as rename3, writeFile as writeFile2 } from "fs/promises";
+import path8 from "path";
 
 // src/session/lock.ts
 var import_proper_lockfile = __toESM(require_proper_lockfile(), 1);
@@ -40624,10 +40613,10 @@ var BugNotFoundError = class extends Error {
 var BugManager = class {
   bugsPath;
   constructor(projectDir) {
-    this.bugsPath = path9.join(projectDir, ".invoke", "bugs.yaml");
+    this.bugsPath = path8.join(projectDir, ".invoke", "bugs.yaml");
   }
   async report(input) {
-    await mkdir4(path9.dirname(this.bugsPath), { recursive: true });
+    await mkdir3(path8.dirname(this.bugsPath), { recursive: true });
     return withLock(this.bugsPath, async () => {
       const bugsFile = await this.readBugsFile();
       const now = (/* @__PURE__ */ new Date()).toISOString();
@@ -40665,7 +40654,7 @@ var BugManager = class {
     });
   }
   async update(id, changes) {
-    await mkdir4(path9.dirname(this.bugsPath), { recursive: true });
+    await mkdir3(path8.dirname(this.bugsPath), { recursive: true });
     return withLock(this.bugsPath, async () => {
       const bugsFile = await this.readBugsFile();
       const bug = bugsFile.bugs.find((entry) => entry.id === id);
@@ -40715,7 +40704,7 @@ var BugManager = class {
   async readBugsFile() {
     await this.assertBugsPathIsNotSymlink();
     try {
-      const content = await readFile6(this.bugsPath, "utf-8");
+      const content = await readFile5(this.bugsPath, "utf-8");
       const parsed = (0, import_yaml2.parse)(content);
       const cloneSafeParsed = JSON.parse(JSON.stringify(parsed ?? { bugs: [] }));
       return this.parseBugsFile(cloneSafeParsed);
@@ -40731,8 +40720,8 @@ var BugManager = class {
     const validated = this.parseBugsFile(bugsFile);
     const serialized = (0, import_yaml2.stringify)(validated);
     const tmpPath = `${this.bugsPath}.tmp`;
-    await writeFile3(tmpPath, serialized);
-    await rename4(tmpPath, this.bugsPath);
+    await writeFile2(tmpPath, serialized);
+    await rename3(tmpPath, this.bugsPath);
   }
   isMissingFileError(error48) {
     return error48 instanceof Error && "code" in error48 && error48.code === "ENOENT";
@@ -40759,6 +40748,181 @@ var BugManager = class {
       }
       throw error48;
     }
+  }
+};
+
+// src/tools/state.ts
+import { mkdir as mkdir4, readFile as readFile6, writeFile as writeFile3, rename as rename4 } from "fs/promises";
+import { existsSync as existsSync5 } from "fs";
+import path9 from "path";
+var StateManager = class {
+  statePath;
+  tmpPath;
+  storageDir;
+  dirEnsured = false;
+  writeQueue = Promise.resolve();
+  constructor(projectDir, sessionDir) {
+    this.storageDir = sessionDir ?? path9.join(projectDir, ".invoke");
+    this.statePath = path9.join(this.storageDir, "state.json");
+    this.tmpPath = path9.join(this.storageDir, "state.json.tmp");
+  }
+  async get() {
+    if (!existsSync5(this.statePath)) {
+      return null;
+    }
+    const content = await readFile6(this.statePath, "utf-8");
+    return JSON.parse(content);
+  }
+  async initialize(pipelineId) {
+    return this.enqueueWrite(async () => {
+      const now = (/* @__PURE__ */ new Date()).toISOString();
+      const state = {
+        pipeline_id: pipelineId,
+        started: now,
+        last_updated: now,
+        current_stage: "scope",
+        batches: [],
+        review_cycles: []
+      };
+      await this.writeAtomic(state);
+      return state;
+    });
+  }
+  async update(updates) {
+    return this.applyComposite({ partial: updates });
+  }
+  async addBatch(batch) {
+    return this.enqueueWrite(async () => {
+      const current = await this.get();
+      if (!current) {
+        throw new Error("No active pipeline. Call initialize() first.");
+      }
+      current.batches.push(batch);
+      current.last_updated = (/* @__PURE__ */ new Date()).toISOString();
+      await this.writeAtomic(current);
+      return current;
+    });
+  }
+  async batchUpsert(batch) {
+    return this.applyComposite({ batchUpdate: batch });
+  }
+  async applyComposite(updates) {
+    return this.enqueueWrite(async () => {
+      const current = await this.get();
+      if (!current) {
+        throw new Error("No active pipeline. Call initialize() first.");
+      }
+      let next = { ...current };
+      if (updates.batchUpdate) {
+        this.applyBatchUpsert(next, updates.batchUpdate);
+      }
+      if (updates.reviewCycleUpdate) {
+        this.applyReviewCycleUpsert(next, updates.reviewCycleUpdate);
+      }
+      if (updates.partial) {
+        next = { ...next, ...updates.partial };
+      }
+      next.last_updated = (/* @__PURE__ */ new Date()).toISOString();
+      await this.writeAtomic(next);
+      return next;
+    });
+  }
+  async updateBatch(batchIndex, updates) {
+    return this.enqueueWrite(async () => {
+      const current = await this.get();
+      if (!current) {
+        throw new Error("No active pipeline. Call initialize() first.");
+      }
+      if (batchIndex >= current.batches.length) {
+        throw new Error(
+          `Batch index ${batchIndex} out of range (${current.batches.length} batches)`
+        );
+      }
+      current.batches[batchIndex] = { ...current.batches[batchIndex], ...updates };
+      current.last_updated = (/* @__PURE__ */ new Date()).toISOString();
+      await this.writeAtomic(current);
+      return current;
+    });
+  }
+  async updateTask(batchIndex, taskId, updates) {
+    return this.enqueueWrite(async () => {
+      const current = await this.get();
+      if (!current) {
+        throw new Error("No active pipeline. Call initialize() first.");
+      }
+      if (batchIndex >= current.batches.length) {
+        throw new Error(
+          `Batch index ${batchIndex} out of range (${current.batches.length} batches)`
+        );
+      }
+      const task = current.batches[batchIndex].tasks.find((t) => t.id === taskId);
+      if (!task) {
+        throw new Error(`Task '${taskId}' not found in batch ${batchIndex}`);
+      }
+      Object.assign(task, updates);
+      current.last_updated = (/* @__PURE__ */ new Date()).toISOString();
+      await this.writeAtomic(current);
+      return current;
+    });
+  }
+  async reviewCycleUpsert(cycle) {
+    return this.applyComposite({ reviewCycleUpdate: cycle });
+  }
+  async getReviewCycleCount(batchId) {
+    const state = await this.get();
+    if (!state) return 0;
+    if (batchId !== void 0) {
+      return state.review_cycles.filter((rc) => rc.batch_id === batchId).length;
+    }
+    return state.review_cycles.length;
+  }
+  async reset() {
+    await this.enqueueWrite(async () => {
+      if (existsSync5(this.statePath)) {
+        const { unlink: unlink2 } = await import("fs/promises");
+        await unlink2(this.statePath);
+      }
+    });
+  }
+  enqueueWrite(operation) {
+    const queuedOperation = this.writeQueue.then(operation);
+    this.writeQueue = queuedOperation.then(
+      () => void 0,
+      () => void 0
+    );
+    return queuedOperation;
+  }
+  async writeAtomic(state) {
+    if (!this.dirEnsured) {
+      await mkdir4(this.storageDir, { recursive: true });
+      this.dirEnsured = true;
+    }
+    const content = JSON.stringify(state, null, 2) + "\n";
+    await writeFile3(this.tmpPath, content);
+    await rename4(this.tmpPath, this.statePath);
+  }
+  applyBatchUpsert(state, batch) {
+    const batches = [...state.batches];
+    const existingIndex = batches.findIndex((existingBatch) => existingBatch.id === batch.id);
+    if (existingIndex >= 0) {
+      batches[existingIndex] = { ...batches[existingIndex], ...batch };
+    } else {
+      batches.push(batch);
+    }
+    state.batches = batches;
+  }
+  applyReviewCycleUpsert(state, cycle) {
+    const reviewCycles = [...state.review_cycles];
+    const existingIndex = reviewCycles.findIndex((existingCycle) => existingCycle.id === cycle.id);
+    if (existingIndex >= 0) {
+      reviewCycles[existingIndex] = {
+        ...reviewCycles[existingIndex],
+        ...cycle
+      };
+    } else {
+      reviewCycles.push(cycle);
+    }
+    state.review_cycles = reviewCycles;
   }
 };
 
@@ -40905,22 +41069,118 @@ function registerConfigTools(server, projectDir) {
 // src/tools/dispatch-tools.ts
 init_zod();
 init_config();
+
+// src/tools/session-metrics.ts
+import { readFile as readFile8 } from "fs/promises";
+import path12 from "path";
+async function getSessionScopedMetrics(metricsManager, pipelineId, sessionDir, options) {
+  if (pipelineId === null) {
+    return [];
+  }
+  const rootEntries = await metricsManager.getMetricsByPipelineId(pipelineId, options);
+  if (rootEntries.length > 0) {
+    return rootEntries;
+  }
+  const legacyEntries = await readLegacySessionMetrics(sessionDir);
+  return filterSessionMetrics(legacyEntries, pipelineId, options);
+}
+async function readLegacySessionMetrics(sessionDir) {
+  const metricsPath = path12.join(sessionDir, "metrics.json");
+  try {
+    const content = await readFile8(metricsPath, "utf-8");
+    const parsed = JSON.parse(content);
+    if (!Array.isArray(parsed)) {
+      throw new Error(`Invalid metrics payload in ${metricsPath}`);
+    }
+    return parsed;
+  } catch (error48) {
+    if (isMissingFileError(error48)) {
+      return [];
+    }
+    throw error48;
+  }
+}
+function filterSessionMetrics(metrics, pipelineId, options) {
+  return metrics.filter((metric) => {
+    if (metric.pipeline_id !== pipelineId) {
+      return false;
+    }
+    if (options?.stage && metric.stage !== options.stage) {
+      return false;
+    }
+    return true;
+  });
+}
+function isMissingFileError(error48) {
+  return typeof error48 === "object" && error48 !== null && "code" in error48 && error48.code === "ENOENT";
+}
+
+// src/tools/dispatch-tools.ts
 function registerDispatchTools(server, engine, batchManager, projectDir, metricsManager, sessionManager) {
-  async function resolveBatchManager(sessionId) {
+  const scopedStateManagers = /* @__PURE__ */ new Map();
+  function getScopedStateManager(sessionDir) {
+    const existing = scopedStateManagers.get(sessionDir);
+    if (existing) {
+      return existing;
+    }
+    const stateManager = new StateManager(projectDir, sessionDir);
+    scopedStateManagers.set(sessionDir, stateManager);
+    return stateManager;
+  }
+  async function resolveSessionScope(sessionId) {
     if (!sessionId) {
-      return batchManager;
+      return void 0;
     }
     if (!sessionManager) {
       throw new Error("Session manager is required for session-scoped dispatch");
     }
     const sessionDir = sessionManager.exists(sessionId) ? sessionManager.resolve(sessionId) : await sessionManager.create(sessionId);
-    return Object.assign(
-      Object.create(Object.getPrototypeOf(batchManager)),
-      batchManager,
-      {
-        stateManager: new StateManager(projectDir, sessionDir)
-      }
+    return {
+      sessionDir,
+      stateManager: getScopedStateManager(sessionDir)
+    };
+  }
+  function errorResponse3(text) {
+    return {
+      content: [{ type: "text", text }],
+      isError: true
+    };
+  }
+  function validateBatchOwnership(batchId, sessionId) {
+    const owner = batchManager.getBatchOwner(batchId);
+    switch (owner.kind) {
+      case "not_found":
+        return errorResponse3(`Batch not found: ${batchId}`);
+      case "unowned":
+        return null;
+      case "owned":
+        if (sessionId === void 0) {
+          return errorResponse3(
+            `Batch ${batchId} is owned by a session and requires session_id parameter`
+          );
+        }
+        if (owner.sessionId !== sessionId) {
+          return errorResponse3(`Batch ${batchId} is not owned by session ${sessionId}`);
+        }
+        return null;
+    }
+  }
+  async function resolveLimitStatus(config2, pipelineId, sessionDir) {
+    const limitStatus = await metricsManager.getLimitStatus(config2, pipelineId);
+    if (!sessionDir || pipelineId === null || limitStatus.dispatches_used > 0) {
+      return limitStatus;
+    }
+    const sessionMetrics = await getSessionScopedMetrics(
+      metricsManager,
+      pipelineId,
+      sessionDir
     );
+    const dispatchesUsed = sessionMetrics.length;
+    return {
+      dispatches_used: dispatchesUsed,
+      max_dispatches: limitStatus.max_dispatches,
+      at_limit: limitStatus.max_dispatches !== void 0 ? dispatchesUsed >= limitStatus.max_dispatches : false
+    };
   }
   server.registerTool(
     "invoke_dispatch",
@@ -40968,6 +41228,13 @@ function registerDispatchTools(server, engine, batchManager, projectDir, metrics
       })
     },
     async ({ tasks, create_worktrees, session_id }) => {
+      const sessionScope = await resolveSessionScope(session_id);
+      const sessionStateManager = sessionScope?.stateManager;
+      let boundPipelineId;
+      if (sessionStateManager) {
+        const state = await sessionStateManager.get();
+        boundPipelineId = state?.pipeline_id ?? null;
+      }
       let taskProviders = [];
       let config2;
       let warning;
@@ -40992,8 +41259,25 @@ function registerDispatchTools(server, engine, batchManager, projectDir, metrics
         return sum + (mode === "parallel" ? task.providers.length : 1);
       }, 0);
       if (config2?.settings.max_dispatches !== void 0) {
+        const pipelineId = sessionStateManager ? boundPipelineId ?? null : (await new StateManager(projectDir).get())?.pipeline_id ?? null;
+        let limitStatus;
         try {
-          const limitStatus = await metricsManager.getLimitStatus(config2);
+          limitStatus = await resolveLimitStatus(config2, pipelineId, sessionScope?.sessionDir);
+        } catch (err) {
+          console.error("Failed to evaluate dispatch limit \u2014 failing closed", err);
+          return errorResponse3("Dispatch blocked: failed to evaluate dispatch limit");
+        }
+        if (limitStatus.at_limit) {
+          const pipelineLabel = pipelineId ? `pipeline ${pipelineId}` : "active pipeline";
+          return {
+            content: [{
+              type: "text",
+              text: `Dispatch blocked: ${pipelineLabel} has reached the max_dispatches limit (${limitStatus.dispatches_used}/${limitStatus.max_dispatches} dispatches used).`
+            }],
+            isError: true
+          };
+        }
+        try {
           const projectedDispatches = limitStatus.dispatches_used + estimatedDispatches;
           if (projectedDispatches > limitStatus.max_dispatches) {
             warning = `Exceeding max_dispatches limit (${projectedDispatches}/${limitStatus.max_dispatches})`;
@@ -41004,8 +41288,7 @@ function registerDispatchTools(server, engine, batchManager, projectDir, metrics
         }
       }
       const maxParallel = config2?.settings?.max_parallel_agents;
-      const activeBatchManager = await resolveBatchManager(session_id);
-      const batchId = await activeBatchManager.dispatchBatch({
+      const batchId = await batchManager.dispatchBatch({
         tasks: tasks.map((t) => ({
           taskId: t.task_id,
           role: t.role,
@@ -41013,7 +41296,10 @@ function registerDispatchTools(server, engine, batchManager, projectDir, metrics
           taskContext: t.task_context
         })),
         createWorktrees: create_worktrees,
-        maxParallel
+        maxParallel,
+        ...session_id ? { sessionId: session_id, boundPipelineId } : {}
+      }, {
+        stateManager: sessionStateManager
       });
       return {
         content: [{ type: "text", text: JSON.stringify({
@@ -41032,21 +41318,69 @@ function registerDispatchTools(server, engine, batchManager, projectDir, metrics
       description: "Get the status of a dispatched batch. Waits up to `wait` seconds (default 60) for a status change before returning. Returns immediately if the batch is already complete or if any agent status changes.",
       inputSchema: external_exports3.object({
         batch_id: external_exports3.string().describe("The batch ID returned by invoke_dispatch_batch"),
-        wait: external_exports3.number().optional().describe("Max seconds to wait for a status change (default 60, 0 for immediate)")
+        wait: external_exports3.number().optional().describe("Max seconds to wait for a status change (default 60, 0 for immediate)"),
+        session_id: external_exports3.string().optional().describe(
+          "Session ID required for session-owned batches; optional for legacy unowned batches"
+        )
       })
     },
-    async ({ batch_id, wait }) => {
+    async ({ batch_id, wait, session_id }) => {
+      const ownershipError = validateBatchOwnership(batch_id, session_id);
+      if (ownershipError) {
+        return ownershipError;
+      }
       const waitSeconds = wait ?? 60;
       const status = waitSeconds > 0 ? await batchManager.waitForStatus(batch_id, waitSeconds) : batchManager.getStatus(batch_id);
       if (!status) {
-        return {
-          content: [{ type: "text", text: `Batch not found: ${batch_id}` }],
-          isError: true
-        };
+        return errorResponse3(`Batch not found: ${batch_id}`);
       }
-      return {
-        content: [{ type: "text", text: JSON.stringify(status, null, 2) }]
+      const projectedStatus = {
+        batchId: status.batchId,
+        status: status.status,
+        agents: status.agents.map((agent) => ({
+          taskId: agent.taskId,
+          status: agent.status
+        }))
       };
+      return {
+        content: [{ type: "text", text: JSON.stringify(projectedStatus, null, 2) }]
+      };
+    }
+  );
+  server.registerTool(
+    "invoke_get_task_result",
+    {
+      description: "Get the full result for a terminal task in a dispatched batch.",
+      inputSchema: external_exports3.object({
+        batch_id: external_exports3.string().describe("The batch ID returned by invoke_dispatch_batch"),
+        task_id: external_exports3.string().describe("The task ID to fetch the terminal result for"),
+        session_id: external_exports3.string().optional().describe(
+          "Session ID required for session-owned batches; optional for legacy unowned batches"
+        )
+      })
+    },
+    async ({ batch_id, task_id, session_id }) => {
+      const ownershipError = validateBatchOwnership(batch_id, session_id);
+      if (ownershipError) {
+        return ownershipError;
+      }
+      const result = batchManager.getTaskResult(batch_id, task_id);
+      switch (result.kind) {
+        case "ok":
+          return {
+            content: [{ type: "text", text: JSON.stringify(result.result, null, 2) }]
+          };
+        case "batch_not_found":
+          return errorResponse3(`Batch not found: ${batch_id}`);
+        case "task_not_found":
+          return errorResponse3(`Task not found in batch ${batch_id}: ${task_id}`);
+        case "not_terminal":
+          return errorResponse3(`Task not in terminal state; keep polling (current status: ${result.status})`);
+        case "no_result":
+          return errorResponse3(
+            `Task reached terminal state without a stored result in batch ${batch_id}: ${task_id}`
+          );
+      }
     }
   );
   server.registerTool(
@@ -41054,10 +41388,17 @@ function registerDispatchTools(server, engine, batchManager, projectDir, metrics
     {
       description: "Cancel a running batch and kill its agents.",
       inputSchema: external_exports3.object({
-        batch_id: external_exports3.string().describe("The batch ID to cancel")
+        batch_id: external_exports3.string().describe("The batch ID to cancel"),
+        session_id: external_exports3.string().optional().describe(
+          "Session ID required for session-owned batches; optional for legacy unowned batches"
+        )
       })
     },
-    async ({ batch_id }) => {
+    async ({ batch_id, session_id }) => {
+      const ownershipError = validateBatchOwnership(batch_id, session_id);
+      if (ownershipError) {
+        return ownershipError;
+      }
       batchManager.cancel(batch_id);
       return {
         content: [{ type: "text", text: JSON.stringify({ batch_id, status: "cancelled" }) }]
@@ -41332,20 +41673,32 @@ async function getSessionsWithStatus(sessionManager, projectDir) {
   return sessionManager.list(staleSessionDays);
 }
 async function addSessionMetricsSummaries(sessions, sessionManager, projectDir) {
-  return Promise.all(
+  const metricsManager = new MetricsManager(projectDir);
+  const sessionPipelineBindings = await Promise.all(
     sessions.map(async (session) => ({
-      ...session,
-      metrics_summary: await getSessionMetricsSummary(session.session_id, sessionManager, projectDir)
+      session,
+      pipelineId: await getSessionPipelineId(session.session_id, sessionManager, projectDir)
     }))
   );
+  const summariesByPipelineId = await metricsManager.getSummariesByPipelineIds(
+    sessionPipelineBindings.flatMap(({ pipelineId }) => pipelineId ? [pipelineId] : [])
+  );
+  return sessionPipelineBindings.map(({ session, pipelineId }) => ({
+    ...session,
+    metrics_summary: toSessionMetricsSummary(
+      pipelineId ? summariesByPipelineId.get(pipelineId) : void 0
+    )
+  }));
 }
-async function getSessionMetricsSummary(sessionId, sessionManager, projectDir) {
-  const metricsManager = new MetricsManager(projectDir, sessionManager.resolve(sessionId));
-  const summary = await metricsManager.getSummary();
+async function getSessionPipelineId(sessionId, sessionManager, projectDir) {
+  const sessionState = await new StateManager(projectDir, sessionManager.resolve(sessionId)).get();
+  return sessionState?.pipeline_id ?? null;
+}
+function toSessionMetricsSummary(summary) {
   return {
-    total_dispatches: summary.total_dispatches,
-    total_duration_ms: summary.total_duration_ms,
-    total_estimated_cost_usd: summary.total_estimated_cost_usd
+    total_dispatches: summary?.total_dispatches ?? 0,
+    total_duration_ms: summary?.total_duration_ms ?? 0,
+    total_estimated_cost_usd: summary?.total_estimated_cost_usd ?? 0
   };
 }
 async function getStaleSessionDays(projectDir) {
@@ -41717,10 +42070,10 @@ init_zod();
 
 // src/metrics/comparison.ts
 var COST_PRECISION2 = 1e9;
-function compareSessions(sessionMetrics) {
+function compareSessions(sessionMetrics, sessionSummaries) {
   const sessions = Array.from(
     sessionMetrics.entries(),
-    ([sessionId, metrics]) => summarizeSession(sessionId, metrics)
+    ([sessionId, metrics]) => summarizeSession(sessionId, metrics, sessionSummaries?.get(sessionId))
   );
   return {
     sessions,
@@ -41753,23 +42106,26 @@ function formatComparisonTable(comparison) {
   }
   return lines.join("\n");
 }
-function summarizeSession(sessionId, metrics) {
+function summarizeSession(sessionId, metrics, metricsSummary) {
   let successfulDispatches = 0;
   const summary = {
     session_id: sessionId,
-    total_dispatches: metrics.length,
+    total_dispatches: metricsSummary?.total_dispatches ?? metrics.length,
     success_rate: 0,
-    total_duration_ms: 0,
-    total_prompt_chars: 0,
-    total_estimated_cost_usd: 0,
-    by_stage: {},
-    by_provider_model: {}
+    total_duration_ms: metricsSummary?.total_duration_ms ?? 0,
+    total_prompt_chars: metricsSummary?.total_prompt_chars ?? 0,
+    total_estimated_cost_usd: metricsSummary?.total_estimated_cost_usd ?? 0,
+    by_stage: cloneBreakdown(metricsSummary?.by_stage),
+    by_provider_model: cloneBreakdown(metricsSummary?.by_provider_model)
   };
   for (const metric of metrics) {
-    const cost = normalizeCost2(metric.estimated_cost_usd ?? 0);
     if (metric.status === "success") {
       successfulDispatches += 1;
     }
+    if (metricsSummary) {
+      continue;
+    }
+    const cost = normalizeCost2(metric.estimated_cost_usd ?? 0);
     summary.total_duration_ms += metric.duration_ms;
     summary.total_prompt_chars += metric.prompt_size_chars;
     summary.total_estimated_cost_usd = normalizeCost2(summary.total_estimated_cost_usd + cost);
@@ -41801,6 +42157,22 @@ function summarizeSession(sessionId, metrics) {
   }
   summary.success_rate = summary.total_dispatches === 0 ? 0 : successfulDispatches / summary.total_dispatches;
   return summary;
+}
+function cloneBreakdown(breakdown) {
+  if (!breakdown) {
+    return {};
+  }
+  return Object.fromEntries(
+    Object.entries(breakdown).map(([key, value]) => [
+      key,
+      {
+        dispatches: value.dispatches,
+        duration_ms: value.duration_ms,
+        prompt_chars: value.prompt_chars,
+        estimated_cost_usd: normalizeCost2(value.estimated_cost_usd)
+      }
+    ])
+  );
 }
 function createDelta(sessionA, sessionB) {
   return {
@@ -41890,14 +42262,41 @@ function registerComparisonTools(server, projectDir, sessionManager) {
     },
     async ({ session_ids }) => {
       try {
+        const metricsManager = new MetricsManager(projectDir);
         const sessionMetrics = /* @__PURE__ */ new Map();
-        for (const sessionId of session_ids) {
-          const sessionDir = sessionManager.resolve(sessionId);
-          const metricsManager = new MetricsManager(projectDir, sessionDir);
-          sessionMetrics.set(sessionId, await metricsManager.getCurrentPipelineMetrics());
+        const sessionSummaries = /* @__PURE__ */ new Map();
+        const sessionPipelineBindings = await Promise.all(
+          session_ids.map(async (sessionId) => {
+            const sessionDir = sessionManager.resolve(sessionId);
+            const state = await new StateManager(projectDir, sessionDir).get();
+            return {
+              sessionId,
+              pipelineId: state?.pipeline_id ?? null
+            };
+          })
+        );
+        const summariesByPipelineId = await metricsManager.getSummariesByPipelineIds(
+          sessionPipelineBindings.flatMap(({ pipelineId }) => pipelineId ? [pipelineId] : [])
+        );
+        const metricsBySession = await Promise.all(
+          sessionPipelineBindings.map(async ({ sessionId, pipelineId }) => ({
+            sessionId,
+            pipelineId,
+            metrics: pipelineId ? await metricsManager.getMetricsByPipelineId(pipelineId) : []
+          }))
+        );
+        for (const { sessionId, pipelineId, metrics } of metricsBySession) {
+          sessionMetrics.set(sessionId, metrics);
+          sessionSummaries.set(
+            sessionId,
+            pipelineId ? summariesByPipelineId.get(pipelineId) ?? createEmptySummary() : createEmptySummary()
+          );
         }
         return {
-          content: [{ type: "text", text: formatComparisonTable(compareSessions(sessionMetrics)) }]
+          content: [{
+            type: "text",
+            text: formatComparisonTable(compareSessions(sessionMetrics, sessionSummaries))
+          }]
         };
       } catch (err) {
         return {
@@ -41912,7 +42311,63 @@ function registerComparisonTools(server, projectDir, sessionManager) {
 // src/tools/state-tools.ts
 init_zod();
 init_config();
+var TaskSchema2 = external_exports3.object({
+  id: external_exports3.string(),
+  status: external_exports3.enum(["pending", "dispatched", "running", "completed", "error", "timeout", "conflict"]),
+  worktree_path: external_exports3.string().optional(),
+  worktree_branch: external_exports3.string().optional(),
+  conflict_attempts: external_exports3.number().optional(),
+  result_summary: external_exports3.string().optional(),
+  result_status: external_exports3.enum(["success", "error", "timeout"]).optional(),
+  merged: external_exports3.boolean().optional()
+});
+var BatchSchema = external_exports3.object({
+  id: external_exports3.number(),
+  status: external_exports3.enum(["pending", "in_progress", "partial", "completed", "error"]),
+  merged_tasks: external_exports3.array(external_exports3.string()).optional(),
+  tasks: external_exports3.array(TaskSchema2)
+});
+var ReviewCycleSchema = external_exports3.object({
+  id: external_exports3.number(),
+  reviewers: external_exports3.array(external_exports3.string()),
+  findings: external_exports3.array(external_exports3.any()),
+  batch_id: external_exports3.number().optional(),
+  scope: external_exports3.enum(["batch", "final"]).optional(),
+  tier: external_exports3.string().optional(),
+  triaged: external_exports3.object({
+    accepted: external_exports3.array(external_exports3.any()),
+    dismissed: external_exports3.array(external_exports3.any()),
+    deferred: external_exports3.array(external_exports3.any()).optional()
+  }).optional()
+});
+var SetStateInputSchema = external_exports3.object({
+  session_id: external_exports3.string().optional(),
+  pipeline_id: external_exports3.string().optional(),
+  current_stage: external_exports3.enum(["scope", "plan", "orchestrate", "build", "review", "complete"]).optional(),
+  work_branch: external_exports3.string().optional(),
+  base_branch: external_exports3.string().optional(),
+  work_branch_path: external_exports3.string().optional(),
+  spec: external_exports3.string().optional(),
+  plan: external_exports3.string().optional(),
+  tasks: external_exports3.string().optional(),
+  strategy: external_exports3.string().optional(),
+  batches: external_exports3.array(BatchSchema).optional(),
+  batch_update: BatchSchema.optional(),
+  review_cycles: external_exports3.array(ReviewCycleSchema).optional(),
+  review_cycle_update: ReviewCycleSchema.optional(),
+  bug_ids: external_exports3.array(external_exports3.string().regex(/^BUG-\d+$/, "bug_ids must be BUG-NNN format")).optional()
+});
 function registerStateTools(server, stateManager, projectDir, sessionManager) {
+  const scopedStateManagers = /* @__PURE__ */ new Map();
+  function getScopedStateManager(sessionDir) {
+    const existing = scopedStateManagers.get(sessionDir);
+    if (existing) {
+      return existing;
+    }
+    const scopedManager = new StateManager(projectDir, sessionDir);
+    scopedStateManagers.set(sessionDir, scopedManager);
+    return scopedManager;
+  }
   function resolveStateManager(sessionId) {
     if (!sessionId) {
       return stateManager;
@@ -41920,14 +42375,14 @@ function registerStateTools(server, stateManager, projectDir, sessionManager) {
     if (!sessionManager.exists(sessionId)) {
       return stateManager;
     }
-    return new StateManager(projectDir, sessionManager.resolve(sessionId));
+    return getScopedStateManager(sessionManager.resolve(sessionId));
   }
   async function resolveWritableStateManager(sessionId) {
     if (!sessionId) {
       return stateManager;
     }
     const sessionDir = sessionManager.exists(sessionId) ? sessionManager.resolve(sessionId) : await sessionManager.create(sessionId);
-    return new StateManager(projectDir, sessionDir);
+    return getScopedStateManager(sessionDir);
   }
   server.registerTool(
     "invoke_get_state",
@@ -41965,47 +42420,7 @@ function registerStateTools(server, stateManager, projectDir, sessionManager) {
     "invoke_set_state",
     {
       description: "Update pipeline state fields. Pass only the fields to update. Supports nested batches and review_cycles.",
-      inputSchema: external_exports3.object({
-        session_id: external_exports3.string().optional(),
-        pipeline_id: external_exports3.string().optional(),
-        current_stage: external_exports3.enum(["scope", "plan", "orchestrate", "build", "review", "complete"]).optional(),
-        work_branch: external_exports3.string().optional(),
-        base_branch: external_exports3.string().optional(),
-        work_branch_path: external_exports3.string().optional(),
-        spec: external_exports3.string().optional(),
-        plan: external_exports3.string().optional(),
-        tasks: external_exports3.string().optional(),
-        strategy: external_exports3.string().optional(),
-        batches: external_exports3.array(external_exports3.object({
-          id: external_exports3.number(),
-          status: external_exports3.enum(["pending", "in_progress", "partial", "completed", "error"]),
-          merged_tasks: external_exports3.array(external_exports3.string()).optional(),
-          tasks: external_exports3.array(external_exports3.object({
-            id: external_exports3.string(),
-            status: external_exports3.enum(["pending", "dispatched", "running", "completed", "error", "timeout", "conflict"]),
-            worktree_path: external_exports3.string().optional(),
-            worktree_branch: external_exports3.string().optional(),
-            conflict_attempts: external_exports3.number().optional(),
-            result_summary: external_exports3.string().optional(),
-            result_status: external_exports3.enum(["success", "error", "timeout"]).optional(),
-            merged: external_exports3.boolean().optional()
-          }))
-        })).optional(),
-        review_cycles: external_exports3.array(external_exports3.object({
-          id: external_exports3.number(),
-          reviewers: external_exports3.array(external_exports3.string()),
-          findings: external_exports3.array(external_exports3.any()),
-          batch_id: external_exports3.number().optional(),
-          scope: external_exports3.enum(["batch", "final"]).optional(),
-          tier: external_exports3.string().optional(),
-          triaged: external_exports3.object({
-            accepted: external_exports3.array(external_exports3.any()),
-            dismissed: external_exports3.array(external_exports3.any()),
-            deferred: external_exports3.array(external_exports3.any()).optional()
-          }).optional()
-        })).optional(),
-        bug_ids: external_exports3.array(external_exports3.string().regex(/^BUG-\d+$/, "bug_ids must be BUG-NNN format")).optional()
-      })
+      inputSchema: SetStateInputSchema
     },
     async (updates) => {
       try {
@@ -42024,7 +42439,22 @@ function registerStateTools(server, stateManager, projectDir, sessionManager) {
             resolvedSessionId ?? `pipeline-${Date.now()}`
           );
         }
-        const updated = await scopedStateManager.update(stateUpdates);
+        if (stateUpdates.batches !== void 0 && stateUpdates.batch_update !== void 0) {
+          console.warn(
+            "invoke_set_state received both batches and batch_update; batch_update will be applied before batches replaces the array"
+          );
+        }
+        if (stateUpdates.review_cycles !== void 0 && stateUpdates.review_cycle_update !== void 0) {
+          console.warn(
+            "invoke_set_state received both review_cycles and review_cycle_update; review_cycle_update will be applied before review_cycles replaces the array"
+          );
+        }
+        const { batch_update, review_cycle_update, ...rest } = stateUpdates;
+        const updated = await scopedStateManager.applyComposite({
+          batchUpdate: batch_update,
+          reviewCycleUpdate: review_cycle_update,
+          partial: rest
+        });
         return {
           content: [{ type: "text", text: JSON.stringify(updated, null, 2) }]
         };
@@ -42142,12 +42572,12 @@ init_zod();
 
 // src/tools/config-manager.ts
 var import_yaml3 = __toESM(require_dist2(), 1);
-import { readFile as readFile8, writeFile as writeFile5 } from "fs/promises";
-import path12 from "path";
+import { readFile as readFile9, writeFile as writeFile5 } from "fs/promises";
+import path13 from "path";
 var ConfigManager = class {
   constructor(projectDir) {
     this.projectDir = projectDir;
-    this.configPath = path12.join(projectDir, ".invoke", "pipeline.yaml");
+    this.configPath = path13.join(projectDir, ".invoke", "pipeline.yaml");
   }
   projectDir;
   configPath;
@@ -42209,7 +42639,7 @@ var ConfigManager = class {
     return this.writeAndReload(raw);
   }
   async readRaw() {
-    const content = await readFile8(this.configPath, "utf-8");
+    const content = await readFile9(this.configPath, "utf-8");
     return (0, import_yaml3.parse)(content);
   }
   async writeAndReload(raw) {
@@ -42327,13 +42757,13 @@ function buildOperation(input) {
 }
 
 // src/tools/context.ts
-import { readFile as readFile9, writeFile as writeFile6 } from "fs/promises";
+import { readFile as readFile10, writeFile as writeFile6 } from "fs/promises";
 import { existsSync as existsSync7 } from "fs";
-import path13 from "path";
+import path14 from "path";
 var ContextManager = class {
   constructor(projectDir) {
     this.projectDir = projectDir;
-    this.contextPath = path13.join(projectDir, ".invoke", "context.md");
+    this.contextPath = path14.join(projectDir, ".invoke", "context.md");
   }
   projectDir;
   contextPath;
@@ -42341,7 +42771,7 @@ var ContextManager = class {
     if (!existsSync7(this.contextPath)) {
       return null;
     }
-    let content = await readFile9(this.contextPath, "utf-8");
+    let content = await readFile10(this.contextPath, "utf-8");
     if (maxLength && content.length > maxLength) {
       content = content.slice(0, maxLength) + "\n\n(truncated)";
     }
@@ -42447,7 +42877,6 @@ function registerContextTools(server, contextManager) {
 // src/tools/metrics-tools.ts
 init_zod();
 init_config();
-var sessionMetricsCache = /* @__PURE__ */ new Map();
 function registerMetricsTools(server, metricsManager, projectDir, sessionManager) {
   server.registerTool(
     "invoke_get_metrics",
@@ -42459,36 +42888,53 @@ function registerMetricsTools(server, metricsManager, projectDir, sessionManager
       })
     },
     async ({ stage, session_id }) => {
-      let activeMetricsManager = metricsManager;
+      let pipelineId = null;
       if (session_id) {
         if (!sessionManager) {
           throw new Error("Session manager is required for session-scoped metrics");
         }
-        if (!sessionMetricsCache.has(session_id)) {
-          sessionMetricsCache.set(
-            session_id,
-            new MetricsManager(projectDir, sessionManager.resolve(session_id))
-          );
+        const sessionStateManager = new StateManager(projectDir, sessionManager.resolve(session_id));
+        const sessionState = await sessionStateManager.get();
+        pipelineId = sessionState?.pipeline_id ?? null;
+        if (!pipelineId) {
+          return {
+            content: [{
+              type: "text",
+              text: JSON.stringify(
+                createMetricsResponse(
+                  [],
+                  createEmptySummary(),
+                  {
+                    dispatches_used: 0,
+                    at_limit: false
+                  }
+                ),
+                null,
+                2
+              )
+            }]
+          };
         }
-        activeMetricsManager = sessionMetricsCache.get(session_id);
       }
-      const options = { stage };
       try {
-        const entries = await activeMetricsManager.getCurrentPipelineMetrics(options);
-        const summary = await activeMetricsManager.getSummary(options);
+        const pipelineEntries = await metricsManager.getMetricsByPipelineId(pipelineId);
+        const entries = filterEntriesByStage(pipelineEntries, stage);
+        const summary = metricsManager.summarize(entries);
         let limits;
         try {
           const config2 = await loadConfig(projectDir);
-          limits = await activeMetricsManager.getLimitStatus(config2);
+          limits = createLimitStatus(
+            pipelineEntries.length,
+            config2.settings.max_dispatches
+          );
         } catch {
-          const pipelineEntries = await activeMetricsManager.getCurrentPipelineMetrics();
           limits = {
             dispatches_used: pipelineEntries.length,
             at_limit: false
           };
         }
         return {
-          content: [{ type: "text", text: JSON.stringify({ entries, summary, limits }, null, 2) }]
+          content: [{ type: "text", text: JSON.stringify(createMetricsResponse(entries, summary, limits), null, 2) }]
         };
       } catch (err) {
         return {
@@ -42498,6 +42944,22 @@ function registerMetricsTools(server, metricsManager, projectDir, sessionManager
       }
     }
   );
+}
+function createMetricsResponse(entries, summary, limits) {
+  return { entries, summary, limits };
+}
+function filterEntriesByStage(entries, stage) {
+  if (!stage) {
+    return [...entries];
+  }
+  return entries.filter((entry) => entry.stage === stage);
+}
+function createLimitStatus(dispatchesUsed, maxDispatches) {
+  return {
+    dispatches_used: dispatchesUsed,
+    max_dispatches: maxDispatches,
+    at_limit: maxDispatches !== void 0 ? dispatchesUsed >= maxDispatches : false
+  };
 }
 
 // src/tools/bug-tools.ts
@@ -42602,13 +43064,13 @@ function logToolError(toolName, error48) {
 // src/defaults-checker.ts
 import { readdir as readdir5 } from "fs/promises";
 import { existsSync as existsSync8 } from "fs";
-import path14 from "path";
+import path15 from "path";
 import { fileURLToPath as fileURLToPath4 } from "url";
-var __dirname4 = path14.dirname(fileURLToPath4(import.meta.url));
-var PACKAGE_ROOT4 = path14.join(__dirname4, "..");
+var __dirname4 = path15.dirname(fileURLToPath4(import.meta.url));
+var PACKAGE_ROOT4 = path15.join(__dirname4, "..");
 async function checkForNewDefaults(projectDir) {
-  const invokeDir = path14.join(projectDir, ".invoke");
-  const defaultsDir = path14.join(PACKAGE_ROOT4, "defaults");
+  const invokeDir = path15.join(projectDir, ".invoke");
+  const defaultsDir = path15.join(PACKAGE_ROOT4, "defaults");
   if (!existsSync8(invokeDir) || !existsSync8(defaultsDir)) {
     return [];
   }
@@ -42620,8 +43082,8 @@ async function scanDir(srcDir, destDir, relativePath, missing) {
   if (!existsSync8(srcDir)) return;
   const entries = await readdir5(srcDir, { withFileTypes: true });
   for (const entry of entries) {
-    const srcPath = path14.join(srcDir, entry.name);
-    const destPath = path14.join(destDir, entry.name);
+    const srcPath = path15.join(srcDir, entry.name);
+    const destPath = path15.join(destDir, entry.name);
     const relPath = relativePath ? `${relativePath}/${entry.name}` : entry.name;
     if (entry.isDirectory()) {
       await scanDir(srcPath, destPath, relPath, missing);
@@ -42634,19 +43096,19 @@ async function scanDir(srcDir, destDir, relativePath, missing) {
   }
 }
 function describeDefault(relPath) {
-  if (relPath.includes("roles/reviewer/")) return `New reviewer: ${path14.basename(relPath, ".md")}`;
-  if (relPath.includes("roles/researcher/")) return `New researcher: ${path14.basename(relPath, ".md")}`;
-  if (relPath.includes("roles/planner/")) return `New planner: ${path14.basename(relPath, ".md")}`;
-  if (relPath.includes("roles/builder/")) return `New builder: ${path14.basename(relPath, ".md")}`;
-  if (relPath.includes("presets/")) return `New preset: ${path14.basename(relPath, path14.extname(relPath))}`;
-  if (relPath.includes("strategies/")) return `New strategy: ${path14.basename(relPath, ".md")}`;
+  if (relPath.includes("roles/reviewer/")) return `New reviewer: ${path15.basename(relPath, ".md")}`;
+  if (relPath.includes("roles/researcher/")) return `New researcher: ${path15.basename(relPath, ".md")}`;
+  if (relPath.includes("roles/planner/")) return `New planner: ${path15.basename(relPath, ".md")}`;
+  if (relPath.includes("roles/builder/")) return `New builder: ${path15.basename(relPath, ".md")}`;
+  if (relPath.includes("presets/")) return `New preset: ${path15.basename(relPath, path15.extname(relPath))}`;
+  if (relPath.includes("strategies/")) return `New strategy: ${path15.basename(relPath, ".md")}`;
   if (relPath === "context-template.md") return "Project context template";
   return `New default: ${relPath}`;
 }
 
 // src/index.ts
 import { writeFile as writeFile7 } from "fs/promises";
-import path15 from "path";
+import path16 from "path";
 async function main() {
   const projectDir = process.cwd();
   const server = new McpServer({
@@ -42671,7 +43133,7 @@ async function main() {
     }
     try {
       await writeFile7(
-        path15.join(projectDir, ".invoke", "validation.json"),
+        path16.join(projectDir, ".invoke", "validation.json"),
         JSON.stringify(validation, null, 2)
       );
     } catch {

@@ -83,7 +83,11 @@ If there are no tasks to re-dispatch on resume, skip straight to progress/merge 
 
 #### d. Monitor Progress and Offer Immediate Merge
 
-Call `invoke_get_batch_status` with the batch ID — it will wait up to 60 seconds for a status change before returning. Keep calling until every task in the batch is resolved. Do NOT use `sleep` between calls.
+> **Session ownership:** Always pass `session_id: <pipeline_id>` on `invoke_get_batch_status` and `invoke_get_task_result` calls. The MCP server enforces session ownership on these tools to prevent cross-session data leakage.
+
+Call `invoke_get_batch_status` with `{ batch_id, session_id: <pipeline_id> }` — it will wait up to 60 seconds for a status change before returning. The response contains `{ batchId, status, agents: [{ taskId, status }] }` — status information only, no result data. Keep calling until every task in the batch is terminal. Do NOT use `sleep` between calls.
+
+When any agent transitions to a terminal state (`completed`, `error`, or `timeout`), immediately call `invoke_get_task_result({ batch_id, task_id, session_id: <pipeline_id> })` for that task to fetch its full result. **Never call `invoke_get_task_result` inside the polling loop for tasks still `pending`, `dispatched`, or `running` — the tool errors for non-terminal tasks.**
 
 On every poll, report progress by bucket so the user can see what is already merged vs. waiting vs. failed:
 > "Batch N progress: merged [task-1], awaiting merge [task-2], pending [task-3], failed [task-4]"
@@ -148,12 +152,14 @@ Never merge two tasks back-to-back without running `invoke_run_post_merge` and w
 
 #### g. Update State
 
-Keep the batch state current via `invoke_set_state` with `session_id: <pipeline_id>` throughout the batch:
+Keep the batch state current throughout the batch using `invoke_set_state` with `session_id: <pipeline_id>` and `batch_update: { id: <batch-id>, status: <status>, tasks: [...] }`:
 - After each successful merge, update that task with `TaskState.merged: true`.
 - Use batch status `in_progress` while work is still actively running.
 - Use batch status `partial` when some tasks are already merged or skipped but the batch still has remaining unmerged work or unresolved failures.
 - Use batch status `completed` only when every successful task is merged and every failed task has been retried successfully or explicitly skipped.
 - Use batch status `error` if the user aborts or the batch cannot continue.
+
+> **Guidance:** Use `batch_update` for all incremental batch and task progress writes. Reserve full `batches: [...]` array writes for clearing state (e.g., invoke-resume redo paths).
 
 When resuming, rely on this saved state instead of guessing from the filesystem. Tasks already marked `merged: true` are done; tasks marked `completed` but not merged should be offered for merge; only unmerged incomplete tasks should be re-dispatched.
 
@@ -181,7 +187,7 @@ If step a resulted in "Skip further review", skip this prompt for the current ba
 
 **For accepted findings that need fixing: ALWAYS dispatch builder agents via `invoke_dispatch_batch` with worktrees.** Do NOT fix code directly in the session — that bypasses the pipeline (no worktrees, no state tracking, no validation). Bundle accepted findings as fix tasks, dispatch builders, merge, validate — same flow as a regular build batch. Structure fix tasks the same way as invoke-review step 7 defines them: each fix task gets the finding details, the file and line reference, and the suggested fix as `task_context`. Set the builder subrole based on the nature of the fix (e.g., `docs` for documentation fixes, `default` for code fixes).
 
-When you record an inter-batch review cycle with `invoke_set_state`, include `session_id: <pipeline_id>`, `batch_id: <current batch id>`, and `scope: 'batch'`. This is especially important when accepted findings trigger fix dispatches, so later review-cycle checks stay tied to the correct batch.
+When you record an inter-batch review cycle, first call `invoke_get_review_cycle_count` with `session_id: <pipeline_id>` and the batch ID to obtain the current count, then use `count + 1` as the new monotonic `id`. Call `invoke_set_state` with `session_id: <pipeline_id>` and `review_cycle_update: { id: <next-id>, batch_id: <current batch id>, scope: 'batch', tier: <tier if applicable>, reviewers: [...], findings: [...], triaged: { accepted: [...], deferred: [...], dismissed: [...] } }`. This is especially important when accepted findings trigger fix dispatches, so later review-cycle checks stay tied to the correct batch.
 
 ### 4. Build Complete
 

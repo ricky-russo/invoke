@@ -4,16 +4,16 @@ vi.mock('../../src/config.js', () => ({
   loadConfig: vi.fn(),
 }))
 
-vi.mock('../../src/metrics/manager.js', () => ({
-  MetricsManager: vi.fn(),
+vi.mock('../../src/tools/state.js', () => ({
+  StateManager: vi.fn(),
 }))
 
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { loadConfig } from '../../src/config.js'
-import { MetricsManager as MetricsManagerClass } from '../../src/metrics/manager.js'
 import type { MetricsManager } from '../../src/metrics/manager.js'
 import type { SessionManager } from '../../src/session/manager.js'
 import { registerMetricsTools } from '../../src/tools/metrics-tools.js'
+import { StateManager as StateManagerClass } from '../../src/tools/state.js'
 import type { DispatchMetric, InvokeConfig, MetricsSummary } from '../../src/types.js'
 
 type RegisteredTool = {
@@ -103,36 +103,36 @@ function createServer() {
 }
 
 describe('registerMetricsTools', () => {
-  let metricsManager: Pick<MetricsManager, 'getCurrentPipelineMetrics' | 'getSummary' | 'getLimitStatus'>
-  let sessionMetricsManager: Pick<MetricsManager, 'getCurrentPipelineMetrics' | 'getSummary' | 'getLimitStatus'>
+  let metricsManager: Pick<
+    MetricsManager,
+    'getMetricsByPipelineId' | 'getSummaryByPipelineId' | 'getLimitStatus' | 'summarize'
+  >
   let sessionManager: Pick<SessionManager, 'resolve'>
+  let getState: ReturnType<typeof vi.fn>
 
   beforeEach(() => {
     vi.resetAllMocks()
     metricsManager = {
-      getCurrentPipelineMetrics: vi.fn(),
-      getSummary: vi.fn(),
+      getMetricsByPipelineId: vi.fn(),
+      getSummaryByPipelineId: vi.fn(),
       getLimitStatus: vi.fn(),
+      summarize: vi.fn(),
     }
-    sessionMetricsManager = {
-      getCurrentPipelineMetrics: vi.fn(),
-      getSummary: vi.fn(),
-      getLimitStatus: vi.fn(),
-    }
+    getState = vi.fn()
     sessionManager = {
       resolve: vi.fn((sessionId: string) => `/tmp/resolved/${sessionId}`),
     }
+    vi.mocked(StateManagerClass).mockImplementation(function MockedStateManager() {
+      return {
+        get: getState,
+      } as unknown as InstanceType<typeof StateManagerClass>
+    })
   })
 
   it('registers invoke_get_metrics and returns filtered metrics with limits', async () => {
     vi.mocked(loadConfig).mockResolvedValue(TEST_CONFIG)
-    vi.mocked(metricsManager.getCurrentPipelineMetrics).mockResolvedValue(BUILD_ENTRIES)
-    vi.mocked(metricsManager.getSummary).mockResolvedValue(BUILD_SUMMARY)
-    vi.mocked(metricsManager.getLimitStatus).mockResolvedValue({
-      dispatches_used: 2,
-      max_dispatches: 10,
-      at_limit: false,
-    })
+    vi.mocked(metricsManager.getMetricsByPipelineId).mockResolvedValue(ALL_ENTRIES)
+    vi.mocked(metricsManager.summarize).mockReturnValue(BUILD_SUMMARY)
 
     const { server, tools } = createServer()
     registerMetricsTools(server, metricsManager as MetricsManager, '/tmp/project')
@@ -147,11 +147,12 @@ describe('registerMetricsTools', () => {
 
     const response = await tool!.handler({ stage: 'build' })
 
-    expect(MetricsManagerClass).not.toHaveBeenCalled()
-    expect(metricsManager.getCurrentPipelineMetrics).toHaveBeenCalledWith({ stage: 'build' })
-    expect(metricsManager.getSummary).toHaveBeenCalledWith({ stage: 'build' })
+    expect(StateManagerClass).not.toHaveBeenCalled()
+    expect(metricsManager.getMetricsByPipelineId).toHaveBeenCalledWith(null)
+    expect(metricsManager.summarize).toHaveBeenCalledWith(BUILD_ENTRIES)
+    expect(metricsManager.getSummaryByPipelineId).not.toHaveBeenCalled()
     expect(loadConfig).toHaveBeenCalledWith('/tmp/project')
-    expect(metricsManager.getLimitStatus).toHaveBeenCalledWith(TEST_CONFIG)
+    expect(metricsManager.getLimitStatus).not.toHaveBeenCalled()
     expect(response.isError).toBeUndefined()
     expect(JSON.parse(response.content[0].text)).toEqual({
       entries: BUILD_ENTRIES,
@@ -166,18 +167,18 @@ describe('registerMetricsTools', () => {
 
   it('falls back to non-limited status when config cannot be loaded', async () => {
     vi.mocked(loadConfig).mockRejectedValue(new Error('missing config'))
-    vi.mocked(metricsManager.getCurrentPipelineMetrics)
-      .mockResolvedValueOnce(BUILD_ENTRIES)
-      .mockResolvedValueOnce(ALL_ENTRIES)
-    vi.mocked(metricsManager.getSummary).mockResolvedValue(BUILD_SUMMARY)
+    vi.mocked(metricsManager.getMetricsByPipelineId).mockResolvedValue(ALL_ENTRIES)
+    vi.mocked(metricsManager.summarize).mockReturnValue(BUILD_SUMMARY)
 
     const { server, tools } = createServer()
     registerMetricsTools(server, metricsManager as MetricsManager, '/tmp/project')
 
     const response = await tools.get('invoke_get_metrics')!.handler({ stage: 'build' })
 
-    expect(metricsManager.getCurrentPipelineMetrics).toHaveBeenNthCalledWith(1, { stage: 'build' })
-    expect(metricsManager.getCurrentPipelineMetrics).toHaveBeenNthCalledWith(2)
+    expect(metricsManager.getMetricsByPipelineId).toHaveBeenCalledTimes(1)
+    expect(metricsManager.getMetricsByPipelineId).toHaveBeenCalledWith(null)
+    expect(metricsManager.summarize).toHaveBeenCalledWith(BUILD_ENTRIES)
+    expect(metricsManager.getSummaryByPipelineId).not.toHaveBeenCalled()
     expect(metricsManager.getLimitStatus).not.toHaveBeenCalled()
     expect(JSON.parse(response.content[0].text)).toEqual({
       entries: BUILD_ENTRIES,
@@ -189,18 +190,11 @@ describe('registerMetricsTools', () => {
     })
   })
 
-  it('creates a session-scoped metrics manager when session_id is provided', async () => {
+  it('reads session pipeline_id and uses the root metrics manager when session_id is provided', async () => {
     vi.mocked(loadConfig).mockResolvedValue(TEST_CONFIG)
-    vi.mocked(MetricsManagerClass).mockImplementation(function MockedMetricsManager() {
-      return sessionMetricsManager as MetricsManager
-    })
-    vi.mocked(sessionMetricsManager.getCurrentPipelineMetrics).mockResolvedValue(BUILD_ENTRIES)
-    vi.mocked(sessionMetricsManager.getSummary).mockResolvedValue(BUILD_SUMMARY)
-    vi.mocked(sessionMetricsManager.getLimitStatus).mockResolvedValue({
-      dispatches_used: 1,
-      max_dispatches: 10,
-      at_limit: false,
-    })
+    getState.mockResolvedValue({ pipeline_id: 'pipeline-123' })
+    vi.mocked(metricsManager.getMetricsByPipelineId).mockResolvedValue(BUILD_ENTRIES)
+    vi.mocked(metricsManager.summarize).mockReturnValue(BUILD_SUMMARY)
 
     const { server, tools } = createServer()
     registerMetricsTools(
@@ -216,11 +210,12 @@ describe('registerMetricsTools', () => {
     })
 
     expect(sessionManager.resolve).toHaveBeenCalledWith('session-42')
-    expect(MetricsManagerClass).toHaveBeenCalledWith('/tmp/project', '/tmp/resolved/session-42')
-    expect(metricsManager.getCurrentPipelineMetrics).not.toHaveBeenCalled()
-    expect(sessionMetricsManager.getCurrentPipelineMetrics).toHaveBeenCalledWith({ stage: 'build' })
-    expect(sessionMetricsManager.getSummary).toHaveBeenCalledWith({ stage: 'build' })
-    expect(sessionMetricsManager.getLimitStatus).toHaveBeenCalledWith(TEST_CONFIG)
+    expect(StateManagerClass).toHaveBeenCalledWith('/tmp/project', '/tmp/resolved/session-42')
+    expect(getState).toHaveBeenCalledTimes(1)
+    expect(metricsManager.getMetricsByPipelineId).toHaveBeenCalledWith('pipeline-123')
+    expect(metricsManager.summarize).toHaveBeenCalledWith(BUILD_ENTRIES)
+    expect(metricsManager.getSummaryByPipelineId).not.toHaveBeenCalled()
+    expect(metricsManager.getLimitStatus).not.toHaveBeenCalled()
     expect(JSON.parse(response.content[0].text)).toEqual({
       entries: BUILD_ENTRIES,
       summary: BUILD_SUMMARY,
@@ -232,18 +227,50 @@ describe('registerMetricsTools', () => {
     })
   })
 
-  it('reuses the same session-scoped metrics manager for repeated requests', async () => {
+  it('returns an empty response when the session has no bound pipeline_id', async () => {
+    getState.mockResolvedValue({})
+
+    const { server, tools } = createServer()
+    registerMetricsTools(
+      server,
+      metricsManager as MetricsManager,
+      '/tmp/project',
+      sessionManager as SessionManager
+    )
+
+    const response = await tools.get('invoke_get_metrics')!.handler({
+      stage: 'build',
+      session_id: 'session-unbound',
+    })
+
+    expect(sessionManager.resolve).toHaveBeenCalledWith('session-unbound')
+    expect(metricsManager.getMetricsByPipelineId).not.toHaveBeenCalled()
+    expect(metricsManager.getSummaryByPipelineId).not.toHaveBeenCalled()
+    expect(metricsManager.summarize).not.toHaveBeenCalled()
+    expect(metricsManager.getLimitStatus).not.toHaveBeenCalled()
+    expect(loadConfig).not.toHaveBeenCalled()
+    expect(JSON.parse(response.content[0].text)).toEqual({
+      entries: [],
+      summary: {
+        total_dispatches: 0,
+        total_prompt_chars: 0,
+        total_duration_ms: 0,
+        total_estimated_cost_usd: 0,
+        by_stage: {},
+        by_provider_model: {},
+      },
+      limits: {
+        dispatches_used: 0,
+        at_limit: false,
+      },
+    })
+  })
+
+  it('resolves the session state on each request and does not cache session metrics managers', async () => {
     vi.mocked(loadConfig).mockResolvedValue(TEST_CONFIG)
-    vi.mocked(MetricsManagerClass).mockImplementation(function MockedMetricsManager() {
-      return sessionMetricsManager as MetricsManager
-    })
-    vi.mocked(sessionMetricsManager.getCurrentPipelineMetrics).mockResolvedValue(BUILD_ENTRIES)
-    vi.mocked(sessionMetricsManager.getSummary).mockResolvedValue(BUILD_SUMMARY)
-    vi.mocked(sessionMetricsManager.getLimitStatus).mockResolvedValue({
-      dispatches_used: 1,
-      max_dispatches: 10,
-      at_limit: false,
-    })
+    getState.mockResolvedValue({ pipeline_id: 'pipeline-123' })
+    vi.mocked(metricsManager.getMetricsByPipelineId).mockResolvedValue(BUILD_ENTRIES)
+    vi.mocked(metricsManager.summarize).mockReturnValue(BUILD_SUMMARY)
 
     const { server, tools } = createServer()
     registerMetricsTools(
@@ -257,17 +284,18 @@ describe('registerMetricsTools', () => {
     await handler({ session_id: 'session-cache-1' })
     await handler({ session_id: 'session-cache-1' })
 
-    expect(MetricsManagerClass).toHaveBeenCalledTimes(1)
-    expect(sessionManager.resolve).toHaveBeenCalledTimes(1)
+    expect(StateManagerClass).toHaveBeenCalledTimes(2)
+    expect(sessionManager.resolve).toHaveBeenCalledTimes(2)
     expect(sessionManager.resolve).toHaveBeenCalledWith('session-cache-1')
-    expect(MetricsManagerClass).toHaveBeenCalledWith('/tmp/project', '/tmp/resolved/session-cache-1')
-    expect(sessionMetricsManager.getCurrentPipelineMetrics).toHaveBeenCalledTimes(2)
-    expect(sessionMetricsManager.getSummary).toHaveBeenCalledTimes(2)
-    expect(sessionMetricsManager.getLimitStatus).toHaveBeenCalledTimes(2)
+    expect(StateManagerClass).toHaveBeenCalledWith('/tmp/project', '/tmp/resolved/session-cache-1')
+    expect(metricsManager.getMetricsByPipelineId).toHaveBeenCalledTimes(2)
+    expect(metricsManager.summarize).toHaveBeenCalledTimes(2)
+    expect(metricsManager.getSummaryByPipelineId).not.toHaveBeenCalled()
+    expect(metricsManager.getLimitStatus).not.toHaveBeenCalled()
   })
 
   it('returns isError when metrics cannot be read', async () => {
-    vi.mocked(metricsManager.getCurrentPipelineMetrics).mockRejectedValue(new Error('metrics unavailable'))
+    vi.mocked(metricsManager.getMetricsByPipelineId).mockRejectedValue(new Error('metrics unavailable'))
 
     const { server, tools } = createServer()
     registerMetricsTools(server, metricsManager as MetricsManager, '/tmp/project')

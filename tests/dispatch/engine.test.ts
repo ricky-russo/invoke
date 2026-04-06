@@ -163,7 +163,6 @@ function makeParsedResult(
     status: 'success',
     output: {
       summary: `${context.provider} done`,
-      report: context.role === 'researcher' ? rawOutput : undefined,
       findings: context.role === 'reviewer' ? [] : undefined,
       raw: rawOutput,
     },
@@ -528,6 +527,109 @@ describe('DispatchEngine', () => {
     expect(codexMetric.started_at).toEqual(expect.any(String))
   })
 
+  it('prefers boundPipelineId over taskContext.pipeline_id for session metric writes', async () => {
+    queueSpawnBehaviors({ stdout: 'Bound output', exitCode: 0 })
+
+    const onDispatchComplete = vi.fn()
+    const { engine } = createEngine(makeConfig(), { onDispatchComplete })
+
+    await engine.dispatch({
+      role: 'researcher',
+      subrole: 'codebase',
+      taskContext: {
+        task_description: 'Analyze',
+        pipeline_id: 'attacker-pipe',
+      },
+      sessionId: 'session-bound',
+      boundPipelineId: 'real-pipe',
+    })
+
+    expect(onDispatchComplete).toHaveBeenCalledWith(
+      expect.objectContaining({
+        pipeline_id: 'real-pipe',
+      })
+    )
+    expect(onDispatchComplete).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        pipeline_id: 'attacker-pipe',
+      })
+    )
+  })
+
+  it('skips metric recording and warns when a session dispatch has no bound pipeline id', async () => {
+    queueSpawnBehaviors({ stdout: 'Bootstrap work', exitCode: 0 })
+
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const onDispatchComplete = vi.fn()
+    const { engine } = createEngine(makeConfig(), { onDispatchComplete })
+
+    try {
+      await engine.dispatch({
+        role: 'researcher',
+        subrole: 'codebase',
+        taskContext: { task_description: 'Bootstrap session' },
+        sessionId: 'session-bootstrap',
+        boundPipelineId: null,
+      })
+
+      expect(onDispatchComplete).not.toHaveBeenCalled()
+      expect(warnSpy).toHaveBeenCalledWith(
+        'Skipping metric record - session dispatch missing bound pipeline_id'
+      )
+    } finally {
+      warnSpy.mockRestore()
+    }
+  })
+
+  it('skips metric recording when a session dispatch has no bound pipeline id and taskContext supplies one', async () => {
+    queueSpawnBehaviors({ stdout: 'Bootstrap work', exitCode: 0 })
+
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const onDispatchComplete = vi.fn()
+    const { engine } = createEngine(makeConfig(), { onDispatchComplete })
+
+    try {
+      await engine.dispatch({
+        role: 'researcher',
+        subrole: 'codebase',
+        taskContext: {
+          task_description: 'Bootstrap session',
+          pipeline_id: 'attacker-pipe',
+        },
+        sessionId: 'session-bootstrap',
+        boundPipelineId: null,
+      })
+
+      expect(onDispatchComplete).not.toHaveBeenCalled()
+      expect(warnSpy).toHaveBeenCalledWith(
+        'Skipping metric record - session dispatch missing bound pipeline_id'
+      )
+    } finally {
+      warnSpy.mockRestore()
+    }
+  })
+
+  it('skips metric recording without warning for non-session dispatches that have no pipeline id', async () => {
+    queueSpawnBehaviors({ stdout: 'Bootstrap work', exitCode: 0 })
+
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const onDispatchComplete = vi.fn()
+    const { engine } = createEngine(makeConfig(), { onDispatchComplete })
+
+    try {
+      await engine.dispatch({
+        role: 'researcher',
+        subrole: 'codebase',
+        taskContext: { task_description: 'Bootstrap dispatch' },
+      })
+
+      expect(onDispatchComplete).not.toHaveBeenCalled()
+      expect(warnSpy).not.toHaveBeenCalled()
+    } finally {
+      warnSpy.mockRestore()
+    }
+  })
+
   it('uses parsed raw output length for metrics and cost estimation when available', async () => {
     queueSpawnBehaviors({ stderr: 'stderr diagnostics', exitCode: 1 })
 
@@ -557,7 +659,12 @@ describe('DispatchEngine', () => {
     await engine.dispatch({
       role: 'researcher',
       subrole: 'codebase',
-      taskContext: { task_description: 'Analyze' },
+      taskContext: {
+        task_description: 'Analyze',
+        pipeline_id: 'pipeline-output-size',
+      },
+      sessionId: 'session-output-size',
+      boundPipelineId: 'pipeline-output-size',
     })
 
     expect(parse).toHaveBeenCalledWith(

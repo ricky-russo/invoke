@@ -1,10 +1,12 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
 import { loadConfig } from '../config.js'
-import { MetricsManager } from '../metrics/manager.js'
+import { createEmptySummary, MetricsManager } from '../metrics/manager.js'
 import type { SessionManager } from '../session/manager.js'
+import type { DispatchMetric, MetricsSummary } from '../types.js'
+import { StateManager } from './state.js'
 
-const sessionMetricsCache = new Map<string, MetricsManager>()
+type MetricsLimits = { dispatches_used: number; max_dispatches?: number; at_limit: boolean }
 
 export function registerMetricsTools(
   server: McpServer,
@@ -22,33 +24,54 @@ export function registerMetricsTools(
       }),
     },
     async ({ stage, session_id }) => {
-      let activeMetricsManager = metricsManager
+      let pipelineId: string | null = null
+
       if (session_id) {
         if (!sessionManager) {
           throw new Error('Session manager is required for session-scoped metrics')
         }
 
-        if (!sessionMetricsCache.has(session_id)) {
-          sessionMetricsCache.set(
-            session_id,
-            new MetricsManager(projectDir, sessionManager.resolve(session_id))
-          )
+        // Session-scoped metrics read pipeline_id from session state and rely on
+        // the state layer to preserve that binding once initialized.
+        const sessionStateManager = new StateManager(projectDir, sessionManager.resolve(session_id))
+        const sessionState = await sessionStateManager.get()
+        pipelineId = sessionState?.pipeline_id ?? null
+
+        if (!pipelineId) {
+          return {
+            content: [{
+              type: 'text',
+              text: JSON.stringify(
+                createMetricsResponse(
+                  [],
+                  createEmptySummary(),
+                  {
+                    dispatches_used: 0,
+                    at_limit: false,
+                  }
+                ),
+                null,
+                2
+              ),
+            }],
+          }
         }
-        activeMetricsManager = sessionMetricsCache.get(session_id)!
       }
-      const options = { stage }
 
       try {
-        const entries = await activeMetricsManager.getCurrentPipelineMetrics(options)
-        const summary = await activeMetricsManager.getSummary(options)
+        const pipelineEntries = await metricsManager.getMetricsByPipelineId(pipelineId)
+        const entries = filterEntriesByStage(pipelineEntries, stage)
+        const summary = metricsManager.summarize(entries)
 
         let limits: { dispatches_used: number; max_dispatches?: number; at_limit: boolean }
 
         try {
           const config = await loadConfig(projectDir)
-          limits = await activeMetricsManager.getLimitStatus(config)
+          limits = createLimitStatus(
+            pipelineEntries.length,
+            config.settings.max_dispatches
+          )
         } catch {
-          const pipelineEntries = await activeMetricsManager.getCurrentPipelineMetrics()
           limits = {
             dispatches_used: pipelineEntries.length,
             at_limit: false,
@@ -56,7 +79,7 @@ export function registerMetricsTools(
         }
 
         return {
-          content: [{ type: 'text', text: JSON.stringify({ entries, summary, limits }, null, 2) }],
+          content: [{ type: 'text', text: JSON.stringify(createMetricsResponse(entries, summary, limits), null, 2) }],
         }
       } catch (err) {
         return {
@@ -66,4 +89,38 @@ export function registerMetricsTools(
       }
     }
   )
+}
+
+function createMetricsResponse(
+  entries: unknown[],
+  summary: MetricsSummary,
+  limits: MetricsLimits
+): {
+  entries: unknown[]
+  summary: MetricsSummary
+  limits: MetricsLimits
+} {
+  return { entries, summary, limits }
+}
+
+function filterEntriesByStage(
+  entries: DispatchMetric[],
+  stage?: string
+): DispatchMetric[] {
+  if (!stage) {
+    return [...entries]
+  }
+
+  return entries.filter(entry => entry.stage === stage)
+}
+
+function createLimitStatus(
+  dispatchesUsed: number,
+  maxDispatches?: number
+): MetricsLimits {
+  return {
+    dispatches_used: dispatchesUsed,
+    max_dispatches: maxDispatches,
+    at_limit: maxDispatches !== undefined ? dispatchesUsed >= maxDispatches : false,
+  }
 }

@@ -1,6 +1,6 @@
 const COST_PRECISION = 1_000_000_000;
-export function compareSessions(sessionMetrics) {
-    const sessions = Array.from(sessionMetrics.entries(), ([sessionId, metrics]) => summarizeSession(sessionId, metrics));
+export function compareSessions(sessionMetrics, sessionSummaries) {
+    const sessions = Array.from(sessionMetrics.entries(), ([sessionId, metrics]) => summarizeSession(sessionId, metrics, sessionSummaries?.get(sessionId)));
     return {
         sessions,
         delta: sessions.length === 2 ? createDelta(sessions[0], sessions[1]) : null,
@@ -17,23 +17,26 @@ export function formatComparisonTable(comparison) {
     }
     return lines.join('\n');
 }
-function summarizeSession(sessionId, metrics) {
+function summarizeSession(sessionId, metrics, metricsSummary) {
     let successfulDispatches = 0;
     const summary = {
         session_id: sessionId,
-        total_dispatches: metrics.length,
+        total_dispatches: metricsSummary?.total_dispatches ?? metrics.length,
         success_rate: 0,
-        total_duration_ms: 0,
-        total_prompt_chars: 0,
-        total_estimated_cost_usd: 0,
-        by_stage: {},
-        by_provider_model: {},
+        total_duration_ms: metricsSummary?.total_duration_ms ?? 0,
+        total_prompt_chars: metricsSummary?.total_prompt_chars ?? 0,
+        total_estimated_cost_usd: metricsSummary?.total_estimated_cost_usd ?? 0,
+        by_stage: cloneBreakdown(metricsSummary?.by_stage),
+        by_provider_model: cloneBreakdown(metricsSummary?.by_provider_model),
     };
     for (const metric of metrics) {
-        const cost = normalizeCost(metric.estimated_cost_usd ?? 0);
         if (metric.status === 'success') {
             successfulDispatches += 1;
         }
+        if (metricsSummary) {
+            continue;
+        }
+        const cost = normalizeCost(metric.estimated_cost_usd ?? 0);
         summary.total_duration_ms += metric.duration_ms;
         summary.total_prompt_chars += metric.prompt_size_chars;
         summary.total_estimated_cost_usd = normalizeCost(summary.total_estimated_cost_usd + cost);
@@ -64,6 +67,20 @@ function summarizeSession(sessionId, metrics) {
     summary.success_rate =
         summary.total_dispatches === 0 ? 0 : successfulDispatches / summary.total_dispatches;
     return summary;
+}
+function cloneBreakdown(breakdown) {
+    if (!breakdown) {
+        return {};
+    }
+    return Object.fromEntries(Object.entries(breakdown).map(([key, value]) => [
+        key,
+        {
+            dispatches: value.dispatches,
+            duration_ms: value.duration_ms,
+            prompt_chars: value.prompt_chars,
+            estimated_cost_usd: normalizeCost(value.estimated_cost_usd),
+        },
+    ]));
 }
 function createDelta(sessionA, sessionB) {
     return {

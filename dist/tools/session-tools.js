@@ -101,18 +101,26 @@ async function getSessionsWithStatus(sessionManager, projectDir) {
     return sessionManager.list(staleSessionDays);
 }
 async function addSessionMetricsSummaries(sessions, sessionManager, projectDir) {
-    return Promise.all(sessions.map(async (session) => ({
-        ...session,
-        metrics_summary: await getSessionMetricsSummary(session.session_id, sessionManager, projectDir),
+    const metricsManager = new MetricsManager(projectDir);
+    const sessionPipelineBindings = await Promise.all(sessions.map(async (session) => ({
+        session,
+        pipelineId: await getSessionPipelineId(session.session_id, sessionManager, projectDir),
     })));
+    const summariesByPipelineId = await metricsManager.getSummariesByPipelineIds(sessionPipelineBindings.flatMap(({ pipelineId }) => (pipelineId ? [pipelineId] : [])));
+    return sessionPipelineBindings.map(({ session, pipelineId }) => ({
+        ...session,
+        metrics_summary: toSessionMetricsSummary(pipelineId ? summariesByPipelineId.get(pipelineId) : undefined),
+    }));
 }
-async function getSessionMetricsSummary(sessionId, sessionManager, projectDir) {
-    const metricsManager = new MetricsManager(projectDir, sessionManager.resolve(sessionId));
-    const summary = await metricsManager.getSummary();
+async function getSessionPipelineId(sessionId, sessionManager, projectDir) {
+    const sessionState = await new StateManager(projectDir, sessionManager.resolve(sessionId)).get();
+    return sessionState?.pipeline_id ?? null;
+}
+function toSessionMetricsSummary(summary) {
     return {
-        total_dispatches: summary.total_dispatches,
-        total_duration_ms: summary.total_duration_ms,
-        total_estimated_cost_usd: summary.total_estimated_cost_usd,
+        total_dispatches: summary?.total_dispatches ?? 0,
+        total_duration_ms: summary?.total_duration_ms ?? 0,
+        total_estimated_cost_usd: summary?.total_estimated_cost_usd ?? 0,
     };
 }
 async function getStaleSessionDays(projectDir) {

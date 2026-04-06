@@ -151,10 +151,16 @@ describe('registerSessionTools', () => {
     await writeFile(path.join(sessionDir, 'state.json'), JSON.stringify(state, null, 2) + '\n')
   }
 
-  async function writeSessionMetrics(sessionId: string, metrics: DispatchMetric[]): Promise<void> {
+  async function writeSessionStateRaw(sessionId: string, state: Record<string, unknown>): Promise<void> {
     const sessionDir = path.join(projectDir, '.invoke', 'sessions', sessionId)
     await mkdir(sessionDir, { recursive: true })
-    await writeFile(path.join(sessionDir, 'metrics.json'), JSON.stringify(metrics, null, 2) + '\n')
+    await writeFile(path.join(sessionDir, 'state.json'), JSON.stringify(state, null, 2) + '\n')
+  }
+
+  async function writeRootMetrics(metrics: DispatchMetric[]): Promise<void> {
+    const invokeDir = path.join(projectDir, '.invoke')
+    await mkdir(invokeDir, { recursive: true })
+    await writeFile(path.join(invokeDir, 'metrics.json'), JSON.stringify(metrics, null, 2) + '\n')
   }
 
   async function createSessionWorktreeState(sessionId: string, overrides: Partial<PipelineState> = {}) {
@@ -328,7 +334,7 @@ describe('registerSessionTools', () => {
         current_stage: 'complete',
       })
     )
-    await writeSessionMetrics('session-a', [
+    await writeRootMetrics([
       {
         pipeline_id: 'pipeline-a',
         stage: 'build',
@@ -357,8 +363,6 @@ describe('registerSessionTools', () => {
         started_at: '2026-04-04T12:05:00.000Z',
         estimated_cost_usd: 0.1,
       },
-    ])
-    await writeSessionMetrics('session-b', [
       {
         pipeline_id: 'pipeline-b',
         stage: 'build',
@@ -391,6 +395,85 @@ describe('registerSessionTools', () => {
           total_dispatches: 2,
           total_duration_ms: 750,
           total_estimated_cost_usd: 0.15,
+        },
+      },
+      {
+        session_id: 'session-b',
+        pipeline_id: 'pipeline-b',
+        current_stage: 'complete',
+        started: '2026-04-01T08:00:00.000Z',
+        last_updated: '2026-04-05T09:00:00.000Z',
+        status: 'complete',
+        metrics_summary: {
+          total_dispatches: 1,
+          total_duration_ms: 120,
+          total_estimated_cost_usd: 0.02,
+        },
+      },
+    ])
+  })
+
+  it('returns zeroed metrics summaries for sessions without a bound pipeline_id', async () => {
+    await writeSessionStateRaw('session-a', {
+      started: '2026-04-01T08:00:00.000Z',
+      last_updated: '2026-04-05T09:00:00.000Z',
+      current_stage: 'review',
+      batches: [],
+      review_cycles: [],
+    })
+    await writeSessionState(
+      'session-b',
+      createState({
+        pipeline_id: 'pipeline-b',
+        current_stage: 'complete',
+      })
+    )
+    await writeRootMetrics([
+      {
+        pipeline_id: null,
+        stage: 'build',
+        role: 'builder',
+        subrole: 'default',
+        provider: 'claude',
+        model: 'opus-4.6',
+        effort: 'medium',
+        prompt_size_chars: 999,
+        duration_ms: 999,
+        status: 'success',
+        started_at: '2026-04-04T12:00:00.000Z',
+        estimated_cost_usd: 0.75,
+      },
+      {
+        pipeline_id: 'pipeline-b',
+        stage: 'build',
+        role: 'builder',
+        subrole: 'default',
+        provider: 'claude',
+        model: 'opus-4.6',
+        effort: 'medium',
+        prompt_size_chars: 60,
+        duration_ms: 120,
+        status: 'success',
+        started_at: '2026-04-04T12:10:00.000Z',
+        estimated_cost_usd: 0.02,
+      },
+    ])
+
+    const result = await getTool('invoke_list_sessions').handler({ withMetrics: true })
+    const sessions = parseResponseText<Array<Record<string, unknown>>>(result)
+
+    expect(result.isError).toBeUndefined()
+    expect(sessions).toEqual([
+      {
+        session_id: 'session-a',
+        current_stage: 'review',
+        started: '2026-04-01T08:00:00.000Z',
+        last_updated: '2026-04-05T09:00:00.000Z',
+        status: 'active',
+        metrics_summary: {
+          total_dispatches: 0,
+          total_duration_ms: 0,
+          total_estimated_cost_usd: 0,
         },
       },
       {

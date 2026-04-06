@@ -92,7 +92,9 @@ Wait for user selection, then dispatch the selected researchers using `invoke_di
 
 #### Wait for completion
 
-Call `invoke_get_batch_status` with the batch ID — it will wait up to 60 seconds for a status change before returning. Keep calling until all researchers complete. Do NOT use `sleep` between calls — the tool handles waiting internally. Let the user know agents are working.
+> **Session ownership:** Always pass `session_id: <pipeline_id>` on `invoke_get_batch_status` and `invoke_get_task_result` calls. The MCP server enforces session ownership on these tools to prevent cross-session data leakage.
+
+Call `invoke_get_batch_status` with `{ batch_id, session_id: <pipeline_id> }` — it will wait up to 60 seconds for a status change before returning. The response contains `{ batchId, status, agents: [{ taskId, status }] }` — status information only, no result data. Keep calling until all researcher tasks are terminal. Do NOT use `sleep` between calls — the tool handles waiting internally. Let the user know agents are working.
 
 **CRITICAL: Do NOT proceed to step 5 while any dispatched agents are still running.** You must wait for all agents to complete or fail before moving on.
 
@@ -117,7 +119,7 @@ Only the user decides when to skip — never make this decision yourself.
 
 ### 5. Review Research
 
-Read the research reports from the batch results. Use them to inform your scoping questions.
+After `invoke_get_batch_status` shows the batch is complete, call `invoke_get_task_result({ batch_id, task_id, session_id: <pipeline_id> })` for each researcher task to fetch the full report. Use `result.output.raw` for the full research report, or `result.output.summary` for a quick gist. Use the reports to inform your scoping questions.
 
 ### 6. Ask Clarifying Questions
 

@@ -60,7 +60,11 @@ Get the diff using `git diff main...HEAD` (or `git diff $(git merge-base HEAD ma
 
 Check the batch response before moving on. It includes `dispatch_estimate`, and may include `warning` when the projected usage is approaching or exceeding `max_dispatches`. Surface that warning to the user as an advisory notice before the dispatch summary and status polling.
 
-Call `invoke_get_batch_status` with the batch ID — it will wait up to 60 seconds for a status change before returning. Keep calling until complete. Do NOT use `sleep` between calls.
+> **Session ownership:** Always pass `session_id: <pipeline_id>` on `invoke_get_batch_status` and `invoke_get_task_result` calls. The MCP server enforces session ownership on these tools to prevent cross-session data leakage.
+
+Call `invoke_get_batch_status` with `{ batch_id, session_id: <pipeline_id> }` — it will wait up to 60 seconds for a status change before returning. The response contains `{ batchId, status, agents: [{ taskId, status }] }` — status information only, no result data. Keep calling until all reviewer tasks are terminal. Do NOT use `sleep` between calls.
+
+When any reviewer task transitions to a terminal state (`completed`, `error`, or `timeout`), call `invoke_get_task_result({ batch_id, task_id, session_id: <pipeline_id> })` for that task to fetch its full result — reviewer findings are in `result.output.findings`. **Never call `invoke_get_task_result` for tasks still `pending`, `dispatched`, or `running` — the tool errors for non-terminal tasks.**
 
 **CRITICAL: Do NOT proceed to step 5 while any dispatched reviewers are still running.** You must wait for all reviewers to complete or fail. If reviewers have been running for more than 5 minutes, use `AskUserQuestion` to ask the user whether to keep waiting, proceed with partial results, or cancel.
 
@@ -119,9 +123,9 @@ AskUserQuestion({
 })
 ```
 
-After triage, record the review cycle with `invoke_set_state` using `session_id: <pipeline_id>` under `review_cycles`. Save the reviewers, findings, and triage result (`accepted` / `deferred` / `dismissed`). For tiered review cycles, include `tier: "<tier name>"` on the `ReviewCycle`. In fallback mode, leave `tier` unset. For final review cycles in this stage, include `scope: 'final'`.
+After triage, record the review cycle using `invoke_set_state` with `session_id: <pipeline_id>` and `review_cycle_update`. First call `invoke_get_review_cycle_count` with `session_id: <pipeline_id>` to read the current count; use `count + 1` as the new monotonic `id`. Save the reviewers, findings, and triage result (`accepted` / `deferred` / `dismissed`). For tiered review cycles, include `tier: "<tier name>"`. In fallback mode, leave `tier` unset. For final review cycles in this stage, include `scope: 'final'`.
 
-Each entry in `review_cycles` follows this schema:
+Each `review_cycle_update` follows this schema:
 
 ```json
 {
@@ -190,7 +194,15 @@ Bundle accepted findings as fix tasks. For each finding, create a task:
 
 Dispatch fix tasks using `invoke_dispatch_batch` with `create_worktrees: true`.
 
-Call `invoke_get_batch_status` to wait for completion. Merge worktrees, run post-merge commands, validate — same flow as a regular build batch.
+> **Session ownership:** Always pass `session_id: <pipeline_id>` on `invoke_get_batch_status` and `invoke_get_task_result` calls. The MCP server enforces session ownership on these tools to prevent cross-session data leakage.
+
+Call `invoke_get_batch_status` with `{ batch_id, session_id: <pipeline_id> }` — it will wait up to 60 seconds for a status change before returning. The response contains `{ batchId, status, agents: [{ taskId, status }] }` — status information only, no result data. Keep calling until every fix task is terminal. Do NOT use `sleep` between calls.
+
+When any fix task transitions to a terminal state (`completed`, `error`, or `timeout`), call `invoke_get_task_result({ batch_id, task_id, session_id: <pipeline_id> })` for that task to fetch its full result. Use `result.output` to decide whether to merge, retry, or skip that task — do not make merge or retry decisions before the result is fetched. **Never call `invoke_get_task_result` for tasks still `pending`, `dispatched`, or `running` — the tool errors for non-terminal tasks.**
+
+Once a fix task's result indicates success, call `invoke_merge_worktree` for that task, then call `invoke_run_post_merge` before merging the next task. Never merge two fix tasks back-to-back without running `invoke_run_post_merge` between them.
+
+The same polling pattern — `invoke_get_batch_status` to track status, `invoke_get_task_result` for terminal tasks, `invoke_merge_worktree` + `invoke_run_post_merge` between merges — applies to any subsequent fix dispatches triggered during nested same-tier re-review cycles.
 
 In tiered review, when accepted findings came from a tier, re-review that same tier only after fixes are applied. Do NOT jump ahead to later tiers until the current tier clears. In fallback review, accepted findings lead to another full review cycle only if the user asks for it in step 8.
 

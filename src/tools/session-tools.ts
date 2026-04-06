@@ -4,7 +4,12 @@ import { loadConfig } from '../config.js'
 import { MetricsManager } from '../metrics/manager.js'
 import { SessionManager } from '../session/manager.js'
 import { StateManager } from './state.js'
-import type { PipelineState, SessionInfo, SessionMetricsSummary } from '../types.js'
+import type {
+  MetricsSummary,
+  PipelineState,
+  SessionInfo,
+  SessionMetricsSummary,
+} from '../types.js'
 import type { SessionWorktreeManager } from '../worktree/session-worktree.js'
 
 const DEFAULT_STALE_SESSION_DAYS = 7
@@ -162,26 +167,39 @@ async function addSessionMetricsSummaries(
   sessionManager: SessionManager,
   projectDir: string
 ): Promise<SessionInfo[]> {
-  return Promise.all(
+  const metricsManager = new MetricsManager(projectDir)
+  const sessionPipelineBindings = await Promise.all(
     sessions.map(async session => ({
-      ...session,
-      metrics_summary: await getSessionMetricsSummary(session.session_id, sessionManager, projectDir),
+      session,
+      pipelineId: await getSessionPipelineId(session.session_id, sessionManager, projectDir),
     }))
   )
+  const summariesByPipelineId = await metricsManager.getSummariesByPipelineIds(
+    sessionPipelineBindings.flatMap(({ pipelineId }) => (pipelineId ? [pipelineId] : []))
+  )
+
+  return sessionPipelineBindings.map(({ session, pipelineId }) => ({
+    ...session,
+    metrics_summary: toSessionMetricsSummary(
+      pipelineId ? summariesByPipelineId.get(pipelineId) : undefined
+    ),
+  }))
 }
 
-async function getSessionMetricsSummary(
+async function getSessionPipelineId(
   sessionId: string,
   sessionManager: SessionManager,
   projectDir: string
-): Promise<SessionMetricsSummary> {
-  const metricsManager = new MetricsManager(projectDir, sessionManager.resolve(sessionId))
-  const summary = await metricsManager.getSummary()
+): Promise<string | null> {
+  const sessionState = await new StateManager(projectDir, sessionManager.resolve(sessionId)).get()
+  return sessionState?.pipeline_id ?? null
+}
 
+function toSessionMetricsSummary(summary?: MetricsSummary): SessionMetricsSummary {
   return {
-    total_dispatches: summary.total_dispatches,
-    total_duration_ms: summary.total_duration_ms,
-    total_estimated_cost_usd: summary.total_estimated_cost_usd,
+    total_dispatches: summary?.total_dispatches ?? 0,
+    total_duration_ms: summary?.total_duration_ms ?? 0,
+    total_estimated_cost_usd: summary?.total_estimated_cost_usd ?? 0,
   }
 }
 

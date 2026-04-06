@@ -219,7 +219,6 @@ describe('Dispatch Chain Integration', () => {
     })
 
     expect(result.status).toBe('success')
-    expect(result.output.report).toBe(researchOutput)
     expect(result.output.findings).toBeUndefined()
   })
 
