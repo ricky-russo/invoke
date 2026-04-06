@@ -181,6 +181,96 @@ describe('registerStateTools', () => {
     await expect(stateManager.get()).resolves.toBeNull()
   })
 
+  it('preserves Finding.out_of_scope through invoke_set_state -> state.json -> invoke_get_state round-trip', async () => {
+    const setStateTool = getTool('invoke_set_state')
+    const input = {
+      session_id: 'session-1',
+      pipeline_id: 'pipeline-123',
+      review_cycles: [
+        {
+          id: 1,
+          reviewers: ['reviewer-a'],
+          findings: [
+            {
+              issue: 'Ignore generated file',
+              severity: 'low' as const,
+              file: 'src/generated.ts',
+              suggestion: 'No action needed.',
+              out_of_scope: true,
+            },
+            {
+              issue: 'Missing validation',
+              severity: 'medium' as const,
+              file: 'src/handler.ts',
+              suggestion: 'Add input validation.',
+              out_of_scope: false,
+            },
+          ],
+          scope: 'final' as const,
+        },
+      ],
+    }
+
+    expect(setStateTool.config.inputSchema.safeParse(input).success).toBe(true)
+
+    const setResult = await setStateTool.handler(input)
+    expect(setResult.isError).toBeUndefined()
+
+    const sessionStateManager = new StateManager(
+      TEST_DIR,
+      sessionManager.resolve('session-1')
+    )
+    const persistedState = await sessionStateManager.get()
+    expect(persistedState?.review_cycles[0].findings[0].out_of_scope).toBe(true)
+    expect(persistedState?.review_cycles[0].findings[1].out_of_scope).toBe(false)
+
+    const getResult = await getTool('invoke_get_state').handler({ session_id: 'session-1' })
+    expect(getResult.isError).toBeUndefined()
+
+    const state = parseResponseText(getResult) as {
+      review_cycles: Array<{ findings: Array<{ out_of_scope?: boolean }> }>
+    }
+    expect(state.review_cycles[0].findings[0].out_of_scope).toBe(true)
+    expect(state.review_cycles[0].findings[1].out_of_scope).toBe(false)
+  })
+
+  it('preserves ReviewCycle.reviewed_sha through invoke_set_state -> state.json -> invoke_get_state round-trip', async () => {
+    const setStateTool = getTool('invoke_set_state')
+    const input = {
+      session_id: 'session-1',
+      pipeline_id: 'pipeline-123',
+      review_cycles: [
+        {
+          id: 1,
+          reviewers: ['reviewer-a'],
+          findings: [],
+          scope: 'final' as const,
+          reviewed_sha: 'abc1234',
+        },
+      ],
+    }
+
+    expect(setStateTool.config.inputSchema.safeParse(input).success).toBe(true)
+
+    const setResult = await setStateTool.handler(input)
+    expect(setResult.isError).toBeUndefined()
+
+    const sessionStateManager = new StateManager(
+      TEST_DIR,
+      sessionManager.resolve('session-1')
+    )
+    const persistedState = await sessionStateManager.get()
+    expect(persistedState?.review_cycles[0].reviewed_sha).toBe('abc1234')
+
+    const getResult = await getTool('invoke_get_state').handler({ session_id: 'session-1' })
+    expect(getResult.isError).toBeUndefined()
+
+    const state = parseResponseText(getResult) as {
+      review_cycles: Array<{ reviewed_sha?: string }>
+    }
+    expect(state.review_cycles[0].reviewed_sha).toBe('abc1234')
+  })
+
   it('accepts partial batch state and merged task flags in invoke_set_state', async () => {
     const setStateTool = getTool('invoke_set_state')
     const input = {
@@ -258,6 +348,21 @@ describe('registerStateTools', () => {
     }
 
     expect(setStateTool.config.inputSchema.safeParse(input).success).toBe(true)
+  })
+
+  it('rejects review_cycle_update with reviewed_sha of wrong type', () => {
+    const setStateTool = getTool('invoke_set_state')
+    const parsed = setStateTool.config.inputSchema.safeParse({
+      session_id: 'session-1',
+      review_cycle_update: {
+        id: 1,
+        reviewers: ['reviewer-a'],
+        findings: [],
+        reviewed_sha: 123,
+      },
+    })
+
+    expect(parsed.success).toBe(false)
   })
 
   it('accepts and persists conflicting_files on a task in invoke_set_state batch_update', async () => {

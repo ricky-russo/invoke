@@ -135,6 +135,7 @@ export interface Finding {
   line?: number
   suggestion: string
   agreedBy?: string[]
+  out_of_scope?: boolean
 }
 
 export interface FileChange {
@@ -219,6 +220,7 @@ export interface ReviewCycle {
   batch_id?: number
   scope?: 'batch' | 'final'
   tier?: string
+  reviewed_sha?: string
   triaged?: {
     accepted: Finding[]
     dismissed: Finding[]
