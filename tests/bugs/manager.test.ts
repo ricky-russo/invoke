@@ -1,10 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { readFile, rm } from 'fs/promises'
+import { mkdir, readFile, rm, symlink, writeFile } from 'fs/promises'
 import path from 'path'
+import { ZodError } from 'zod'
 import { parse } from 'yaml'
 import { BugManager } from '../../src/bugs/manager.js'
 
 const TEST_DIR = path.join(import.meta.dirname, 'fixtures', 'bug-manager-test')
+const BUGS_FILE_PATH = path.join(TEST_DIR, '.invoke', 'bugs.yaml')
 
 let bugManager: BugManager
 
@@ -44,7 +46,7 @@ describe('BugManager', () => {
     expect(bug.created).toBe(bug.updated)
     expect(new Date(bug.created).getTime()).toBeGreaterThan(0)
 
-    const raw = await readFile(path.join(TEST_DIR, '.invoke', 'bugs.yaml'), 'utf-8')
+    const raw = await readFile(BUGS_FILE_PATH, 'utf-8')
     const parsed = parse(raw) as { bugs: unknown[] }
 
     expect(parsed.bugs).toHaveLength(1)
@@ -65,6 +67,27 @@ describe('BugManager', () => {
 
     expect(second.id).toBe('BUG-002')
     expect(second.severity).toBe('medium')
+  })
+
+  it('report() persists concurrent writes without losing either bug', async () => {
+    const [first, second] = await Promise.all([
+      bugManager.report({
+        title: 'Concurrent bug A',
+        description: 'Reported in parallel A.',
+      }),
+      bugManager.report({
+        title: 'Concurrent bug B',
+        description: 'Reported in parallel B.',
+      }),
+    ])
+
+    expect([first.id, second.id].sort()).toEqual(['BUG-001', 'BUG-002'])
+
+    const bugs = await bugManager.list({ status: 'all' })
+
+    expect(bugs).toHaveLength(2)
+    expect(bugs.map(bug => bug.id)).toEqual(['BUG-001', 'BUG-002'])
+    expect(bugs.map(bug => bug.title).sort()).toEqual(['Concurrent bug A', 'Concurrent bug B'])
   })
 
   it('list() defaults to open bugs only', async () => {
@@ -128,6 +151,67 @@ describe('BugManager', () => {
 
   it('list() returns empty array when file does not exist', async () => {
     await expect(bugManager.list()).resolves.toEqual([])
+  })
+
+  it('list() treats an empty bugs file as empty and report() can recover from it', async () => {
+    await mkdir(path.dirname(BUGS_FILE_PATH), { recursive: true })
+    await writeFile(BUGS_FILE_PATH, '')
+
+    await expect(bugManager.list()).resolves.toEqual([])
+
+    const bug = await bugManager.report({
+      title: 'Recovered from empty file',
+      description: 'A new bug after an empty file.',
+    })
+
+    expect(bug.id).toBe('BUG-001')
+    await expect(bugManager.list({ status: 'all' })).resolves.toEqual([bug])
+  })
+
+  it('report() rejects bugs.yaml symlinks', async () => {
+    await mkdir(path.dirname(BUGS_FILE_PATH), { recursive: true })
+
+    const targetPath = path.join(TEST_DIR, 'elsewhere.yaml')
+    await writeFile(targetPath, 'bugs: []\n')
+    await symlink(targetPath, BUGS_FILE_PATH)
+
+    await expect(
+      bugManager.report({
+        title: 'Symlinked file',
+        description: 'This should fail.',
+      })
+    ).rejects.toThrow('bugs.yaml must not be a symlink')
+  })
+
+  it('list() rejects invalid bug entries with a Zod validation error', async () => {
+    await mkdir(path.dirname(BUGS_FILE_PATH), { recursive: true })
+    await writeFile(
+      BUGS_FILE_PATH,
+      [
+        'bugs:',
+        '  - id: BUG-001',
+        '    title: Invalid bug',
+        '    description: Invalid status field.',
+        '    status: invalid_status',
+        '    severity: high',
+        '    labels: []',
+        '    created: 2026-01-01T00:00:00.000Z',
+        '    updated: 2026-01-01T00:00:00.000Z',
+        '',
+      ].join('\n')
+    )
+
+    let error: unknown
+
+    try {
+      await bugManager.list({ status: 'all' })
+    } catch (caughtError) {
+      error = caughtError
+    }
+
+    expect(error).toBeInstanceOf(Error)
+    expect((error as Error).message).toContain('Invalid bugs.yaml contents:')
+    expect((error as Error & { cause?: unknown }).cause).toBeInstanceOf(ZodError)
   })
 
   it('update() changes status and sets updated timestamp', async () => {

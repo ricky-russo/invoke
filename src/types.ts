@@ -1,3 +1,5 @@
+import { z } from 'zod'
+
 // -- Provider & Role Config --
 
 export interface ProviderConfig {
@@ -268,25 +270,30 @@ export interface SessionComparison {
 
 // -- Bug Tracking --
 
-export type BugStatus = 'open' | 'in_progress' | 'resolved'
-export type BugSeverity = 'critical' | 'high' | 'medium' | 'low'
+export const BugStatusSchema = z.enum(['open', 'in_progress', 'resolved'])
+export type BugStatus = z.infer<typeof BugStatusSchema>
 
-export interface BugEntry {
-  id: string
-  title: string
-  description: string
-  status: BugStatus
-  severity: BugSeverity
-  file?: string | null
-  line?: number | null
-  labels: string[]
-  session_id?: string | null
-  created: string
-  updated: string
-  resolution?: string | null
-  resolved_by_session?: string | null
-}
+export const BugSeveritySchema = z.enum(['critical', 'high', 'medium', 'low'])
+export type BugSeverity = z.infer<typeof BugSeveritySchema>
 
-export interface BugsFile {
-  bugs: BugEntry[]
-}
+export const BugEntrySchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  description: z.string(),
+  status: BugStatusSchema,
+  severity: BugSeveritySchema,
+  file: z.string().nullable().optional(),
+  line: z.number().nullable().optional(),
+  labels: z.array(z.string()),
+  session_id: z.string().nullable().optional(),
+  created: z.string(),
+  updated: z.string(),
+  resolution: z.string().nullable().optional(),
+  resolved_by_session: z.string().nullable().optional(),
+})
+export type BugEntry = z.infer<typeof BugEntrySchema>
+
+export const BugsFileSchema = z.object({
+  bugs: z.array(BugEntrySchema),
+})
+export type BugsFile = z.infer<typeof BugsFileSchema>

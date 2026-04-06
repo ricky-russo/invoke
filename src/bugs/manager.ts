@@ -1,8 +1,9 @@
-import { mkdir, readFile, writeFile } from 'fs/promises'
+import { lstat, mkdir, readFile, writeFile } from 'fs/promises'
 import path from 'path'
+import { ZodError } from 'zod'
 import { parse, stringify } from 'yaml'
 import { withLock } from '../session/lock.js'
-import type { BugEntry, BugsFile, BugSeverity, BugStatus } from '../types.js'
+import { BugsFileSchema, type BugEntry, type BugsFile, type BugSeverity, type BugStatus } from '../types.js'
 
 interface ReportBugInput {
   title: string
@@ -121,15 +122,15 @@ export class BugManager {
   }
 
   private async readBugsFile(): Promise<BugsFile> {
+    await this.assertBugsPathIsNotSymlink()
+
     try {
       const content = await readFile(this.bugsPath, 'utf-8')
       const parsed = parse(content)
+      // Break YAML alias references before validation and use.
+      const cloneSafeParsed = JSON.parse(JSON.stringify(parsed ?? { bugs: [] })) as unknown
 
-      if (!parsed || typeof parsed !== 'object' || !Array.isArray(parsed.bugs)) {
-        return { bugs: [] }
-      }
-
-      return { bugs: parsed.bugs as BugEntry[] }
+      return this.parseBugsFile(cloneSafeParsed)
     } catch (error) {
       if (this.isMissingFileError(error)) {
         return { bugs: [] }
@@ -140,10 +141,41 @@ export class BugManager {
   }
 
   private async writeBugsFile(bugsFile: BugsFile): Promise<void> {
-    await writeFile(this.bugsPath, stringify(bugsFile))
+    await this.assertBugsPathIsNotSymlink()
+
+    const validated = this.parseBugsFile(bugsFile)
+    await writeFile(this.bugsPath, stringify(validated))
   }
 
   private isMissingFileError(error: unknown): error is NodeJS.ErrnoException {
     return error instanceof Error && 'code' in error && error.code === 'ENOENT'
+  }
+
+  private parseBugsFile(value: unknown): BugsFile {
+    try {
+      return BugsFileSchema.parse(value)
+    } catch (error) {
+      if (error instanceof ZodError) {
+        throw new Error(`Invalid bugs.yaml contents: ${error.message}`, { cause: error })
+      }
+
+      throw error
+    }
+  }
+
+  private async assertBugsPathIsNotSymlink(): Promise<void> {
+    try {
+      const stats = await lstat(this.bugsPath)
+
+      if (stats.isSymbolicLink()) {
+        throw new Error('bugs.yaml must not be a symlink')
+      }
+    } catch (error) {
+      if (this.isMissingFileError(error)) {
+        return
+      }
+
+      throw error
+    }
   }
 }
