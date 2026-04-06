@@ -12,6 +12,8 @@ const mocks = vi.hoisted(() => ({
   registerStateTools: vi.fn(),
   registerArtifactTools: vi.fn(),
   registerConfigUpdateTools: vi.fn(),
+  registerSessionInitTools: vi.fn(),
+  registerPrTools: vi.fn(),
   registerContextTools: vi.fn(),
   registerMetricsTools: vi.fn(),
   registerSessionTools: vi.fn(),
@@ -24,6 +26,7 @@ const mocks = vi.hoisted(() => ({
   dispatchEngineInstances: [] as any[],
   batchManagerInstances: [] as any[],
   worktreeManagerInstances: [] as any[],
+  sessionWorktreeManagerInstances: [] as any[],
   sessionManagerInstances: [] as any[],
   stateManagerInstances: [] as any[],
   artifactManagerInstances: [] as any[],
@@ -99,6 +102,17 @@ vi.mock('../src/worktree/manager.js', () => ({
     constructor(projectDir: string) {
       this.projectDir = projectDir
       mocks.worktreeManagerInstances.push(this)
+    }
+  },
+}))
+
+vi.mock('../src/worktree/session-worktree.js', () => ({
+  SessionWorktreeManager: class {
+    projectDir: string
+
+    constructor(projectDir: string) {
+      this.projectDir = projectDir
+      mocks.sessionWorktreeManagerInstances.push(this)
     }
   },
 }))
@@ -195,6 +209,14 @@ vi.mock('../src/tools/config-update-tools.js', () => ({
   registerConfigUpdateTools: mocks.registerConfigUpdateTools,
 }))
 
+vi.mock('../src/tools/session-init-tools.js', () => ({
+  registerSessionInitTools: mocks.registerSessionInitTools,
+}))
+
+vi.mock('../src/tools/pr-tools.js', () => ({
+  registerPrTools: mocks.registerPrTools,
+}))
+
 vi.mock('../src/tools/context-tools.js', () => ({
   registerContextTools: mocks.registerContextTools,
 }))
@@ -257,6 +279,7 @@ describe('index bootstrap', () => {
     mocks.dispatchEngineInstances.length = 0
     mocks.batchManagerInstances.length = 0
     mocks.worktreeManagerInstances.length = 0
+    mocks.sessionWorktreeManagerInstances.length = 0
     mocks.sessionManagerInstances.length = 0
     mocks.stateManagerInstances.length = 0
     mocks.artifactManagerInstances.length = 0
@@ -298,10 +321,19 @@ describe('index bootstrap', () => {
     const metricsManager = mocks.metricsManagerInstances[0]
     const bugManager = mocks.bugManagerInstances[0]
     const worktreeManager = mocks.worktreeManagerInstances[0]
+    const sessionWorktreeManager = mocks.sessionWorktreeManagerInstances[0]
+    const configGetter = mocks.registerSessionInitTools.mock.calls[0]?.[3] as (() => InvokeConfig) | undefined
 
+    expect(mocks.sessionWorktreeManagerInstances).toHaveLength(1)
     expect(sessionManager.projectDir).toBe(process.cwd())
+    expect(sessionWorktreeManager.projectDir).toBe(process.cwd())
     expect(sessionManager.migrate).toHaveBeenCalledTimes(1)
-    expect(mocks.registerSessionTools).toHaveBeenCalledWith(server, sessionManager, process.cwd())
+    expect(mocks.registerSessionTools).toHaveBeenCalledWith(
+      server,
+      sessionManager,
+      process.cwd(),
+      sessionWorktreeManager
+    )
     expect(mocks.registerComparisonTools).toHaveBeenCalledWith(server, process.cwd(), sessionManager)
     expect(mocks.registerWorktreeTools).toHaveBeenCalledWith(
       server,
@@ -310,6 +342,15 @@ describe('index bootstrap', () => {
       TEST_CONFIG,
       process.cwd()
     )
+    expect(mocks.registerSessionInitTools).toHaveBeenCalledWith(
+      server,
+      sessionWorktreeManager,
+      sessionManager,
+      expect.any(Function),
+      process.cwd()
+    )
+    expect(configGetter?.()).toBe(TEST_CONFIG)
+    expect(mocks.registerPrTools).toHaveBeenCalledWith(server, sessionManager, process.cwd())
     expect(mocks.registerSessionTools.mock.invocationCallOrder[0])
       .toBeLessThan(mocks.registerStateTools.mock.invocationCallOrder[0])
     expect(sessionManager.migrate.mock.invocationCallOrder[0])
@@ -383,6 +424,8 @@ describe('index bootstrap', () => {
     })
 
     expect(mocks.registerDispatchTools).not.toHaveBeenCalled()
+    expect(mocks.registerSessionInitTools).not.toHaveBeenCalled()
+    expect(mocks.registerPrTools).toHaveBeenCalledTimes(1)
     expect(mocks.metricsManagerInstances).toHaveLength(1)
   })
 })

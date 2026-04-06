@@ -74,6 +74,13 @@ function normalizePath(targetPath: string): string {
   return existsSync(targetPath) ? realpathSync(targetPath) : targetPath
 }
 
+function uniquePath(prefix: string): string {
+  return path.join(
+    os.tmpdir(),
+    `${prefix}-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+  )
+}
+
 function parseWorktreePaths(): Array<{ worktreePath: string; branchRef: string | null }> {
   const output = git('git worktree list --porcelain')
   if (output.length === 0) {
@@ -116,6 +123,11 @@ async function initializeSessionState(sessionId: string, pipelineId = sessionId)
   const sessionDir = await sessionManager.create(sessionId)
   const stateManager = new StateManager(projectDir, sessionDir)
   return stateManager.initialize(pipelineId)
+}
+
+async function readSessionState(sessionId: string): Promise<PipelineState | null> {
+  const stateManager = new StateManager(projectDir, sessionManager.resolve(sessionId))
+  return stateManager.get()
 }
 
 beforeEach(async () => {
@@ -279,5 +291,157 @@ describe('registerSessionInitTools', () => {
       .filter(entry => entry.branchRef === `refs/heads/${workBranch}`)
 
     expect(matchingWorktrees).toHaveLength(1)
+  })
+
+  it('reattaches an existing worktree and refreshes a stale recorded path in state', async () => {
+    const sessionId = 'session-reattach-existing'
+    await initializeSessionState(sessionId, 'pipeline-reattach-existing')
+
+    const created = await sessionWorktreeManager.create(sessionId, TEST_CONFIG.settings.work_branch_prefix, 'main')
+    const stateManager = new StateManager(projectDir, sessionManager.resolve(sessionId))
+    await stateManager.update({
+      work_branch: created.workBranch,
+      base_branch: 'main',
+      work_branch_path: uniquePath('stale-session-worktree'),
+    })
+
+    const result = await getTool('invoke_session_reattach_worktree').handler({
+      session_id: sessionId,
+      work_branch: created.workBranch,
+    })
+
+    expect(result.isError).toBeUndefined()
+    expect(parseResponseText<{
+      session_id: string
+      work_branch: string
+      work_branch_path: string
+      status: string
+    }>(result)).toEqual({
+      session_id: sessionId,
+      work_branch: created.workBranch,
+      work_branch_path: created.worktreePath,
+      status: 'reattached',
+    })
+
+    expect(await readSessionState(sessionId)).toMatchObject({
+      work_branch: created.workBranch,
+      work_branch_path: created.worktreePath,
+    })
+  })
+
+  it('reattaches at a fresh path when the directory is missing but the branch still exists', async () => {
+    const sessionId = 'session-reattach-missing-dir'
+    await initializeSessionState(sessionId, 'pipeline-reattach-missing-dir')
+
+    const created = await sessionWorktreeManager.create(sessionId, TEST_CONFIG.settings.work_branch_prefix, 'main')
+    const stateManager = new StateManager(projectDir, sessionManager.resolve(sessionId))
+    await stateManager.update({
+      work_branch: created.workBranch,
+      base_branch: 'main',
+      work_branch_path: created.worktreePath,
+    })
+
+    await rm(created.worktreePath, { recursive: true, force: true })
+
+    const result = await getTool('invoke_session_reattach_worktree').handler({
+      session_id: sessionId,
+      work_branch: created.workBranch,
+    })
+
+    expect(result.isError).toBeUndefined()
+
+    const response = parseResponseText<{
+      session_id: string
+      work_branch: string
+      work_branch_path: string
+      status: string
+    }>(result)
+
+    expect(response.session_id).toBe(sessionId)
+    expect(response.work_branch).toBe(created.workBranch)
+    expect(response.status).toBe('reattached')
+    expect(response.work_branch_path).not.toBe(created.worktreePath)
+    expect(existsSync(response.work_branch_path)).toBe(true)
+    expect(git('git branch --show-current', response.work_branch_path)).toBe(created.workBranch)
+
+    expect(await readSessionState(sessionId)).toMatchObject({
+      work_branch: created.workBranch,
+      work_branch_path: response.work_branch_path,
+    })
+  })
+
+  it('returns unrecoverable when both the worktree directory and branch are gone', async () => {
+    const sessionId = 'session-reattach-unrecoverable'
+    await initializeSessionState(sessionId, 'pipeline-reattach-unrecoverable')
+
+    const created = await sessionWorktreeManager.create(sessionId, TEST_CONFIG.settings.work_branch_prefix, 'main')
+    const stateManager = new StateManager(projectDir, sessionManager.resolve(sessionId))
+    await stateManager.update({
+      work_branch: created.workBranch,
+      base_branch: 'main',
+      work_branch_path: created.worktreePath,
+    })
+
+    await sessionWorktreeManager.cleanup(sessionId, created.workBranch, true)
+
+    const result = await getTool('invoke_session_reattach_worktree').handler({
+      session_id: sessionId,
+      work_branch: created.workBranch,
+    })
+
+    expect(result.isError).toBeUndefined()
+    expect(parseResponseText<{
+      session_id: string
+      work_branch: string
+      status: string
+    }>(result)).toEqual({
+      session_id: sessionId,
+      work_branch: created.workBranch,
+      status: 'unrecoverable',
+    })
+
+    expect(await readSessionState(sessionId)).toMatchObject({
+      work_branch: created.workBranch,
+      work_branch_path: created.worktreePath,
+    })
+  })
+
+  it('returns unrecoverable in strict mode when the recorded path does not match the work branch checkout', async () => {
+    const sessionId = 'session-reattach-strict-mismatch'
+    await initializeSessionState(sessionId, 'pipeline-reattach-strict-mismatch')
+
+    const created = await sessionWorktreeManager.create(sessionId, TEST_CONFIG.settings.work_branch_prefix, 'main')
+    const stateManager = new StateManager(projectDir, sessionManager.resolve(sessionId))
+    await stateManager.update({
+      work_branch: created.workBranch,
+      base_branch: 'main',
+      work_branch_path: created.worktreePath,
+    })
+
+    const wrongPath = uniquePath('invoke-session-wrong-branch')
+    const wrongBranch = buildWorkBranch(TEST_CONFIG.settings.work_branch_prefix, `${sessionId}-other`)
+    git(`git worktree add ${shellQuote(wrongPath)} -b ${shellQuote(wrongBranch)} main`)
+
+    const result = await getTool('invoke_session_reattach_worktree').handler({
+      session_id: sessionId,
+      work_branch: created.workBranch,
+      recorded_path: wrongPath,
+    })
+
+    expect(result.isError).toBeUndefined()
+    expect(parseResponseText<{
+      session_id: string
+      work_branch: string
+      status: string
+    }>(result)).toEqual({
+      session_id: sessionId,
+      work_branch: created.workBranch,
+      status: 'unrecoverable',
+    })
+
+    expect(await readSessionState(sessionId)).toMatchObject({
+      work_branch: created.workBranch,
+      work_branch_path: created.worktreePath,
+    })
   })
 })

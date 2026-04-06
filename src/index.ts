@@ -9,6 +9,7 @@ import { createParserRegistry } from './parsers/registry.js'
 import { DispatchEngine } from './dispatch/engine.js'
 import { BatchManager } from './dispatch/batch-manager.js'
 import { WorktreeManager } from './worktree/manager.js'
+import { SessionWorktreeManager } from './worktree/session-worktree.js'
 import { MetricsManager } from './metrics/manager.js'
 import { SessionManager } from './session/manager.js'
 import { BugManager } from './bugs/manager.js'
@@ -18,6 +19,8 @@ import { registerConfigTools } from './tools/config-tool.js'
 import { registerDispatchTools } from './tools/dispatch-tools.js'
 import { registerWorktreeTools } from './tools/worktree-tools.js'
 import { registerSessionTools } from './tools/session-tools.js'
+import { registerSessionInitTools } from './tools/session-init-tools.js'
+import { registerPrTools } from './tools/pr-tools.js'
 import { registerComparisonTools } from './tools/comparison-tools.js'
 import { registerStateTools } from './tools/state-tools.js'
 import { registerArtifactTools } from './tools/artifact-tools.js'
@@ -77,6 +80,7 @@ async function main() {
 
   // Initialize managers
   const worktreeManager = new WorktreeManager(projectDir)
+  const sessionWorktreeManager = new SessionWorktreeManager(projectDir)
   const stateManager = new StateManager(projectDir)
   const artifactManager = new ArtifactManager(projectDir)
   const contextManager = new ContextManager(projectDir)
@@ -90,7 +94,7 @@ async function main() {
     console.error(`Migrated legacy state to session: ${migration.sessionId}`)
   }
 
-  registerSessionTools(server, sessionManager, projectDir)
+  registerSessionTools(server, sessionManager, projectDir, sessionWorktreeManager)
   registerComparisonTools(server, projectDir, sessionManager)
   registerStateTools(server, stateManager, projectDir, sessionManager)
   registerArtifactTools(server, artifactManager)
@@ -100,6 +104,11 @@ async function main() {
   registerContextTools(server, contextManager)
   registerMetricsTools(server, metricsManager, projectDir, sessionManager)
   registerBugTools(server, bugManager)
+  registerPrTools(server, sessionManager, projectDir)
+
+  if (config) {
+    registerSessionInitTools(server, sessionWorktreeManager, sessionManager, () => config!, projectDir)
+  }
 
   // Register dispatch tools (need config)
   if (config) {

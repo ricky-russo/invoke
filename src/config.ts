@@ -62,7 +62,7 @@ const SettingsSchema = z.object({
   default_strategy: z.string(),
   agent_timeout: z.number().positive(),
   commit_style: z.enum(['one-commit', 'per-batch', 'per-task', 'custom']),
-  work_branch_prefix: z.string().refine(value => {
+  work_branch_prefix: z.string().default('invoke/work').refine(value => {
     try {
       validateWorkBranchPrefix(value)
       return true

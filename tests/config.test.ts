@@ -92,6 +92,37 @@ settings:
     expect(config.roles.reviewer.security.providers[1].model).toBe('gpt-5.4')
   })
 
+  it('defaults work_branch_prefix to invoke/work when omitted', async () => {
+    const yaml = `
+providers:
+  claude:
+    cli: claude
+    args: ["--print", "--model", "{{model}}"]
+
+roles:
+  reviewer:
+    security:
+      prompt: .invoke/roles/reviewer/security.md
+      provider: claude
+      model: opus-4.6
+      effort: high
+
+strategies:
+  tdd:
+    prompt: .invoke/strategies/tdd.md
+
+settings:
+  default_strategy: tdd
+  agent_timeout: 300000
+  commit_style: per-batch
+`
+    await writeFile(path.join(TEST_DIR, '.invoke', 'pipeline.yaml'), yaml)
+
+    const config = await loadConfig(TEST_DIR)
+
+    expect(config.settings.work_branch_prefix).toBe('invoke/work')
+  })
+
   it('loads provider_mode and new optional settings fields', async () => {
     const yaml = `
 providers:
@@ -196,6 +227,7 @@ presets:
         description: 'Fast path',
         settings: {
           max_review_cycles: 1,
+          work_branch_prefix: 'invoke/work',
         },
         researcher_selection: ['codebase'],
         reviewer_selection: ['security'],
@@ -248,6 +280,7 @@ settings:
         default_strategy: 'implementation-first',
         max_review_cycles: 1,
         max_parallel_agents: 2,
+        work_branch_prefix: 'invoke/work',
       },
       researcher_selection: ['codebase'],
       reviewer_selection: ['spec-compliance', 'security'],
@@ -313,6 +346,7 @@ presets:
       settings: {
         default_strategy: 'tdd',
         max_parallel_agents: 4,
+        work_branch_prefix: 'invoke/work',
       },
     })
   })

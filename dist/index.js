@@ -291,10 +291,10 @@ function mergeDefs(...defs) {
 function cloneDef(schema) {
   return mergeDefs(schema._zod.def);
 }
-function getElementAtPath(obj, path15) {
-  if (!path15)
+function getElementAtPath(obj, path16) {
+  if (!path16)
     return obj;
-  return path15.reduce((acc, key) => acc?.[key], obj);
+  return path16.reduce((acc, key) => acc?.[key], obj);
 }
 function promiseAllObject(promisesObj) {
   const keys = Object.keys(promisesObj);
@@ -606,11 +606,11 @@ function aborted(x, startIndex = 0) {
   }
   return false;
 }
-function prefixIssues(path15, issues) {
+function prefixIssues(path16, issues) {
   return issues.map((iss) => {
     var _a2;
     (_a2 = iss).path ?? (_a2.path = []);
-    iss.path.unshift(path15);
+    iss.path.unshift(path16);
     return iss;
   });
 }
@@ -852,7 +852,7 @@ function formatError(error48, mapper = (issue2) => issue2.message) {
 }
 function treeifyError(error48, mapper = (issue2) => issue2.message) {
   const result = { errors: [] };
-  const processError = (error49, path15 = []) => {
+  const processError = (error49, path16 = []) => {
     var _a2, _b;
     for (const issue2 of error49.issues) {
       if (issue2.code === "invalid_union" && issue2.errors.length) {
@@ -862,7 +862,7 @@ function treeifyError(error48, mapper = (issue2) => issue2.message) {
       } else if (issue2.code === "invalid_element") {
         processError({ issues: issue2.issues }, issue2.path);
       } else {
-        const fullpath = [...path15, ...issue2.path];
+        const fullpath = [...path16, ...issue2.path];
         if (fullpath.length === 0) {
           result.errors.push(mapper(issue2));
           continue;
@@ -894,8 +894,8 @@ function treeifyError(error48, mapper = (issue2) => issue2.message) {
 }
 function toDotPath(_path) {
   const segs = [];
-  const path15 = _path.map((seg) => typeof seg === "object" ? seg.key : seg);
-  for (const seg of path15) {
+  const path16 = _path.map((seg) => typeof seg === "object" ? seg.key : seg);
+  for (const seg of path16) {
     if (typeof seg === "number")
       segs.push(`[${seg}]`);
     else if (typeof seg === "symbol")
@@ -13589,13 +13589,13 @@ function resolveRef(ref, ctx) {
   if (!ref.startsWith("#")) {
     throw new Error("External $ref is not supported, only local refs (#/...) are allowed");
   }
-  const path15 = ref.slice(1).split("/").filter(Boolean);
-  if (path15.length === 0) {
+  const path16 = ref.slice(1).split("/").filter(Boolean);
+  if (path16.length === 0) {
     return ctx.rootSchema;
   }
   const defsKey = ctx.version === "draft-2020-12" ? "$defs" : "definitions";
-  if (path15[0] === defsKey) {
-    const key = path15[1];
+  if (path16[0] === defsKey) {
+    const key = path16[1];
     if (!key || !ctx.defs[key]) {
       throw new Error(`Reference not found: ${ref}`);
     }
@@ -17539,8 +17539,8 @@ var require_utils = __commonJS({
       }
       return ind;
     }
-    function removeDotSegments(path15) {
-      let input = path15;
+    function removeDotSegments(path16) {
+      let input = path16;
       const output = [];
       let nextSlash = -1;
       let len = 0;
@@ -17739,8 +17739,8 @@ var require_schemes = __commonJS({
         wsComponent.secure = void 0;
       }
       if (wsComponent.resourceName) {
-        const [path15, query] = wsComponent.resourceName.split("?");
-        wsComponent.path = path15 && path15 !== "/" ? path15 : void 0;
+        const [path16, query] = wsComponent.resourceName.split("?");
+        wsComponent.path = path16 && path16 !== "/" ? path16 : void 0;
         wsComponent.query = query;
         wsComponent.resourceName = void 0;
       }
@@ -21200,17 +21200,17 @@ var require_visit = __commonJS({
     visit.BREAK = BREAK;
     visit.SKIP = SKIP;
     visit.REMOVE = REMOVE;
-    function visit_(key, node, visitor, path15) {
-      const ctrl = callVisitor(key, node, visitor, path15);
+    function visit_(key, node, visitor, path16) {
+      const ctrl = callVisitor(key, node, visitor, path16);
       if (identity.isNode(ctrl) || identity.isPair(ctrl)) {
-        replaceNode(key, path15, ctrl);
-        return visit_(key, ctrl, visitor, path15);
+        replaceNode(key, path16, ctrl);
+        return visit_(key, ctrl, visitor, path16);
       }
       if (typeof ctrl !== "symbol") {
         if (identity.isCollection(node)) {
-          path15 = Object.freeze(path15.concat(node));
+          path16 = Object.freeze(path16.concat(node));
           for (let i = 0; i < node.items.length; ++i) {
-            const ci = visit_(i, node.items[i], visitor, path15);
+            const ci = visit_(i, node.items[i], visitor, path16);
             if (typeof ci === "number")
               i = ci - 1;
             else if (ci === BREAK)
@@ -21221,13 +21221,13 @@ var require_visit = __commonJS({
             }
           }
         } else if (identity.isPair(node)) {
-          path15 = Object.freeze(path15.concat(node));
-          const ck = visit_("key", node.key, visitor, path15);
+          path16 = Object.freeze(path16.concat(node));
+          const ck = visit_("key", node.key, visitor, path16);
           if (ck === BREAK)
             return BREAK;
           else if (ck === REMOVE)
             node.key = null;
-          const cv = visit_("value", node.value, visitor, path15);
+          const cv = visit_("value", node.value, visitor, path16);
           if (cv === BREAK)
             return BREAK;
           else if (cv === REMOVE)
@@ -21248,17 +21248,17 @@ var require_visit = __commonJS({
     visitAsync.BREAK = BREAK;
     visitAsync.SKIP = SKIP;
     visitAsync.REMOVE = REMOVE;
-    async function visitAsync_(key, node, visitor, path15) {
-      const ctrl = await callVisitor(key, node, visitor, path15);
+    async function visitAsync_(key, node, visitor, path16) {
+      const ctrl = await callVisitor(key, node, visitor, path16);
       if (identity.isNode(ctrl) || identity.isPair(ctrl)) {
-        replaceNode(key, path15, ctrl);
-        return visitAsync_(key, ctrl, visitor, path15);
+        replaceNode(key, path16, ctrl);
+        return visitAsync_(key, ctrl, visitor, path16);
       }
       if (typeof ctrl !== "symbol") {
         if (identity.isCollection(node)) {
-          path15 = Object.freeze(path15.concat(node));
+          path16 = Object.freeze(path16.concat(node));
           for (let i = 0; i < node.items.length; ++i) {
-            const ci = await visitAsync_(i, node.items[i], visitor, path15);
+            const ci = await visitAsync_(i, node.items[i], visitor, path16);
             if (typeof ci === "number")
               i = ci - 1;
             else if (ci === BREAK)
@@ -21269,13 +21269,13 @@ var require_visit = __commonJS({
             }
           }
         } else if (identity.isPair(node)) {
-          path15 = Object.freeze(path15.concat(node));
-          const ck = await visitAsync_("key", node.key, visitor, path15);
+          path16 = Object.freeze(path16.concat(node));
+          const ck = await visitAsync_("key", node.key, visitor, path16);
           if (ck === BREAK)
             return BREAK;
           else if (ck === REMOVE)
             node.key = null;
-          const cv = await visitAsync_("value", node.value, visitor, path15);
+          const cv = await visitAsync_("value", node.value, visitor, path16);
           if (cv === BREAK)
             return BREAK;
           else if (cv === REMOVE)
@@ -21302,23 +21302,23 @@ var require_visit = __commonJS({
       }
       return visitor;
     }
-    function callVisitor(key, node, visitor, path15) {
+    function callVisitor(key, node, visitor, path16) {
       if (typeof visitor === "function")
-        return visitor(key, node, path15);
+        return visitor(key, node, path16);
       if (identity.isMap(node))
-        return visitor.Map?.(key, node, path15);
+        return visitor.Map?.(key, node, path16);
       if (identity.isSeq(node))
-        return visitor.Seq?.(key, node, path15);
+        return visitor.Seq?.(key, node, path16);
       if (identity.isPair(node))
-        return visitor.Pair?.(key, node, path15);
+        return visitor.Pair?.(key, node, path16);
       if (identity.isScalar(node))
-        return visitor.Scalar?.(key, node, path15);
+        return visitor.Scalar?.(key, node, path16);
       if (identity.isAlias(node))
-        return visitor.Alias?.(key, node, path15);
+        return visitor.Alias?.(key, node, path16);
       return void 0;
     }
-    function replaceNode(key, path15, node) {
-      const parent = path15[path15.length - 1];
+    function replaceNode(key, path16, node) {
+      const parent = path16[path16.length - 1];
       if (identity.isCollection(parent)) {
         parent.items[key] = node;
       } else if (identity.isPair(parent)) {
@@ -21926,10 +21926,10 @@ var require_Collection = __commonJS({
     var createNode = require_createNode();
     var identity = require_identity();
     var Node = require_Node();
-    function collectionFromPath(schema, path15, value) {
+    function collectionFromPath(schema, path16, value) {
       let v = value;
-      for (let i = path15.length - 1; i >= 0; --i) {
-        const k = path15[i];
+      for (let i = path16.length - 1; i >= 0; --i) {
+        const k = path16[i];
         if (typeof k === "number" && Number.isInteger(k) && k >= 0) {
           const a = [];
           a[k] = v;
@@ -21948,7 +21948,7 @@ var require_Collection = __commonJS({
         sourceObjects: /* @__PURE__ */ new Map()
       });
     }
-    var isEmptyPath = (path15) => path15 == null || typeof path15 === "object" && !!path15[Symbol.iterator]().next().done;
+    var isEmptyPath = (path16) => path16 == null || typeof path16 === "object" && !!path16[Symbol.iterator]().next().done;
     var Collection = class extends Node.NodeBase {
       constructor(type, schema) {
         super(type);
@@ -21978,11 +21978,11 @@ var require_Collection = __commonJS({
        * be a Pair instance or a `{ key, value }` object, which may not have a key
        * that already exists in the map.
        */
-      addIn(path15, value) {
-        if (isEmptyPath(path15))
+      addIn(path16, value) {
+        if (isEmptyPath(path16))
           this.add(value);
         else {
-          const [key, ...rest] = path15;
+          const [key, ...rest] = path16;
           const node = this.get(key, true);
           if (identity.isCollection(node))
             node.addIn(rest, value);
@@ -21996,8 +21996,8 @@ var require_Collection = __commonJS({
        * Removes a value from the collection.
        * @returns `true` if the item was found and removed.
        */
-      deleteIn(path15) {
-        const [key, ...rest] = path15;
+      deleteIn(path16) {
+        const [key, ...rest] = path16;
         if (rest.length === 0)
           return this.delete(key);
         const node = this.get(key, true);
@@ -22011,8 +22011,8 @@ var require_Collection = __commonJS({
        * scalar values from their surrounding node; to disable set `keepScalar` to
        * `true` (collections are always returned intact).
        */
-      getIn(path15, keepScalar) {
-        const [key, ...rest] = path15;
+      getIn(path16, keepScalar) {
+        const [key, ...rest] = path16;
         const node = this.get(key, true);
         if (rest.length === 0)
           return !keepScalar && identity.isScalar(node) ? node.value : node;
@@ -22030,8 +22030,8 @@ var require_Collection = __commonJS({
       /**
        * Checks if the collection includes a value with the key `key`.
        */
-      hasIn(path15) {
-        const [key, ...rest] = path15;
+      hasIn(path16) {
+        const [key, ...rest] = path16;
         if (rest.length === 0)
           return this.has(key);
         const node = this.get(key, true);
@@ -22041,8 +22041,8 @@ var require_Collection = __commonJS({
        * Sets a value in this collection. For `!!set`, `value` needs to be a
        * boolean to add/remove the item from the set.
        */
-      setIn(path15, value) {
-        const [key, ...rest] = path15;
+      setIn(path16, value) {
+        const [key, ...rest] = path16;
         if (rest.length === 0) {
           this.set(key, value);
         } else {
@@ -24554,9 +24554,9 @@ var require_Document = __commonJS({
           this.contents.add(value);
       }
       /** Adds a value to the document. */
-      addIn(path15, value) {
+      addIn(path16, value) {
         if (assertCollection(this.contents))
-          this.contents.addIn(path15, value);
+          this.contents.addIn(path16, value);
       }
       /**
        * Create a new `Alias` node, ensuring that the target `node` has the required anchor.
@@ -24631,14 +24631,14 @@ var require_Document = __commonJS({
        * Removes a value from the document.
        * @returns `true` if the item was found and removed.
        */
-      deleteIn(path15) {
-        if (Collection.isEmptyPath(path15)) {
+      deleteIn(path16) {
+        if (Collection.isEmptyPath(path16)) {
           if (this.contents == null)
             return false;
           this.contents = null;
           return true;
         }
-        return assertCollection(this.contents) ? this.contents.deleteIn(path15) : false;
+        return assertCollection(this.contents) ? this.contents.deleteIn(path16) : false;
       }
       /**
        * Returns item at `key`, or `undefined` if not found. By default unwraps
@@ -24653,10 +24653,10 @@ var require_Document = __commonJS({
        * scalar values from their surrounding node; to disable set `keepScalar` to
        * `true` (collections are always returned intact).
        */
-      getIn(path15, keepScalar) {
-        if (Collection.isEmptyPath(path15))
+      getIn(path16, keepScalar) {
+        if (Collection.isEmptyPath(path16))
           return !keepScalar && identity.isScalar(this.contents) ? this.contents.value : this.contents;
-        return identity.isCollection(this.contents) ? this.contents.getIn(path15, keepScalar) : void 0;
+        return identity.isCollection(this.contents) ? this.contents.getIn(path16, keepScalar) : void 0;
       }
       /**
        * Checks if the document includes a value with the key `key`.
@@ -24667,10 +24667,10 @@ var require_Document = __commonJS({
       /**
        * Checks if the document includes a value at `path`.
        */
-      hasIn(path15) {
-        if (Collection.isEmptyPath(path15))
+      hasIn(path16) {
+        if (Collection.isEmptyPath(path16))
           return this.contents !== void 0;
-        return identity.isCollection(this.contents) ? this.contents.hasIn(path15) : false;
+        return identity.isCollection(this.contents) ? this.contents.hasIn(path16) : false;
       }
       /**
        * Sets a value in this document. For `!!set`, `value` needs to be a
@@ -24687,13 +24687,13 @@ var require_Document = __commonJS({
        * Sets a value in this document. For `!!set`, `value` needs to be a
        * boolean to add/remove the item from the set.
        */
-      setIn(path15, value) {
-        if (Collection.isEmptyPath(path15)) {
+      setIn(path16, value) {
+        if (Collection.isEmptyPath(path16)) {
           this.contents = value;
         } else if (this.contents == null) {
-          this.contents = Collection.collectionFromPath(this.schema, Array.from(path15), value);
+          this.contents = Collection.collectionFromPath(this.schema, Array.from(path16), value);
         } else if (assertCollection(this.contents)) {
-          this.contents.setIn(path15, value);
+          this.contents.setIn(path16, value);
         }
       }
       /**
@@ -25910,8 +25910,8 @@ var require_resolve_flow_scalar = __commonJS({
     };
     function parseCharCode(source, offset, length, onError) {
       const cc = source.substr(offset, length);
-      const ok = cc.length === length && /^[0-9a-fA-F]+$/.test(cc);
-      const code = ok ? parseInt(cc, 16) : NaN;
+      const ok2 = cc.length === length && /^[0-9a-fA-F]+$/.test(cc);
+      const code = ok2 ? parseInt(cc, 16) : NaN;
       if (isNaN(code)) {
         const raw = source.substr(offset - 2, length + 2);
         onError(offset - 2, "BAD_DQ_ESCAPE", `Invalid escape sequence ${raw}`);
@@ -26650,9 +26650,9 @@ var require_cst_visit = __commonJS({
     visit.BREAK = BREAK;
     visit.SKIP = SKIP;
     visit.REMOVE = REMOVE;
-    visit.itemAtPath = (cst, path15) => {
+    visit.itemAtPath = (cst, path16) => {
       let item = cst;
-      for (const [field, index] of path15) {
+      for (const [field, index] of path16) {
         const tok = item?.[field];
         if (tok && "items" in tok) {
           item = tok.items[index];
@@ -26661,23 +26661,23 @@ var require_cst_visit = __commonJS({
       }
       return item;
     };
-    visit.parentCollection = (cst, path15) => {
-      const parent = visit.itemAtPath(cst, path15.slice(0, -1));
-      const field = path15[path15.length - 1][0];
+    visit.parentCollection = (cst, path16) => {
+      const parent = visit.itemAtPath(cst, path16.slice(0, -1));
+      const field = path16[path16.length - 1][0];
       const coll = parent?.[field];
       if (coll && "items" in coll)
         return coll;
       throw new Error("Parent collection not found");
     };
-    function _visit(path15, item, visitor) {
-      let ctrl = visitor(item, path15);
+    function _visit(path16, item, visitor) {
+      let ctrl = visitor(item, path16);
       if (typeof ctrl === "symbol")
         return ctrl;
       for (const field of ["key", "value"]) {
         const token = item[field];
         if (token && "items" in token) {
           for (let i = 0; i < token.items.length; ++i) {
-            const ci = _visit(Object.freeze(path15.concat([[field, i]])), token.items[i], visitor);
+            const ci = _visit(Object.freeze(path16.concat([[field, i]])), token.items[i], visitor);
             if (typeof ci === "number")
               i = ci - 1;
             else if (ci === BREAK)
@@ -26688,10 +26688,10 @@ var require_cst_visit = __commonJS({
             }
           }
           if (typeof ctrl === "function" && field === "key")
-            ctrl = ctrl(item, path15);
+            ctrl = ctrl(item, path16);
         }
       }
-      return typeof ctrl === "function" ? ctrl(item, path15) : ctrl;
+      return typeof ctrl === "function" ? ctrl(item, path16) : ctrl;
     }
     exports.visit = visit;
   }
@@ -28439,6 +28439,10 @@ function validateWorkBranchPrefix(prefix) {
     throw new Error("Work branch prefix must not start or end with '/'.");
   }
 }
+function buildWorkBranch(prefix, sessionId) {
+  validateWorkBranchPrefix(prefix);
+  return `${prefix}/${sessionId}`;
+}
 var WORK_BRANCH_PREFIX_PATTERN;
 var init_branch_prefix = __esm({
   "src/worktree/branch-prefix.ts"() {
@@ -28600,7 +28604,7 @@ var init_config = __esm({
       default_strategy: external_exports3.string(),
       agent_timeout: external_exports3.number().positive(),
       commit_style: external_exports3.enum(["one-commit", "per-batch", "per-task", "custom"]),
-      work_branch_prefix: external_exports3.string().refine((value) => {
+      work_branch_prefix: external_exports3.string().default("invoke/work").refine((value) => {
         try {
           validateWorkBranchPrefix(value);
           return true;
@@ -29093,8 +29097,8 @@ function getErrorMap() {
 
 // node_modules/zod/v3/helpers/parseUtil.js
 var makeIssue = (params) => {
-  const { data, path: path15, errorMaps, issueData } = params;
-  const fullPath = [...path15, ...issueData.path || []];
+  const { data, path: path16, errorMaps, issueData } = params;
+  const fullPath = [...path16, ...issueData.path || []];
   const fullIssue = {
     ...issueData,
     path: fullPath
@@ -29209,11 +29213,11 @@ var errorUtil;
 
 // node_modules/zod/v3/types.js
 var ParseInputLazyPath = class {
-  constructor(parent, value, path15, key) {
+  constructor(parent, value, path16, key) {
     this._cachedPath = [];
     this.parent = parent;
     this.data = value;
-    this._path = path15;
+    this._path = path16;
     this._key = key;
   }
   get path() {
@@ -35928,7 +35932,7 @@ var Protocol = class {
     const capturedTransport = this._transport;
     const relatedTaskId = request.params?._meta?.[RELATED_TASK_META_KEY]?.taskId;
     if (handler === void 0) {
-      const errorResponse2 = {
+      const errorResponse3 = {
         jsonrpc: "2.0",
         id: request.id,
         error: {
@@ -35939,11 +35943,11 @@ var Protocol = class {
       if (relatedTaskId && this._taskMessageQueue) {
         this._enqueueTaskMessage(relatedTaskId, {
           type: "error",
-          message: errorResponse2,
+          message: errorResponse3,
           timestamp: Date.now()
         }, capturedTransport?.sessionId).catch((error48) => this._onerror(new Error(`Failed to enqueue error response: ${error48}`)));
       } else {
-        capturedTransport?.send(errorResponse2).catch((error48) => this._onerror(new Error(`Failed to send an error response: ${error48}`)));
+        capturedTransport?.send(errorResponse3).catch((error48) => this._onerror(new Error(`Failed to send an error response: ${error48}`)));
       }
       return;
     }
@@ -36013,7 +36017,7 @@ var Protocol = class {
       if (abortController.signal.aborted) {
         return;
       }
-      const errorResponse2 = {
+      const errorResponse3 = {
         jsonrpc: "2.0",
         id: request.id,
         error: {
@@ -36025,11 +36029,11 @@ var Protocol = class {
       if (relatedTaskId && this._taskMessageQueue) {
         await this._enqueueTaskMessage(relatedTaskId, {
           type: "error",
-          message: errorResponse2,
+          message: errorResponse3,
           timestamp: Date.now()
         }, capturedTransport?.sessionId);
       } else {
-        await capturedTransport?.send(errorResponse2);
+        await capturedTransport?.send(errorResponse3);
       }
     }).catch((error48) => this._onerror(new Error(`Failed to send response: ${error48}`))).finally(() => {
       if (this._requestHandlerAbortControllers.get(request.id) === abortController) {
@@ -39781,15 +39785,301 @@ var WorktreeManager = class {
   }
 };
 
+// src/worktree/session-worktree.ts
+init_branch_prefix();
+import { execFileSync as execFileSync3 } from "child_process";
+import { existsSync as existsSync2, realpathSync as realpathSync2 } from "fs";
+import os2 from "os";
+import path5 from "path";
+
+// src/worktree/porcelain.ts
+function parsePorcelainWorktrees(porcelainOutput) {
+  const entries = [];
+  const blocks = porcelainOutput.split("\n\n").filter((block) => block.trim());
+  for (const block of blocks) {
+    const lines = block.split("\n");
+    let worktreePath = "";
+    let branch = null;
+    let head = "";
+    let detached = false;
+    let bare = false;
+    let prunable = false;
+    for (const line of lines) {
+      if (line.startsWith("worktree ")) {
+        worktreePath = line.slice(9);
+      } else if (line.startsWith("branch ")) {
+        branch = line.slice(7).replace(/^refs\/heads\//, "");
+      } else if (line.startsWith("HEAD ")) {
+        head = line.slice(5);
+      } else if (line === "detached") {
+        detached = true;
+      } else if (line === "bare") {
+        bare = true;
+      } else if (line === "prunable" || line.startsWith("prunable ")) {
+        prunable = true;
+      }
+    }
+    if (worktreePath) {
+      entries.push({ worktreePath, branch, head, detached, bare, prunable });
+    }
+  }
+  return entries;
+}
+
+// src/worktree/session-id-validator.ts
+function validateSessionId(sessionId) {
+  if (!sessionId || sessionId === "." || sessionId === ".." || sessionId.includes("/") || sessionId.includes("\\")) {
+    throw new Error(`Invalid session ID: '${sessionId}'`);
+  }
+}
+
+// src/worktree/session-worktree.ts
+function toKnownPath(worktreePath) {
+  return existsSync2(worktreePath) ? realpathSync2(worktreePath) : worktreePath;
+}
+var SessionWorktreeManager = class {
+  constructor(repoDir) {
+    this.repoDir = repoDir;
+    this.repoPath = toKnownPath(repoDir);
+  }
+  repoDir;
+  baseBranches = /* @__PURE__ */ new Map();
+  knownPrefixes = /* @__PURE__ */ new Set();
+  repoPath;
+  async create(sessionId, workBranchPrefix, baseBranch) {
+    validateSessionId(sessionId);
+    const workBranch = buildWorkBranch(workBranchPrefix, sessionId);
+    this.rememberPrefix(sessionId, workBranch);
+    this.baseBranches.set(workBranch, baseBranch);
+    const existing = await this.resolve(sessionId, workBranch);
+    if (existing) {
+      return this.rememberInfo({ ...existing, baseBranch });
+    }
+    return withRepoLock(this.repoDir, async () => {
+      const lockedExisting = await this.resolve(sessionId, workBranch);
+      if (lockedExisting) {
+        return this.rememberInfo({ ...lockedExisting, baseBranch });
+      }
+      const worktreePath = this.defaultWorktreePath(sessionId);
+      this.assertUnderTmpdir(worktreePath);
+      execFileSync3(
+        "git",
+        ["worktree", "add", worktreePath, "-b", workBranch, baseBranch],
+        { cwd: this.repoDir, stdio: "pipe" }
+      );
+      return this.rememberInfo({
+        sessionId,
+        worktreePath: toKnownPath(worktreePath),
+        workBranch,
+        baseBranch
+      });
+    });
+  }
+  async resolve(sessionId, workBranch) {
+    validateSessionId(sessionId);
+    this.rememberPrefix(sessionId, workBranch);
+    const entry = this.listPorcelainWorktrees().find((worktree) => worktree.branch === workBranch);
+    if (!entry) {
+      return null;
+    }
+    return this.rememberInfo({
+      sessionId,
+      worktreePath: toKnownPath(entry.worktreePath),
+      workBranch,
+      baseBranch: this.lookupBaseBranch(workBranch)
+    });
+  }
+  async reattach(sessionId, workBranch, recordedPath) {
+    validateSessionId(sessionId);
+    this.rememberPrefix(sessionId, workBranch);
+    if (recordedPath !== void 0) {
+      const existing2 = await this.resolve(sessionId, workBranch);
+      if (!existing2) {
+        return null;
+      }
+      if (toKnownPath(existing2.worktreePath) !== toKnownPath(recordedPath)) {
+        return null;
+      }
+      if (!existsSync2(existing2.worktreePath)) {
+        return null;
+      }
+      return existing2;
+    }
+    const existing = await this.resolve(sessionId, workBranch);
+    if (existing && existsSync2(existing.worktreePath)) {
+      return existing;
+    }
+    if (!this.branchExists(workBranch)) {
+      return null;
+    }
+    return withRepoLock(this.repoDir, async () => {
+      const lockedExisting = await this.resolve(sessionId, workBranch);
+      if (lockedExisting && existsSync2(lockedExisting.worktreePath)) {
+        return lockedExisting;
+      }
+      if (!this.branchExists(workBranch)) {
+        return null;
+      }
+      execFileSync3("git", ["worktree", "prune"], {
+        cwd: this.repoDir,
+        stdio: "pipe"
+      });
+      const worktreePath = this.reattachWorktreePath(sessionId);
+      this.assertUnderTmpdir(worktreePath);
+      execFileSync3(
+        "git",
+        ["worktree", "add", worktreePath, workBranch],
+        { cwd: this.repoDir, stdio: "pipe" }
+      );
+      return this.rememberInfo({
+        sessionId,
+        worktreePath: toKnownPath(worktreePath),
+        workBranch,
+        baseBranch: this.lookupBaseBranch(workBranch)
+      });
+    });
+  }
+  async cleanup(sessionId, workBranch, deleteBranch) {
+    validateSessionId(sessionId);
+    this.rememberPrefix(sessionId, workBranch);
+    const existing = await this.resolve(sessionId, workBranch);
+    if (existing) {
+      await withRepoLock(this.repoDir, async () => {
+        execFileSync3(
+          "git",
+          ["worktree", "remove", "--force", existing.worktreePath],
+          { cwd: this.repoDir, stdio: "pipe" }
+        );
+      });
+    }
+    if (deleteBranch) {
+      try {
+        execFileSync3(
+          "git",
+          ["branch", "-D", workBranch],
+          { cwd: this.repoDir, stdio: "pipe" }
+        );
+      } catch {
+      }
+    }
+    this.baseBranches.delete(workBranch);
+  }
+  async listSessionWorktrees() {
+    const sessionWorktrees = [];
+    for (const entry of this.listPorcelainWorktrees()) {
+      if (!entry.branch) {
+        continue;
+      }
+      if (toKnownPath(entry.worktreePath) === this.repoPath) {
+        continue;
+      }
+      const workBranch = entry.branch;
+      const matchingPrefix = this.matchingPrefix(workBranch);
+      const isSessionPath = path5.basename(entry.worktreePath).startsWith("invoke-session-");
+      if (!isSessionPath && !matchingPrefix) {
+        continue;
+      }
+      const sessionId = matchingPrefix ? workBranch.slice(matchingPrefix.length + 1) : this.sessionIdFromPath(entry.worktreePath);
+      if (!sessionId) {
+        continue;
+      }
+      sessionWorktrees.push(this.rememberInfo({
+        sessionId,
+        worktreePath: toKnownPath(entry.worktreePath),
+        workBranch,
+        baseBranch: this.lookupBaseBranch(workBranch)
+      }));
+    }
+    return sessionWorktrees;
+  }
+  listPorcelainWorktrees() {
+    try {
+      const output = execFileSync3("git", ["worktree", "list", "--porcelain"], {
+        cwd: this.repoDir,
+        stdio: "pipe"
+      }).toString();
+      return parsePorcelainWorktrees(output);
+    } catch {
+      return [];
+    }
+  }
+  branchExists(workBranch) {
+    try {
+      execFileSync3(
+        "git",
+        ["show-ref", "--verify", "--quiet", `refs/heads/${workBranch}`],
+        { cwd: this.repoDir, stdio: "pipe" }
+      );
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  defaultWorktreePath(sessionId) {
+    return path5.join(os2.tmpdir(), `invoke-session-${sessionId}`);
+  }
+  reattachWorktreePath(sessionId) {
+    return path5.join(os2.tmpdir(), `invoke-session-${sessionId}-reattach-${Date.now()}`);
+  }
+  assertUnderTmpdir(worktreePath) {
+    const tmpdir = os2.tmpdir();
+    let canonicalRoot = tmpdir;
+    try {
+      canonicalRoot = realpathSync2(tmpdir);
+    } catch {
+    }
+    const resolved = path5.resolve(worktreePath);
+    for (const root of [tmpdir, canonicalRoot]) {
+      if (resolved === root || resolved.startsWith(root + path5.sep)) {
+        return;
+      }
+    }
+    throw new Error(`Session worktree path escapes tmpdir: ${resolved}`);
+  }
+  lookupBaseBranch(workBranch) {
+    return this.baseBranches.get(workBranch) ?? null;
+  }
+  rememberPrefix(sessionId, workBranch) {
+    const suffix = `/${sessionId}`;
+    if (!workBranch.endsWith(suffix)) {
+      return;
+    }
+    this.knownPrefixes.add(workBranch.slice(0, -suffix.length));
+  }
+  matchingPrefix(workBranch) {
+    let match = null;
+    for (const prefix of this.knownPrefixes) {
+      if (!workBranch.startsWith(`${prefix}/`)) {
+        continue;
+      }
+      if (!match || prefix.length > match.length) {
+        match = prefix;
+      }
+    }
+    return match;
+  }
+  sessionIdFromPath(worktreePath) {
+    const match = path5.basename(worktreePath).match(/^invoke-session-(.+?)(?:-reattach-\d+)?$/);
+    return match?.[1] ?? null;
+  }
+  rememberInfo(info) {
+    if (info.baseBranch !== null) {
+      this.baseBranches.set(info.workBranch, info.baseBranch);
+    }
+    this.rememberPrefix(info.sessionId, info.workBranch);
+    return info;
+  }
+};
+
 // src/metrics/manager.ts
-import { existsSync as existsSync3 } from "fs";
+import { existsSync as existsSync4 } from "fs";
 import { mkdir as mkdir2, readFile as readFile4, rename as rename2, writeFile as writeFile2 } from "fs/promises";
-import path6 from "path";
+import path7 from "path";
 
 // src/tools/state.ts
 import { mkdir, readFile as readFile3, writeFile, rename } from "fs/promises";
-import { existsSync as existsSync2 } from "fs";
-import path5 from "path";
+import { existsSync as existsSync3 } from "fs";
+import path6 from "path";
 var StateManager = class {
   statePath;
   tmpPath;
@@ -39797,12 +40087,12 @@ var StateManager = class {
   dirEnsured = false;
   writeQueue = Promise.resolve();
   constructor(projectDir, sessionDir) {
-    this.storageDir = sessionDir ?? path5.join(projectDir, ".invoke");
-    this.statePath = path5.join(this.storageDir, "state.json");
-    this.tmpPath = path5.join(this.storageDir, "state.json.tmp");
+    this.storageDir = sessionDir ?? path6.join(projectDir, ".invoke");
+    this.statePath = path6.join(this.storageDir, "state.json");
+    this.tmpPath = path6.join(this.storageDir, "state.json.tmp");
   }
   async get() {
-    if (!existsSync2(this.statePath)) {
+    if (!existsSync3(this.statePath)) {
       return null;
     }
     const content = await readFile3(this.statePath, "utf-8");
@@ -39894,7 +40184,7 @@ var StateManager = class {
   }
   async reset() {
     await this.enqueueWrite(async () => {
-      if (existsSync2(this.statePath)) {
+      if (existsSync3(this.statePath)) {
         const { unlink: unlink2 } = await import("fs/promises");
         await unlink2(this.statePath);
       }
@@ -39925,9 +40215,9 @@ var FLUSH_DEBOUNCE_MS = 100;
 var MetricsManager = class {
   constructor(projectDir, sessionDir) {
     this.projectDir = projectDir;
-    const metricsDir = sessionDir ?? path6.join(projectDir, ".invoke");
-    this.metricsPath = path6.join(metricsDir, "metrics.json");
-    this.tmpPath = path6.join(metricsDir, "metrics.json.tmp");
+    const metricsDir = sessionDir ?? path7.join(projectDir, ".invoke");
+    this.metricsPath = path7.join(metricsDir, "metrics.json");
+    this.tmpPath = path7.join(metricsDir, "metrics.json.tmp");
     this.stateManager = new StateManager(projectDir, sessionDir);
     this.beforeExitHandler = () => {
       void this.flushPendingWrites();
@@ -40060,7 +40350,7 @@ var MetricsManager = class {
     await this.loadPromise;
   }
   async loadFromDisk() {
-    if (!existsSync3(this.metricsPath)) {
+    if (!existsSync4(this.metricsPath)) {
       this.loaded = true;
       return;
     }
@@ -40071,7 +40361,7 @@ var MetricsManager = class {
   }
   async writeAtomic(metrics) {
     if (!this.dirEnsured) {
-      await mkdir2(path6.dirname(this.metricsPath), { recursive: true });
+      await mkdir2(path7.dirname(this.metricsPath), { recursive: true });
       this.dirEnsured = true;
     }
     const content = JSON.stringify(metrics, null, 2) + "\n";
@@ -40096,16 +40386,16 @@ function normalizeCost(value) {
 }
 
 // src/session/manager.ts
-import { existsSync as existsSync4 } from "fs";
+import { existsSync as existsSync5 } from "fs";
 import { mkdir as mkdir3, readFile as readFile5, readdir as readdir2, rename as rename3, rm } from "fs/promises";
-import path7 from "path";
+import path8 from "path";
 var MS_PER_DAY = 24 * 60 * 60 * 1e3;
 var SessionManager = class {
   invokeDir;
   sessionsDir;
   constructor(projectDir) {
-    this.invokeDir = path7.resolve(projectDir, ".invoke");
-    this.sessionsDir = path7.join(this.invokeDir, "sessions");
+    this.invokeDir = path8.resolve(projectDir, ".invoke");
+    this.sessionsDir = path8.join(this.invokeDir, "sessions");
   }
   async create(sessionId) {
     this.validateSessionId(sessionId);
@@ -40116,13 +40406,13 @@ var SessionManager = class {
   resolve(sessionId) {
     this.validateSessionId(sessionId);
     const sessionDir = this.getSessionDir(sessionId);
-    if (!existsSync4(sessionDir)) {
+    if (!existsSync5(sessionDir)) {
       throw new Error(`Session '${sessionId}' does not exist`);
     }
     return sessionDir;
   }
   async list(staleDays = 7) {
-    if (!existsSync4(this.sessionsDir)) {
+    if (!existsSync5(this.sessionsDir)) {
       return [];
     }
     const entries = await readdir2(this.sessionsDir, { withFileTypes: true });
@@ -40138,7 +40428,7 @@ var SessionManager = class {
   }
   async migrate() {
     const legacyStatePath = this.getLegacyStatePath();
-    if (!existsSync4(legacyStatePath)) {
+    if (!existsSync5(legacyStatePath)) {
       return { migrated: false };
     }
     const state = JSON.parse(await readFile5(legacyStatePath, "utf-8"));
@@ -40159,9 +40449,9 @@ var SessionManager = class {
       throw error48;
     }
     const legacyMetricsPath = this.getLegacyMetricsPath();
-    if (existsSync4(legacyMetricsPath)) {
+    if (existsSync5(legacyMetricsPath)) {
       try {
-        await rename3(legacyMetricsPath, path7.join(sessionDir, "metrics.json"));
+        await rename3(legacyMetricsPath, path8.join(sessionDir, "metrics.json"));
       } catch (error48) {
         if (!this.isMissingFileError(error48)) {
           throw error48;
@@ -40176,19 +40466,19 @@ var SessionManager = class {
   }
   exists(sessionId) {
     this.validateSessionId(sessionId);
-    return existsSync4(this.getSessionDir(sessionId));
+    return existsSync5(this.getSessionDir(sessionId));
   }
   getSessionDir(sessionId) {
-    return path7.join(this.sessionsDir, sessionId);
+    return path8.join(this.sessionsDir, sessionId);
   }
   getStatePath(sessionId) {
-    return path7.join(this.getSessionDir(sessionId), "state.json");
+    return path8.join(this.getSessionDir(sessionId), "state.json");
   }
   getLegacyStatePath() {
-    return path7.join(this.invokeDir, "state.json");
+    return path8.join(this.invokeDir, "state.json");
   }
   getLegacyMetricsPath() {
-    return path7.join(this.invokeDir, "metrics.json");
+    return path8.join(this.invokeDir, "metrics.json");
   }
   async readState(sessionId) {
     const content = await readFile5(this.getStatePath(sessionId), "utf-8");
@@ -40196,7 +40486,7 @@ var SessionManager = class {
   }
   async readSessionInfo(sessionId, staleDays = 7) {
     const statePath = this.getStatePath(sessionId);
-    if (!existsSync4(statePath)) {
+    if (!existsSync5(statePath)) {
       return null;
     }
     const state = await this.readState(sessionId);
@@ -40226,7 +40516,7 @@ var SessionManager = class {
 init_zod();
 var import_yaml2 = __toESM(require_dist2(), 1);
 import { lstat, mkdir as mkdir4, readFile as readFile6, rename as rename4, writeFile as writeFile3 } from "fs/promises";
-import path8 from "path";
+import path9 from "path";
 
 // src/session/lock.ts
 var import_proper_lockfile = __toESM(require_proper_lockfile(), 1);
@@ -40278,10 +40568,10 @@ var BugNotFoundError = class extends Error {
 var BugManager = class {
   bugsPath;
   constructor(projectDir) {
-    this.bugsPath = path8.join(projectDir, ".invoke", "bugs.yaml");
+    this.bugsPath = path9.join(projectDir, ".invoke", "bugs.yaml");
   }
   async report(input) {
-    await mkdir4(path8.dirname(this.bugsPath), { recursive: true });
+    await mkdir4(path9.dirname(this.bugsPath), { recursive: true });
     return withLock(this.bugsPath, async () => {
       const bugsFile = await this.readBugsFile();
       const now = (/* @__PURE__ */ new Date()).toISOString();
@@ -40319,7 +40609,7 @@ var BugManager = class {
     });
   }
   async update(id, changes) {
-    await mkdir4(path8.dirname(this.bugsPath), { recursive: true });
+    await mkdir4(path9.dirname(this.bugsPath), { recursive: true });
     return withLock(this.bugsPath, async () => {
       const bugsFile = await this.readBugsFile();
       const bug = bugsFile.bugs.find((entry) => entry.id === id);
@@ -40418,27 +40708,27 @@ var BugManager = class {
 
 // src/tools/artifacts.ts
 import { readFile as readFile7, writeFile as writeFile4, mkdir as mkdir5, readdir as readdir3, unlink } from "fs/promises";
-import path9 from "path";
+import path10 from "path";
 var ArtifactManager = class {
   baseDir;
   constructor(projectDir) {
-    this.baseDir = path9.join(projectDir, ".invoke");
+    this.baseDir = path10.join(projectDir, ".invoke");
   }
   async save(stage, filename, content) {
-    const dir = path9.join(this.baseDir, stage);
+    const dir = path10.join(this.baseDir, stage);
     await mkdir5(dir, { recursive: true });
-    const filePath = path9.join(dir, filename);
+    const filePath = path10.join(dir, filename);
     await withLock(filePath, async () => {
       await writeFile4(filePath, content);
     });
     return filePath;
   }
   async read(stage, filename) {
-    const filePath = path9.join(this.baseDir, stage, filename);
+    const filePath = path10.join(this.baseDir, stage, filename);
     return readFile7(filePath, "utf-8");
   }
   async list(stage) {
-    const dir = path9.join(this.baseDir, stage);
+    const dir = path10.join(this.baseDir, stage);
     try {
       return await readdir3(dir);
     } catch {
@@ -40446,7 +40736,7 @@ var ArtifactManager = class {
     }
   }
   async delete(stage, filename) {
-    const filePath = path9.join(this.baseDir, stage, filename);
+    const filePath = path10.join(this.baseDir, stage, filename);
     await unlink(filePath);
   }
 };
@@ -40457,35 +40747,35 @@ init_config();
 
 // src/init.ts
 import { cp, mkdir as mkdir6, readdir as readdir4 } from "fs/promises";
-import { existsSync as existsSync5 } from "fs";
-import path10 from "path";
+import { existsSync as existsSync6 } from "fs";
+import path11 from "path";
 import { fileURLToPath as fileURLToPath3 } from "url";
-var __dirname3 = path10.dirname(fileURLToPath3(import.meta.url));
-var PACKAGE_ROOT3 = path10.join(__dirname3, "..");
+var __dirname3 = path11.dirname(fileURLToPath3(import.meta.url));
+var PACKAGE_ROOT3 = path11.join(__dirname3, "..");
 async function initProject(projectDir) {
-  const invokeDir = path10.join(projectDir, ".invoke");
-  const defaultsDir = path10.join(PACKAGE_ROOT3, "defaults");
+  const invokeDir = path11.join(projectDir, ".invoke");
+  const defaultsDir = path11.join(PACKAGE_ROOT3, "defaults");
   await mkdir6(invokeDir, { recursive: true });
-  const configDest = path10.join(invokeDir, "pipeline.yaml");
-  if (!existsSync5(configDest)) {
-    await cp(path10.join(defaultsDir, "pipeline.yaml"), configDest);
+  const configDest = path11.join(invokeDir, "pipeline.yaml");
+  if (!existsSync6(configDest)) {
+    await cp(path11.join(defaultsDir, "pipeline.yaml"), configDest);
   }
-  await copyDefaults(path10.join(defaultsDir, "roles"), path10.join(invokeDir, "roles"));
-  await copyDefaults(path10.join(defaultsDir, "strategies"), path10.join(invokeDir, "strategies"));
-  await mkdir6(path10.join(invokeDir, "specs", "research"), { recursive: true });
-  await mkdir6(path10.join(invokeDir, "plans"), { recursive: true });
-  await mkdir6(path10.join(invokeDir, "reviews"), { recursive: true });
+  await copyDefaults(path11.join(defaultsDir, "roles"), path11.join(invokeDir, "roles"));
+  await copyDefaults(path11.join(defaultsDir, "strategies"), path11.join(invokeDir, "strategies"));
+  await mkdir6(path11.join(invokeDir, "specs", "research"), { recursive: true });
+  await mkdir6(path11.join(invokeDir, "plans"), { recursive: true });
+  await mkdir6(path11.join(invokeDir, "reviews"), { recursive: true });
 }
 async function copyDefaults(srcDir, destDir) {
-  if (!existsSync5(srcDir)) return;
+  if (!existsSync6(srcDir)) return;
   await mkdir6(destDir, { recursive: true });
   const entries = await readdir4(srcDir, { withFileTypes: true });
   for (const entry of entries) {
-    const srcPath = path10.join(srcDir, entry.name);
-    const destPath = path10.join(destDir, entry.name);
+    const srcPath = path11.join(srcDir, entry.name);
+    const destPath = path11.join(destDir, entry.name);
     if (entry.isDirectory()) {
       await copyDefaults(srcPath, destPath);
-    } else if (!existsSync5(destPath)) {
+    } else if (!existsSync6(destPath)) {
       await cp(srcPath, destPath);
     }
   }
@@ -41021,6 +41311,356 @@ function matchesCleanupFilter(session, filter) {
   }
 }
 
+// src/tools/session-init-tools.ts
+init_zod();
+
+// src/worktree/base-branch.ts
+import { execSync as execSync2 } from "child_process";
+function shellEscape(value) {
+  return value.replace(/(["\\$`])/g, "\\$1");
+}
+function runGit(repoDir, command) {
+  return execSync2(command, {
+    cwd: repoDir,
+    stdio: "pipe"
+  }).toString().trim();
+}
+function tryRunGit(repoDir, command) {
+  try {
+    return runGit(repoDir, command);
+  } catch {
+    return null;
+  }
+}
+function branchExists(repoDir, branch) {
+  try {
+    execSync2(
+      `git show-ref --verify "refs/heads/${shellEscape(branch)}"`,
+      {
+        cwd: repoDir,
+        stdio: "pipe"
+      }
+    );
+    return true;
+  } catch {
+    return false;
+  }
+}
+function discoverDefaultBranch(repoDir) {
+  const originHead = tryRunGit(repoDir, "git symbolic-ref refs/remotes/origin/HEAD");
+  if (originHead) {
+    return originHead.replace(/^refs\/remotes\/origin\//, "");
+  }
+  if (branchExists(repoDir, "main")) {
+    return "main";
+  }
+  if (branchExists(repoDir, "master")) {
+    return "master";
+  }
+  return null;
+}
+function discoverBaseBranchCandidates(repoDir) {
+  const currentHead = tryRunGit(repoDir, "git symbolic-ref --short HEAD");
+  const allLocalBranchesOutput = runGit(
+    repoDir,
+    `git for-each-ref --format='%(refname:short)' refs/heads/`
+  );
+  return {
+    currentHead,
+    defaultBranch: discoverDefaultBranch(repoDir),
+    allLocalBranches: allLocalBranchesOutput ? allLocalBranchesOutput.split("\n").filter(Boolean) : []
+  };
+}
+
+// src/tools/session-init-tools.ts
+function registerSessionInitTools(server, sessionWorktreeManager, sessionManager, config2, projectDir) {
+  server.registerTool(
+    "invoke_get_base_branch_candidates",
+    {
+      description: "Read-only: returns the list of base-branch candidates for the session-init prompt.",
+      inputSchema: external_exports3.object({})
+    },
+    async () => {
+      try {
+        const candidates = discoverBaseBranchCandidates(projectDir);
+        return {
+          content: [{
+            type: "text",
+            text: JSON.stringify({
+              current_head: candidates.currentHead,
+              default_branch: candidates.defaultBranch,
+              all_local_branches: candidates.allLocalBranches
+            })
+          }]
+        };
+      } catch (err) {
+        return {
+          content: [{ type: "text", text: `Error: ${err instanceof Error ? err.message : String(err)}` }],
+          isError: true
+        };
+      }
+    }
+  );
+  server.registerTool(
+    "invoke_session_init_worktree",
+    {
+      description: "Initialize the per-session work branch and integration worktree for the given session.",
+      inputSchema: external_exports3.object({
+        session_id: external_exports3.string(),
+        base_branch: external_exports3.string()
+      })
+    },
+    async ({ session_id, base_branch }) => {
+      try {
+        if (!branchExists(projectDir, base_branch)) {
+          return {
+            content: [{ type: "text", text: `Base branch '${base_branch}' does not exist in this repository.` }],
+            isError: true
+          };
+        }
+        const cfg = config2();
+        const prefix = cfg.settings.work_branch_prefix ?? "invoke/work";
+        const info = await sessionWorktreeManager.create(session_id, prefix, base_branch);
+        const sessionDir = sessionManager.resolve(session_id);
+        const stateManager = new StateManager(projectDir, sessionDir);
+        await stateManager.update({
+          work_branch: info.workBranch,
+          base_branch: info.baseBranch ?? base_branch,
+          work_branch_path: info.worktreePath
+        });
+        return {
+          content: [{
+            type: "text",
+            text: JSON.stringify({
+              session_id,
+              work_branch: info.workBranch,
+              base_branch: info.baseBranch ?? base_branch,
+              work_branch_path: info.worktreePath
+            })
+          }]
+        };
+      } catch (err) {
+        return {
+          content: [{ type: "text", text: `Error: ${err instanceof Error ? err.message : String(err)}` }],
+          isError: true
+        };
+      }
+    }
+  );
+  server.registerTool(
+    "invoke_session_reattach_worktree",
+    {
+      description: "Reattach the per-session integration worktree when resuming a session.",
+      inputSchema: external_exports3.object({
+        session_id: external_exports3.string(),
+        work_branch: external_exports3.string(),
+        recorded_path: external_exports3.string().optional()
+      })
+    },
+    async ({ session_id, work_branch, recorded_path }) => {
+      try {
+        const info = await sessionWorktreeManager.reattach(session_id, work_branch, recorded_path);
+        if (!info) {
+          return {
+            content: [{
+              type: "text",
+              text: JSON.stringify({
+                session_id,
+                work_branch,
+                status: "unrecoverable"
+              })
+            }]
+          };
+        }
+        const sessionDir = sessionManager.resolve(session_id);
+        const stateManager = new StateManager(projectDir, sessionDir);
+        await stateManager.update({
+          work_branch_path: info.worktreePath
+        });
+        return {
+          content: [{
+            type: "text",
+            text: JSON.stringify({
+              session_id,
+              work_branch,
+              work_branch_path: info.worktreePath,
+              status: "reattached"
+            })
+          }]
+        };
+      } catch (err) {
+        return {
+          content: [{ type: "text", text: `Error: ${err instanceof Error ? err.message : String(err)}` }],
+          isError: true
+        };
+      }
+    }
+  );
+}
+
+// src/tools/pr-tools.ts
+init_zod();
+import { execFileSync as execFileSync4 } from "child_process";
+function registerPrTools(server, sessionManager, projectDir) {
+  server.registerTool(
+    "invoke_pr_create",
+    {
+      description: "Push the session work branch to origin and optionally open a PR via gh. Detects gh availability and degrades gracefully.",
+      inputSchema: external_exports3.object({
+        session_id: external_exports3.string(),
+        base_branch: external_exports3.string(),
+        title: external_exports3.string().optional(),
+        body: external_exports3.string().optional(),
+        mode: external_exports3.enum(["create_pr", "push_only"])
+      })
+    },
+    async ({ session_id, base_branch, title, body, mode }) => {
+      try {
+        const sessionDir = sessionManager.resolve(session_id);
+        const stateManager = new StateManager(projectDir, sessionDir);
+        const state = await stateManager.get();
+        if (!state?.work_branch || !state.work_branch_path) {
+          return errorResponse(
+            `Session ${session_id} has no work_branch - was it initialized via invoke_session_init_worktree?`
+          );
+        }
+        const workBranch = state.work_branch;
+        const cwd = state.work_branch_path;
+        const effectiveTitle = title ?? `feat: ${workBranch}`;
+        const effectiveBody = body ?? "";
+        try {
+          execFileSync4("git", ["push", "-u", "origin", workBranch], {
+            cwd,
+            stdio: "pipe"
+          });
+        } catch (err) {
+          return errorResponse(`Failed to push: ${err instanceof Error ? err.message : String(err)}`);
+        }
+        const compareUrl = computeCompareUrl(cwd, base_branch, workBranch);
+        if (mode === "push_only") {
+          return ok({
+            status: "pushed",
+            work_branch: workBranch,
+            base_branch,
+            compare_url: compareUrl,
+            gh_available: false,
+            pr_url: null
+          });
+        }
+        const ghAvailable = checkCliExists("gh");
+        if (!ghAvailable) {
+          return ok({
+            status: "pushed",
+            work_branch: workBranch,
+            base_branch,
+            compare_url: compareUrl,
+            gh_available: false,
+            pr_url: null,
+            note: "gh not installed; use compare_url to open a PR manually."
+          });
+        }
+        try {
+          execFileSync4("gh", ["auth", "status"], { cwd, stdio: "pipe" });
+        } catch {
+          return ok({
+            status: "pushed",
+            work_branch: workBranch,
+            base_branch,
+            compare_url: compareUrl,
+            gh_available: false,
+            pr_url: null,
+            note: "gh not authenticated; use compare_url to open a PR manually."
+          });
+        }
+        try {
+          const existing = execFileSync4(
+            "gh",
+            ["pr", "view", workBranch, "--json", "number,url"],
+            { cwd, stdio: "pipe" }
+          ).toString();
+          const parsed = JSON.parse(existing);
+          if (parsed.url) {
+            return ok({
+              status: "pr_exists",
+              pr_url: parsed.url,
+              work_branch: workBranch,
+              base_branch,
+              compare_url: compareUrl,
+              gh_available: true
+            });
+          }
+        } catch {
+        }
+        try {
+          const output = execFileSync4(
+            "gh",
+            [
+              "pr",
+              "create",
+              "--base",
+              base_branch,
+              "--head",
+              workBranch,
+              "--title",
+              effectiveTitle,
+              "--body",
+              effectiveBody
+            ],
+            { cwd, stdio: "pipe" }
+          ).toString();
+          const urlMatch = output.match(/https:\/\/github\.com\/[^\s]+/);
+          const prUrl = urlMatch?.[0] ?? null;
+          return ok({
+            status: "pr_created",
+            pr_url: prUrl,
+            work_branch: workBranch,
+            base_branch,
+            compare_url: compareUrl,
+            gh_available: true
+          });
+        } catch (err) {
+          return errorResponse(
+            `gh pr create failed: ${err instanceof Error ? err.message : String(err)}`
+          );
+        }
+      } catch (err) {
+        return errorResponse(`Unexpected error: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+  );
+}
+function ok(payload) {
+  return { content: [{ type: "text", text: JSON.stringify(payload) }] };
+}
+function errorResponse(msg) {
+  return { content: [{ type: "text", text: msg }], isError: true };
+}
+function computeCompareUrl(cwd, baseBranch, headBranch) {
+  try {
+    const remoteUrl = execFileSync4("git", ["remote", "get-url", "origin"], {
+      cwd,
+      stdio: "pipe"
+    }).toString().trim();
+    let owner = null;
+    let repo = null;
+    const httpsMatch = remoteUrl.match(/^https:\/\/github\.com\/([^/]+)\/([^/.]+)(\.git)?$/);
+    const sshMatch = remoteUrl.match(/^git@github\.com:([^/]+)\/([^/.]+)(\.git)?$/);
+    if (httpsMatch) {
+      owner = httpsMatch[1];
+      repo = httpsMatch[2];
+    } else if (sshMatch) {
+      owner = sshMatch[1];
+      repo = sshMatch[2];
+    }
+    if (!owner || !repo) {
+      return null;
+    }
+    return `https://github.com/${owner}/${repo}/compare/${baseBranch}...${headBranch}?expand=1`;
+  } catch {
+    return null;
+  }
+}
+
 // src/tools/comparison-tools.ts
 init_zod();
 
@@ -41452,11 +42092,11 @@ init_zod();
 // src/tools/config-manager.ts
 var import_yaml3 = __toESM(require_dist2(), 1);
 import { readFile as readFile8, writeFile as writeFile5 } from "fs/promises";
-import path11 from "path";
+import path12 from "path";
 var ConfigManager = class {
   constructor(projectDir) {
     this.projectDir = projectDir;
-    this.configPath = path11.join(projectDir, ".invoke", "pipeline.yaml");
+    this.configPath = path12.join(projectDir, ".invoke", "pipeline.yaml");
   }
   projectDir;
   configPath;
@@ -41637,17 +42277,17 @@ function buildOperation(input) {
 
 // src/tools/context.ts
 import { readFile as readFile9, writeFile as writeFile6 } from "fs/promises";
-import { existsSync as existsSync6 } from "fs";
-import path12 from "path";
+import { existsSync as existsSync7 } from "fs";
+import path13 from "path";
 var ContextManager = class {
   constructor(projectDir) {
     this.projectDir = projectDir;
-    this.contextPath = path12.join(projectDir, ".invoke", "context.md");
+    this.contextPath = path13.join(projectDir, ".invoke", "context.md");
   }
   projectDir;
   contextPath;
   async get(maxLength) {
-    if (!existsSync6(this.contextPath)) {
+    if (!existsSync7(this.contextPath)) {
       return null;
     }
     let content = await readFile9(this.contextPath, "utf-8");
@@ -41657,7 +42297,7 @@ var ContextManager = class {
     return content;
   }
   exists() {
-    return existsSync6(this.contextPath);
+    return existsSync7(this.contextPath);
   }
   async initialize(content) {
     await withLock(this.contextPath, async () => {
@@ -41842,7 +42482,7 @@ function registerBugTools(server, bugManager) {
         };
       } catch (err) {
         logToolError("invoke_report_bug", err);
-        return errorResponse("Failed to report bug");
+        return errorResponse2("Failed to report bug");
       }
     }
   );
@@ -41863,7 +42503,7 @@ function registerBugTools(server, bugManager) {
         };
       } catch (err) {
         logToolError("invoke_list_bugs", err);
-        return errorResponse("Failed to list bugs");
+        return errorResponse2("Failed to list bugs");
       }
     }
   );
@@ -41891,14 +42531,14 @@ function registerBugTools(server, bugManager) {
       } catch (err) {
         logToolError("invoke_update_bug", err);
         if (err instanceof BugNotFoundError) {
-          return errorResponse(`Bug not found: ${bug_id}`);
+          return errorResponse2(`Bug not found: ${bug_id}`);
         }
-        return errorResponse("Failed to update bug");
+        return errorResponse2("Failed to update bug");
       }
     }
   );
 }
-function errorResponse(message) {
+function errorResponse2(message) {
   return {
     content: [{ type: "text", text: message }],
     isError: true
@@ -41910,15 +42550,15 @@ function logToolError(toolName, error48) {
 
 // src/defaults-checker.ts
 import { readdir as readdir5 } from "fs/promises";
-import { existsSync as existsSync7 } from "fs";
-import path13 from "path";
+import { existsSync as existsSync8 } from "fs";
+import path14 from "path";
 import { fileURLToPath as fileURLToPath4 } from "url";
-var __dirname4 = path13.dirname(fileURLToPath4(import.meta.url));
-var PACKAGE_ROOT4 = path13.join(__dirname4, "..");
+var __dirname4 = path14.dirname(fileURLToPath4(import.meta.url));
+var PACKAGE_ROOT4 = path14.join(__dirname4, "..");
 async function checkForNewDefaults(projectDir) {
-  const invokeDir = path13.join(projectDir, ".invoke");
-  const defaultsDir = path13.join(PACKAGE_ROOT4, "defaults");
-  if (!existsSync7(invokeDir) || !existsSync7(defaultsDir)) {
+  const invokeDir = path14.join(projectDir, ".invoke");
+  const defaultsDir = path14.join(PACKAGE_ROOT4, "defaults");
+  if (!existsSync8(invokeDir) || !existsSync8(defaultsDir)) {
     return [];
   }
   const missing = [];
@@ -41926,15 +42566,15 @@ async function checkForNewDefaults(projectDir) {
   return missing;
 }
 async function scanDir(srcDir, destDir, relativePath, missing) {
-  if (!existsSync7(srcDir)) return;
+  if (!existsSync8(srcDir)) return;
   const entries = await readdir5(srcDir, { withFileTypes: true });
   for (const entry of entries) {
-    const srcPath = path13.join(srcDir, entry.name);
-    const destPath = path13.join(destDir, entry.name);
+    const srcPath = path14.join(srcDir, entry.name);
+    const destPath = path14.join(destDir, entry.name);
     const relPath = relativePath ? `${relativePath}/${entry.name}` : entry.name;
     if (entry.isDirectory()) {
       await scanDir(srcPath, destPath, relPath, missing);
-    } else if (!existsSync7(destPath)) {
+    } else if (!existsSync8(destPath)) {
       missing.push({
         relativePath: relPath,
         description: describeDefault(relPath)
@@ -41943,19 +42583,19 @@ async function scanDir(srcDir, destDir, relativePath, missing) {
   }
 }
 function describeDefault(relPath) {
-  if (relPath.includes("roles/reviewer/")) return `New reviewer: ${path13.basename(relPath, ".md")}`;
-  if (relPath.includes("roles/researcher/")) return `New researcher: ${path13.basename(relPath, ".md")}`;
-  if (relPath.includes("roles/planner/")) return `New planner: ${path13.basename(relPath, ".md")}`;
-  if (relPath.includes("roles/builder/")) return `New builder: ${path13.basename(relPath, ".md")}`;
-  if (relPath.includes("presets/")) return `New preset: ${path13.basename(relPath, path13.extname(relPath))}`;
-  if (relPath.includes("strategies/")) return `New strategy: ${path13.basename(relPath, ".md")}`;
+  if (relPath.includes("roles/reviewer/")) return `New reviewer: ${path14.basename(relPath, ".md")}`;
+  if (relPath.includes("roles/researcher/")) return `New researcher: ${path14.basename(relPath, ".md")}`;
+  if (relPath.includes("roles/planner/")) return `New planner: ${path14.basename(relPath, ".md")}`;
+  if (relPath.includes("roles/builder/")) return `New builder: ${path14.basename(relPath, ".md")}`;
+  if (relPath.includes("presets/")) return `New preset: ${path14.basename(relPath, path14.extname(relPath))}`;
+  if (relPath.includes("strategies/")) return `New strategy: ${path14.basename(relPath, ".md")}`;
   if (relPath === "context-template.md") return "Project context template";
   return `New default: ${relPath}`;
 }
 
 // src/index.ts
 import { writeFile as writeFile7 } from "fs/promises";
-import path14 from "path";
+import path15 from "path";
 async function main() {
   const projectDir = process.cwd();
   const server = new McpServer({
@@ -41980,7 +42620,7 @@ async function main() {
     }
     try {
       await writeFile7(
-        path14.join(projectDir, ".invoke", "validation.json"),
+        path15.join(projectDir, ".invoke", "validation.json"),
         JSON.stringify(validation, null, 2)
       );
     } catch {
@@ -41994,6 +42634,7 @@ async function main() {
     }
   }
   const worktreeManager = new WorktreeManager(projectDir);
+  const sessionWorktreeManager = new SessionWorktreeManager(projectDir);
   const stateManager = new StateManager(projectDir);
   const artifactManager = new ArtifactManager(projectDir);
   const contextManager = new ContextManager(projectDir);
@@ -42004,7 +42645,7 @@ async function main() {
   if (migration.migrated) {
     console.error(`Migrated legacy state to session: ${migration.sessionId}`);
   }
-  registerSessionTools(server, sessionManager, projectDir);
+  registerSessionTools(server, sessionManager, projectDir, sessionWorktreeManager);
   registerComparisonTools(server, projectDir, sessionManager);
   registerStateTools(server, stateManager, projectDir, sessionManager);
   registerArtifactTools(server, artifactManager);
@@ -42014,6 +42655,10 @@ async function main() {
   registerContextTools(server, contextManager);
   registerMetricsTools(server, metricsManager, projectDir, sessionManager);
   registerBugTools(server, bugManager);
+  registerPrTools(server, sessionManager, projectDir);
+  if (config2) {
+    registerSessionInitTools(server, sessionWorktreeManager, sessionManager, () => config2, projectDir);
+  }
   if (config2) {
     const providers = createProviderRegistry(config2.providers);
     const parsers = createParserRegistry();

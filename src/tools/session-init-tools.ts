@@ -90,4 +90,57 @@ export function registerSessionInitTools(
       }
     }
   )
+
+  server.registerTool(
+    'invoke_session_reattach_worktree',
+    {
+      description: 'Reattach the per-session integration worktree when resuming a session.',
+      inputSchema: z.object({
+        session_id: z.string(),
+        work_branch: z.string(),
+        recorded_path: z.string().optional(),
+      }),
+    },
+    async ({ session_id, work_branch, recorded_path }) => {
+      try {
+        const info = await sessionWorktreeManager.reattach(session_id, work_branch, recorded_path)
+
+        if (!info) {
+          return {
+            content: [{
+              type: 'text',
+              text: JSON.stringify({
+                session_id,
+                work_branch,
+                status: 'unrecoverable',
+              }),
+            }],
+          }
+        }
+
+        const sessionDir = sessionManager.resolve(session_id)
+        const stateManager = new StateManager(projectDir, sessionDir)
+        await stateManager.update({
+          work_branch_path: info.worktreePath,
+        })
+
+        return {
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
+              session_id,
+              work_branch,
+              work_branch_path: info.worktreePath,
+              status: 'reattached',
+            }),
+          }],
+        }
+      } catch (err) {
+        return {
+          content: [{ type: 'text', text: `Error: ${err instanceof Error ? err.message : String(err)}` }],
+          isError: true,
+        }
+      }
+    }
+  )
 }
