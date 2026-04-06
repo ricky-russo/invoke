@@ -188,6 +188,7 @@ settings:
     # Commands to run after merging worktrees (e.g., regenerate lockfiles):
     post_merge_commands:
         - npm install
+        - npm run test
         - npm run build
     # Maximum agents to run in parallel per batch (0 or omit for unlimited):
     max_parallel_agents: 4
