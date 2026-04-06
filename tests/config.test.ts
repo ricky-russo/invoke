@@ -505,6 +505,38 @@ settings:
     await expect(loadConfig(TEST_DIR)).rejects.toThrow()
   })
 
+  it('throws a clear error when work_branch_prefix is invalid', async () => {
+    const yaml = `
+providers:
+  claude:
+    cli: claude
+    args: ["--print", "--model", "{{model}}"]
+
+roles:
+  reviewer:
+    security:
+      prompt: .invoke/roles/reviewer/security.md
+      provider: claude
+      model: opus-4.6
+      effort: high
+
+strategies:
+  tdd:
+    prompt: .invoke/strategies/tdd.md
+
+settings:
+  default_strategy: tdd
+  agent_timeout: 300000
+  commit_style: per-batch
+  work_branch_prefix: /invoke/work
+`
+    await writeFile(path.join(TEST_DIR, '.invoke', 'pipeline.yaml'), yaml)
+
+    await expect(loadConfig(TEST_DIR)).rejects.toThrow(
+      /work_branch_prefix must contain only letters, numbers, dots, underscores, dashes, and slashes, and must not be empty or start\/end with '\//i
+    )
+  })
+
   it('throws a clear error when a referenced preset file is missing', async () => {
     const yaml = `
 providers:

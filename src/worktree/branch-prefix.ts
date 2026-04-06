@@ -1,0 +1,22 @@
+const WORK_BRANCH_PREFIX_PATTERN = /^[A-Za-z0-9._/-]+$/
+
+export function validateWorkBranchPrefix(prefix: string): void {
+  if (prefix.length === 0) {
+    throw new Error('Work branch prefix must not be empty.')
+  }
+
+  if (!WORK_BRANCH_PREFIX_PATTERN.test(prefix)) {
+    throw new Error(
+      'Work branch prefix may only contain letters, numbers, dots, underscores, dashes, and slashes.'
+    )
+  }
+
+  if (prefix.startsWith('/') || prefix.endsWith('/')) {
+    throw new Error("Work branch prefix must not start or end with '/'.")
+  }
+}
+
+export function buildWorkBranch(prefix: string, sessionId: string): string {
+  validateWorkBranchPrefix(prefix)
+  return `${prefix}/${sessionId}`
+}
