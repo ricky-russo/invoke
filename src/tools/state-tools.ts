@@ -103,6 +103,7 @@ export function registerStateTools(
             dismissed: z.array(z.any()),
           }).optional(),
         })).optional(),
+        bug_ids: z.array(z.string()).optional(),
       }),
     },
     async (updates) => {
