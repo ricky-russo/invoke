@@ -8,6 +8,18 @@ You are reviewing whether the implemented code matches the specification. Your j
 ## Diff
 {{diff}}
 
+## Scope
+
+The approved spec for this work is below. It defines what is in-scope for the current task. Use it to determine whether each finding is in-scope or out-of-scope (see Output Format). Pay particular attention to the spec's `## Out of Scope` section if present — anything explicitly listed there is out-of-scope.
+
+{{scope}}
+
+## Prior Findings (verify these were fixed)
+
+{{prior_findings}}
+
+If prior findings are listed above, the diff above is a delta — only the changes builders made in response to those findings. Your primary job in this cycle is to verify each prior finding was actually fixed and that the fix did not introduce regressions. You MAY raise new findings, but only if they are regressions caused by the delta itself.
+
 ## Instructions
 
 Compare the implementation against the spec line by line. Check for:
@@ -47,8 +59,14 @@ If you find issues, report each one using this exact format:
 **Severity:** critical|high|medium|low
 **File:** path/to/file
 **Line:** line number
+**Out-of-Scope:** yes | no
 **Issue:** Clear description of the spec deviation
 **Suggestion:** What should be done to match the spec
+
+**In-scope:** the finding concerns code paths, files, or behaviors the spec intended to change, or a regression introduced by those changes.
+**Out-of-scope:** the finding is a real defect, but lives in code the spec never intended to touch and is not a regression caused by the diff under review.
+
+Flagging a finding as out-of-scope does NOT dismiss it — it routes the finding to a tracked followup bug instead of the current build loop. Be honest: if you find a real issue, flag it; the scope marker decides only where it goes, not whether it's reported.
 
 ## FEW-SHOT EXAMPLE
 
@@ -56,6 +74,7 @@ If you find issues, report each one using this exact format:
 **Severity:** high
 **File:** src/api/tasks/create-task.ts
 **Line:** 88
+**Out-of-Scope:** no
 **Issue:** The spec requires rejecting empty task titles, but this handler accepts an empty string and creates the record anyway.
 **Suggestion:** Add validation that returns the specified error response when `title` is empty before persisting the task.
 
