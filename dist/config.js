@@ -3,6 +3,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { parse } from 'yaml';
 import { z } from 'zod';
+import { validateWorkBranchPrefix } from './worktree/branch-prefix.js';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PACKAGE_ROOT = path.join(__dirname, '..');
 const ProviderConfigSchema = z.object({
@@ -50,7 +51,17 @@ const SettingsSchema = z.object({
     default_strategy: z.string(),
     agent_timeout: z.number().positive(),
     commit_style: z.enum(['one-commit', 'per-batch', 'per-task', 'custom']),
-    work_branch_prefix: z.string(),
+    work_branch_prefix: z.string().refine(value => {
+        try {
+            validateWorkBranchPrefix(value);
+            return true;
+        }
+        catch {
+            return false;
+        }
+    }, {
+        message: "work_branch_prefix must contain only letters, numbers, dots, underscores, dashes, and slashes, and must not be empty or start/end with '/'.",
+    }),
     preset: z.string().optional(),
     stale_session_days: z.number().positive().optional(),
     post_merge_commands: z.array(z.string()).optional(),

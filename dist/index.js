@@ -28425,6 +28425,28 @@ var require_dist2 = __commonJS({
   }
 });
 
+// src/worktree/branch-prefix.ts
+function validateWorkBranchPrefix(prefix) {
+  if (prefix.length === 0) {
+    throw new Error("Work branch prefix must not be empty.");
+  }
+  if (!WORK_BRANCH_PREFIX_PATTERN.test(prefix)) {
+    throw new Error(
+      "Work branch prefix may only contain letters, numbers, dots, underscores, dashes, and slashes."
+    );
+  }
+  if (prefix.startsWith("/") || prefix.endsWith("/")) {
+    throw new Error("Work branch prefix must not start or end with '/'.");
+  }
+}
+var WORK_BRANCH_PREFIX_PATTERN;
+var init_branch_prefix = __esm({
+  "src/worktree/branch-prefix.ts"() {
+    "use strict";
+    WORK_BRANCH_PREFIX_PATTERN = /^[A-Za-z0-9._/-]+$/;
+  }
+});
+
 // src/config.ts
 var config_exports = {};
 __export(config_exports, {
@@ -28531,6 +28553,7 @@ var init_config = __esm({
     "use strict";
     import_yaml = __toESM(require_dist2(), 1);
     init_zod();
+    init_branch_prefix();
     __dirname = path.dirname(fileURLToPath(import.meta.url));
     PACKAGE_ROOT = path.join(__dirname, "..");
     ProviderConfigSchema = external_exports3.object({
@@ -28577,7 +28600,16 @@ var init_config = __esm({
       default_strategy: external_exports3.string(),
       agent_timeout: external_exports3.number().positive(),
       commit_style: external_exports3.enum(["one-commit", "per-batch", "per-task", "custom"]),
-      work_branch_prefix: external_exports3.string(),
+      work_branch_prefix: external_exports3.string().refine((value) => {
+        try {
+          validateWorkBranchPrefix(value);
+          return true;
+        } catch {
+          return false;
+        }
+      }, {
+        message: "work_branch_prefix must contain only letters, numbers, dots, underscores, dashes, and slashes, and must not be empty or start/end with '/'."
+      }),
       preset: external_exports3.string().optional(),
       stale_session_days: external_exports3.number().positive().optional(),
       post_merge_commands: external_exports3.array(external_exports3.string()).optional(),
