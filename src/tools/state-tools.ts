@@ -145,7 +145,11 @@ export function registerStateTools(
   server.registerTool(
     'invoke_set_state',
     {
-      description: 'Update pipeline state fields. Pass only the fields to update. Supports nested batches and review_cycles.',
+      description:
+        'Update pipeline state fields. Pass only the fields to update. ' +
+        'Supports nested batches and review_cycles. `batch_update.tasks` is merged into the existing batch by task id ' +
+        '(send only the changed tasks; sibling task state is preserved). ' +
+        'For full-array replacement (e.g. invoke-resume reset paths), use `batches: [...]` instead.',
       inputSchema: SetStateInputSchema,
     },
     async (updates) => {

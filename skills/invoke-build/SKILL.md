@@ -156,24 +156,51 @@ The `invoke_merge_worktree` tool returns one of two shapes:
 - Success: `{ task_id, status: 'merged' }`
 - Conflict: `{ task_id, status: 'conflict', conflicting_files: [...], merge_target_path: '...' }`
 
-If the response is `status: 'conflict'`, do NOT prompt the user for manual resolution. Instead:
+**WARNING:** Do NOT prompt the user for manual conflict resolution. The R4 + C5 redispatch loop handles conflicts automatically via the auto-redispatch budget; manual prompts are only valid AFTER the budget is exhausted (step 6 below).
 
-1. Read state via `invoke_get_state` with `session_id: <pipeline_id>`. Locate the batch and task in `state.batches[i].tasks[j]` by task_id. Read the existing `tasks` array — you will need it intact for `batch_update`.
+If the response is `status: 'conflict'`:
+
+1. Locate the conflicted task by id (you do not need to read the full tasks array — see step 4).
 
 2. Compute the task's NEW `conflict_attempts` = (existing `conflict_attempts` ?? 0) + 1.
 
 3. Compute the C5 BUDGET: read `max_review_cycles` from the `invoke_get_review_cycle_count` response (or fall back to 3 if unavailable). The conflict redispatch budget per task is `max(2, max_review_cycles)` — a task may be auto-redispatched up to that many times before manual escalation.
 
-4. Update state via `invoke_set_state` with `session_id: <pipeline_id>` and `batch_update`. Build the updated `tasks` array by COPYING the existing `batch.tasks` array, finding the conflicted task by id, updating its `status` to `'conflict'`, setting `conflict_attempts` to the new value, AND setting `conflicting_files` to the array from the merge response. Pass the FULL updated tasks array as `batch_update.tasks`. Do NOT send a partial array — `invoke_set_state` shallow-replaces the tasks array, so a partial array would drop sibling task state.
+4. Update state via `invoke_set_state` with `batch_update`. `invoke_set_state` now merges `batch_update.tasks` by task id, so you can send ONLY the changed task entries:
+
+   ```
+   batch_update: {
+     id: <batch-id>,
+     status: 'in_progress',
+     tasks: [
+       {
+         id: <conflicted-task-id>,
+         status: 'conflict',
+         conflict_attempts: <new-value>,
+         conflicting_files: <array-from-merge-response>,
+       }
+     ]
+   }
+   ```
+
+   Sibling tasks in the batch are preserved automatically. Do NOT read the full tasks array first — just send the delta.
 
 5. If the new `conflict_attempts <= BUDGET` (auto-redispatch is still allowed):
-   - Before redispatching, READ the current contents of each conflicting file from the integration worktree using the Read tool with paths like `<merge_target_path>/<file>`. Include each file's content in the redispatched `task_context` under a key like `current_<filename>` so the rebuilt task can apply changes on top of the current state. R4 explicitly requires this — the redispatched builder must see what's already there.
-   - Re-dispatch the same builder for the task by calling `invoke_dispatch_batch` with a single task whose `task_context` extends the original with conflict information:
-     - `conflicting_files`: the list from the conflict response
-     - `merge_target_path`: the merge target path from the conflict response
-     - `current_<filename>`: one entry per conflicting file containing the file's current contents read from `<merge_target_path>/<file>`
-     - `original_task_context`: the original task description
-     - `conflict_instructions`: 'Resume your work, but be aware that the following files conflict with the integration target. The current file contents are provided in `current_<filename>` fields — re-implement your changes on top of those contents so your output applies cleanly.'
+   - Re-dispatch the same builder for the task by calling `invoke_dispatch_batch` with a single task whose `task_context` extends the original with conflict information. `invoke_dispatch_batch.task_context` is `Record<string, string>`. The redispatch task_context should include:
+     - `original_task_description`: the original task_description string verbatim
+     - `conflicting_files`: a comma-separated list of conflicting file paths (or JSON-encoded array)
+     - `merge_target_path`: the path string from the merge response
+     - `conflict_instructions`: a string explaining how to apply the rebuilt work on top of the integration worktree state
+     - `current_files_json`: a JSON-encoded object mapping each conflicting file's full path (relative to `merge_target_path`) to its current contents. Using full paths as keys avoids basename collisions.
+
+     Do NOT use a key per file (e.g. `current_<filename>`) — file basenames can collide. Use one `current_files_json` field instead.
+
+     Before building `current_files_json`, compute the total byte size of the file contents. If the total exceeds 200 KB:
+     - Include only the conflicting file PATHS in `current_files_json` (mapping each path to an empty string).
+     - Set an additional task_context key `current_files_truncated: 'true'`.
+     - Add to `conflict_instructions`: 'The current contents of the conflicting files were too large to inline (over 200 KB). Use the Read tool with paths under `merge_target_path` to read each file on demand.'
+
+     If the total is under 200 KB, include the full contents inline. This bounds the redispatch payload to a sane size while still letting the rebuilt builder access full contents when needed.
    - Resume polling for that single-task batch as in step d (use `invoke_get_batch_status` + `invoke_get_task_result` with `session_id`).
    - When the redispatched builder completes, attempt `invoke_merge_worktree` again. If it succeeds, mark the task `merged: true` and continue. If it conflicts again, recurse to step 1 — this loop is bounded by the BUDGET.
 

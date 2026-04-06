@@ -9,19 +9,26 @@ export class StateManager {
   private storageDir: string
   private dirEnsured = false
   private writeQueue: Promise<void> = Promise.resolve()
+  private cachedState: PipelineState | null = null
 
   constructor(projectDir: string, sessionDir?: string) {
     this.storageDir = sessionDir ?? path.join(projectDir, '.invoke')
     this.statePath = path.join(this.storageDir, 'state.json')
     this.tmpPath = path.join(this.storageDir, 'state.json.tmp')
+    this.cachedState = null
   }
 
   async get(): Promise<PipelineState | null> {
+    if (this.cachedState !== null) {
+      return this.cachedState
+    }
     if (!existsSync(this.statePath)) {
       return null
     }
     const content = await readFile(this.statePath, 'utf-8')
-    return JSON.parse(content) as PipelineState
+    const parsed = JSON.parse(content) as PipelineState
+    this.cachedState = parsed
+    return parsed
   }
 
   async initialize(pipelineId: string): Promise<PipelineState> {
@@ -165,6 +172,7 @@ export class StateManager {
         const { unlink } = await import('fs/promises')
         await unlink(this.statePath)
       }
+      this.cachedState = null
     })
   }
 
@@ -186,6 +194,7 @@ export class StateManager {
     const content = JSON.stringify(state, null, 2) + '\n'
     await writeFile(this.tmpPath, content)
     await rename(this.tmpPath, this.statePath)
+    this.cachedState = state
   }
 
   private applyBatchUpsert(state: PipelineState, batch: BatchState): void {
@@ -193,12 +202,47 @@ export class StateManager {
     const existingIndex = batches.findIndex(existingBatch => existingBatch.id === batch.id)
 
     if (existingIndex >= 0) {
-      batches[existingIndex] = { ...batches[existingIndex], ...batch }
+      const existing = batches[existingIndex]
+      const mergedTasks = this.mergeTasksById(existing.tasks, batch.tasks)
+      batches[existingIndex] = { ...existing, ...batch, tasks: mergedTasks }
     } else {
       batches.push(batch)
     }
 
     state.batches = batches
+  }
+
+  /**
+   * Merge incoming task entries into an existing tasks array by task id.
+   *
+   * Semantics (load-bearing for invoke-build's conflict redispatch loop):
+   *   - Tasks present in `updates` are merged on top of the existing entry
+   *     by id. Existing fields are preserved unless overridden by `updates`.
+   *   - Tasks present only in `existing` are preserved unchanged.
+   *   - Tasks present only in `updates` are appended.
+   *
+   * This lets callers send only the changed task entries in
+   * `batch_update.tasks` without dropping sibling task state. The skill
+   * relies on this so the conflict redispatch path can update a single
+   * task without re-reading the full tasks array first.
+   */
+  private mergeTasksById(
+    existing: TaskState[],
+    updates: TaskState[]
+  ): TaskState[] {
+    if (!updates || updates.length === 0) {
+      return [...existing]
+    }
+    const merged = [...existing]
+    for (const update of updates) {
+      const idx = merged.findIndex(task => task.id === update.id)
+      if (idx >= 0) {
+        merged[idx] = { ...merged[idx], ...update }
+      } else {
+        merged.push(update)
+      }
+    }
+    return merged
   }
 
   private applyReviewCycleUpsert(state: PipelineState, cycle: ReviewCycle): void {

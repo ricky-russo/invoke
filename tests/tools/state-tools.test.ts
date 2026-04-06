@@ -306,10 +306,8 @@ describe('registerStateTools', () => {
   })
 
   it('updates an existing batch in place without affecting other batches', async () => {
-    const sessionStateManager = new StateManager(
-      TEST_DIR,
-      await sessionManager.create('session-1')
-    )
+    const sessionDir = await sessionManager.create('session-1')
+    const sessionStateManager = new StateManager(TEST_DIR, sessionDir)
     await sessionStateManager.initialize('pipeline-123')
     await sessionStateManager.update({
       batches: [
@@ -339,7 +337,10 @@ describe('registerStateTools', () => {
 
     expect(result.isError).toBeUndefined()
 
-    const state = await sessionStateManager.get()
+    // Read via a fresh StateManager so the verification does not see the
+    // setup-instance's stale in-memory cache (the tool handler writes
+    // through a separate cached instance owned by registerStateTools).
+    const state = await new StateManager(TEST_DIR, sessionDir).get()
     expect(state).toMatchObject({
       work_branch: 'invoke/work-1234',
       batches: [
@@ -359,10 +360,8 @@ describe('registerStateTools', () => {
   })
 
   it('appends a batch when batch_update targets a new id', async () => {
-    const sessionStateManager = new StateManager(
-      TEST_DIR,
-      await sessionManager.create('session-1')
-    )
+    const sessionDir = await sessionManager.create('session-1')
+    const sessionStateManager = new StateManager(TEST_DIR, sessionDir)
     await sessionStateManager.initialize('pipeline-123')
     await sessionStateManager.update({
       batches: [
@@ -385,7 +384,7 @@ describe('registerStateTools', () => {
 
     expect(result.isError).toBeUndefined()
 
-    const state = await sessionStateManager.get()
+    const state = await new StateManager(TEST_DIR, sessionDir).get()
     expect(state?.batches).toEqual([
       {
         id: 1,
@@ -401,10 +400,8 @@ describe('registerStateTools', () => {
   })
 
   it('clears batches when only an explicit batches array replacement is provided', async () => {
-    const sessionStateManager = new StateManager(
-      TEST_DIR,
-      await sessionManager.create('session-1')
-    )
+    const sessionDir = await sessionManager.create('session-1')
+    const sessionStateManager = new StateManager(TEST_DIR, sessionDir)
     await sessionStateManager.initialize('pipeline-123')
     await sessionStateManager.update({
       batches: [
@@ -423,7 +420,7 @@ describe('registerStateTools', () => {
 
     expect(result.isError).toBeUndefined()
 
-    const state = await sessionStateManager.get()
+    const state = await new StateManager(TEST_DIR, sessionDir).get()
     expect(state?.batches).toEqual([])
   })
 
@@ -570,10 +567,8 @@ describe('registerStateTools', () => {
   })
 
   it('performs a mixed batch_update and batches replacement in one invoke_set_state writeAtomic call', async () => {
-    const sessionStateManager = new StateManager(
-      TEST_DIR,
-      await sessionManager.create('session-atomic-replace')
-    )
+    const sessionDir = await sessionManager.create('session-atomic-replace')
+    const sessionStateManager = new StateManager(TEST_DIR, sessionDir)
     await sessionStateManager.initialize('pipeline-123')
     await sessionStateManager.update({
       batches: [
@@ -613,7 +608,7 @@ describe('registerStateTools', () => {
       warnSpy.mockRestore()
     }
 
-    expect(await sessionStateManager.get()).toMatchObject({
+    expect(await new StateManager(TEST_DIR, sessionDir).get()).toMatchObject({
       work_branch: 'invoke/work-replace',
       batches: [
         {
@@ -626,10 +621,8 @@ describe('registerStateTools', () => {
   })
 
   it('upserts review cycles by id and appends when review_cycle_update is provided', async () => {
-    const sessionStateManager = new StateManager(
-      TEST_DIR,
-      await sessionManager.create('session-1')
-    )
+    const sessionDir = await sessionManager.create('session-1')
+    const sessionStateManager = new StateManager(TEST_DIR, sessionDir)
     await sessionStateManager.initialize('pipeline-123')
     await sessionStateManager.update({
       review_cycles: [
@@ -650,7 +643,7 @@ describe('registerStateTools', () => {
     })
 
     expect(updateResult.isError).toBeUndefined()
-    expect((await sessionStateManager.get())?.review_cycles).toEqual([
+    expect((await new StateManager(TEST_DIR, sessionDir).get())?.review_cycles).toEqual([
       {
         id: 1,
         reviewers: ['reviewer-a', 'reviewer-b'],
@@ -672,7 +665,7 @@ describe('registerStateTools', () => {
     })
 
     expect(appendResult.isError).toBeUndefined()
-    expect((await sessionStateManager.get())?.review_cycles).toEqual([
+    expect((await new StateManager(TEST_DIR, sessionDir).get())?.review_cycles).toEqual([
       {
         id: 1,
         reviewers: ['reviewer-a', 'reviewer-b'],
@@ -691,10 +684,8 @@ describe('registerStateTools', () => {
   })
 
   it('clears review_cycles when only an explicit review_cycles array replacement is provided', async () => {
-    const sessionStateManager = new StateManager(
-      TEST_DIR,
-      await sessionManager.create('session-1')
-    )
+    const sessionDir = await sessionManager.create('session-1')
+    const sessionStateManager = new StateManager(TEST_DIR, sessionDir)
     await sessionStateManager.initialize('pipeline-123')
     await sessionStateManager.update({
       review_cycles: [
@@ -708,7 +699,7 @@ describe('registerStateTools', () => {
     })
 
     expect(clearResult.isError).toBeUndefined()
-    expect((await sessionStateManager.get())?.review_cycles).toEqual([])
+    expect((await new StateManager(TEST_DIR, sessionDir).get())?.review_cycles).toEqual([])
   })
 
   it('accepts review_cycles and review_cycle_update in the same invoke_set_state call and explicit review_cycles win', async () => {

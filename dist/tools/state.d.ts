@@ -5,6 +5,7 @@ export declare class StateManager {
     private storageDir;
     private dirEnsured;
     private writeQueue;
+    private cachedState;
     constructor(projectDir: string, sessionDir?: string);
     get(): Promise<PipelineState | null>;
     initialize(pipelineId: string): Promise<PipelineState>;
@@ -42,6 +43,21 @@ export declare class StateManager {
     private enqueueWrite;
     private writeAtomic;
     private applyBatchUpsert;
+    /**
+     * Merge incoming task entries into an existing tasks array by task id.
+     *
+     * Semantics (load-bearing for invoke-build's conflict redispatch loop):
+     *   - Tasks present in `updates` are merged on top of the existing entry
+     *     by id. Existing fields are preserved unless overridden by `updates`.
+     *   - Tasks present only in `existing` are preserved unchanged.
+     *   - Tasks present only in `updates` are appended.
+     *
+     * This lets callers send only the changed task entries in
+     * `batch_update.tasks` without dropping sibling task state. The skill
+     * relies on this so the conflict redispatch path can update a single
+     * task without re-reading the full tasks array first.
+     */
+    private mergeTasksById;
     private applyReviewCycleUpsert;
 }
 //# sourceMappingURL=state.d.ts.map

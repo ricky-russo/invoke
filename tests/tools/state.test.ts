@@ -572,6 +572,106 @@ describe('StateManager', () => {
     ])
   })
 
+  it('merges batch_update.tasks by id, preserving sibling tasks not in the partial array', async () => {
+    await stateManager.initialize('pipeline-123')
+    await stateManager.update({
+      batches: [
+        {
+          id: 1,
+          status: 'in_progress',
+          tasks: [
+            { id: 'task-1', status: 'running' },
+            { id: 'task-2', status: 'completed', merged: true },
+            { id: 'task-3', status: 'pending' },
+          ],
+        },
+      ],
+    })
+
+    // Send only the changed task — task-1 transitions to conflict.
+    await stateManager.applyComposite({
+      batchUpdate: {
+        id: 1,
+        status: 'in_progress',
+        tasks: [
+          {
+            id: 'task-1',
+            status: 'conflict',
+            conflict_attempts: 1,
+            conflicting_files: ['src/foo.ts'],
+          },
+        ],
+      },
+    })
+
+    const state = await stateManager.get()
+    expect(state?.batches[0].tasks).toEqual([
+      {
+        id: 'task-1',
+        status: 'conflict',
+        conflict_attempts: 1,
+        conflicting_files: ['src/foo.ts'],
+      },
+      { id: 'task-2', status: 'completed', merged: true },
+      { id: 'task-3', status: 'pending' },
+    ])
+  })
+
+  it('appends new tasks via batch_update merge when the id does not exist', async () => {
+    await stateManager.initialize('pipeline-123')
+    await stateManager.update({
+      batches: [
+        {
+          id: 1,
+          status: 'in_progress',
+          tasks: [{ id: 'task-1', status: 'running' }],
+        },
+      ],
+    })
+
+    await stateManager.applyComposite({
+      batchUpdate: {
+        id: 1,
+        status: 'in_progress',
+        tasks: [{ id: 'task-2', status: 'pending' }],
+      },
+    })
+
+    const state = await stateManager.get()
+    expect(state?.batches[0].tasks).toEqual([
+      { id: 'task-1', status: 'running' },
+      { id: 'task-2', status: 'pending' },
+    ])
+  })
+
+  it('caches state in memory after a write so subsequent get() does not re-read disk', async () => {
+    await stateManager.initialize('pipeline-123')
+
+    // Delete the file out from under the manager. If get() still returns
+    // state, it must be coming from the in-memory cache.
+    const { unlink } = await import('fs/promises')
+    await unlink(path.join(TEST_DIR, '.invoke', 'state.json'))
+    expect(existsSync(path.join(TEST_DIR, '.invoke', 'state.json'))).toBe(false)
+
+    const cached = await stateManager.get()
+    expect(cached?.pipeline_id).toBe('pipeline-123')
+
+    // A subsequent write through the manager must keep the cache in sync
+    // with the new state — and recreate the file via the atomic write.
+    await stateManager.update({ current_stage: 'build' })
+    const updated = await stateManager.get()
+    expect(updated?.current_stage).toBe('build')
+    expect(existsSync(path.join(TEST_DIR, '.invoke', 'state.json'))).toBe(true)
+  })
+
+  it('invalidates the in-memory cache on reset()', async () => {
+    await stateManager.initialize('pipeline-123')
+    expect(await stateManager.get()).not.toBeNull()
+
+    await stateManager.reset()
+    expect(await stateManager.get()).toBeNull()
+  })
+
   it('throws when applyComposite is called without an active pipeline', async () => {
     await expect(
       stateManager.applyComposite({ partial: { current_stage: 'build' } })

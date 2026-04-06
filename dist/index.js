@@ -40824,17 +40824,24 @@ var StateManager = class {
   storageDir;
   dirEnsured = false;
   writeQueue = Promise.resolve();
+  cachedState = null;
   constructor(projectDir, sessionDir) {
     this.storageDir = sessionDir ?? path10.join(projectDir, ".invoke");
     this.statePath = path10.join(this.storageDir, "state.json");
     this.tmpPath = path10.join(this.storageDir, "state.json.tmp");
+    this.cachedState = null;
   }
   async get() {
+    if (this.cachedState !== null) {
+      return this.cachedState;
+    }
     if (!existsSync5(this.statePath)) {
       return null;
     }
     const content = await readFile6(this.statePath, "utf-8");
-    return JSON.parse(content);
+    const parsed = JSON.parse(content);
+    this.cachedState = parsed;
+    return parsed;
   }
   async initialize(pipelineId) {
     return this.enqueueWrite(async () => {
@@ -40959,6 +40966,7 @@ var StateManager = class {
         const { unlink: unlink2 } = await import("fs/promises");
         await unlink2(this.statePath);
       }
+      this.cachedState = null;
     });
   }
   enqueueWrite(operation) {
@@ -40977,16 +40985,48 @@ var StateManager = class {
     const content = JSON.stringify(state, null, 2) + "\n";
     await writeFile3(this.tmpPath, content);
     await rename4(this.tmpPath, this.statePath);
+    this.cachedState = state;
   }
   applyBatchUpsert(state, batch) {
     const batches = [...state.batches];
     const existingIndex = batches.findIndex((existingBatch) => existingBatch.id === batch.id);
     if (existingIndex >= 0) {
-      batches[existingIndex] = { ...batches[existingIndex], ...batch };
+      const existing = batches[existingIndex];
+      const mergedTasks = this.mergeTasksById(existing.tasks, batch.tasks);
+      batches[existingIndex] = { ...existing, ...batch, tasks: mergedTasks };
     } else {
       batches.push(batch);
     }
     state.batches = batches;
+  }
+  /**
+   * Merge incoming task entries into an existing tasks array by task id.
+   *
+   * Semantics (load-bearing for invoke-build's conflict redispatch loop):
+   *   - Tasks present in `updates` are merged on top of the existing entry
+   *     by id. Existing fields are preserved unless overridden by `updates`.
+   *   - Tasks present only in `existing` are preserved unchanged.
+   *   - Tasks present only in `updates` are appended.
+   *
+   * This lets callers send only the changed task entries in
+   * `batch_update.tasks` without dropping sibling task state. The skill
+   * relies on this so the conflict redispatch path can update a single
+   * task without re-reading the full tasks array first.
+   */
+  mergeTasksById(existing, updates) {
+    if (!updates || updates.length === 0) {
+      return [...existing];
+    }
+    const merged = [...existing];
+    for (const update of updates) {
+      const idx = merged.findIndex((task) => task.id === update.id);
+      if (idx >= 0) {
+        merged[idx] = { ...merged[idx], ...update };
+      } else {
+        merged.push(update);
+      }
+    }
+    return merged;
   }
   applyReviewCycleUpsert(state, cycle) {
     const reviewCycles = [...state.review_cycles];
@@ -42557,7 +42597,7 @@ function registerStateTools(server, stateManager, projectDir, sessionManager) {
   server.registerTool(
     "invoke_set_state",
     {
-      description: "Update pipeline state fields. Pass only the fields to update. Supports nested batches and review_cycles.",
+      description: "Update pipeline state fields. Pass only the fields to update. Supports nested batches and review_cycles. `batch_update.tasks` is merged into the existing batch by task id (send only the changed tasks; sibling task state is preserved). For full-array replacement (e.g. invoke-resume reset paths), use `batches: [...]` instead.",
       inputSchema: SetStateInputSchema
     },
     async (updates) => {
