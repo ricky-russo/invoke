@@ -3,14 +3,17 @@ import { z } from 'zod'
 import { loadConfig } from '../config.js'
 import { MetricsManager } from '../metrics/manager.js'
 import { SessionManager } from '../session/manager.js'
-import type { SessionInfo, SessionMetricsSummary } from '../types.js'
+import { StateManager } from './state.js'
+import type { PipelineState, SessionInfo, SessionMetricsSummary } from '../types.js'
+import type { SessionWorktreeManager } from '../worktree/session-worktree.js'
 
 const DEFAULT_STALE_SESSION_DAYS = 7
 
 export function registerSessionTools(
   server: McpServer,
   sessionManager: SessionManager,
-  projectDir: string
+  projectDir: string,
+  sessionWorktreeManager?: SessionWorktreeManager
 ): void {
   server.registerTool(
     'invoke_list_sessions',
@@ -48,16 +51,25 @@ export function registerSessionTools(
       inputSchema: z.object({
         session_id: z.string().optional(),
         status_filter: z.enum(['complete', 'stale', 'all']).optional(),
+        delete_work_branch: z.boolean().optional(),
       }),
     },
-    async ({ session_id, status_filter }) => {
+    async ({ session_id, status_filter, delete_work_branch }) => {
       try {
+        const deleteWorkBranch = delete_work_branch ?? false
+
         if (session_id) {
           if (!sessionManager.exists(session_id)) {
             throw new Error(`Session '${session_id}' does not exist`)
           }
 
-          await sessionManager.cleanup(session_id)
+          await cleanupSession(
+            session_id,
+            sessionManager,
+            sessionWorktreeManager,
+            projectDir,
+            deleteWorkBranch
+          )
           return {
             content: [{ type: 'text', text: JSON.stringify([session_id], null, 2) }],
           }
@@ -72,7 +84,13 @@ export function registerSessionTools(
             continue
           }
 
-          await sessionManager.cleanup(session.session_id)
+          await cleanupSession(
+            session.session_id,
+            sessionManager,
+            sessionWorktreeManager,
+            projectDir,
+            deleteWorkBranch
+          )
           cleanedSessionIds.push(session.session_id)
         }
 
@@ -87,6 +105,48 @@ export function registerSessionTools(
       }
     }
   )
+}
+
+async function cleanupSession(
+  sessionId: string,
+  sessionManager: SessionManager,
+  sessionWorktreeManager: SessionWorktreeManager | undefined,
+  projectDir: string,
+  deleteWorkBranch: boolean
+): Promise<void> {
+  if (sessionWorktreeManager) {
+    const state = await readSessionState(sessionId, sessionManager, projectDir)
+    const workBranch = state?.work_branch
+    const workBranchPath = state?.work_branch_path
+
+    if (workBranch && workBranchPath) {
+      try {
+        await sessionWorktreeManager.cleanup(sessionId, workBranch, deleteWorkBranch)
+      } catch (error) {
+        console.error(
+          `Failed to clean up session worktree for '${sessionId}': ${error instanceof Error ? error.message : String(error)}`
+        )
+      }
+    }
+  }
+
+  await sessionManager.cleanup(sessionId)
+}
+
+async function readSessionState(
+  sessionId: string,
+  sessionManager: SessionManager,
+  projectDir: string
+): Promise<PipelineState | null> {
+  let sessionDir: string
+
+  try {
+    sessionDir = sessionManager.resolve(sessionId)
+  } catch {
+    return null
+  }
+
+  return new StateManager(projectDir, sessionDir).get()
 }
 
 async function getSessionsWithStatus(

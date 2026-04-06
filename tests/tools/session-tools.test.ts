@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { existsSync } from 'fs'
+import { execSync } from 'child_process'
+import { existsSync, realpathSync } from 'fs'
 import { mkdtemp, mkdir, rm, writeFile } from 'fs/promises'
 import os from 'os'
 import path from 'path'
@@ -19,10 +20,12 @@ import type {
   SessionInfo,
   SessionMetricsSummary,
 } from '../../src/types.js'
+import { SessionWorktreeManager } from '../../src/worktree/session-worktree.js'
 
 type ToolInput = {
   session_id?: string
   status_filter?: 'complete' | 'stale' | 'all'
+  delete_work_branch?: boolean
   withMetrics?: boolean
 }
 
@@ -63,9 +66,15 @@ function createState(overrides: Partial<PipelineState> = {}): PipelineState {
   }
 }
 
+interface ParsedWorktree {
+  worktreePath: string
+  branchRef: string | null
+}
+
 describe('registerSessionTools', () => {
   let projectDir: string
   let sessionManager: SessionManager
+  let sessionWorktreeManager: SessionWorktreeManager
   let registeredTools: Map<string, RegisteredTool>
 
   const registerTool = vi.fn((name: string, config: RegisteredTool['config'], handler: RegisteredTool['handler']) => {
@@ -86,6 +95,56 @@ describe('registerSessionTools', () => {
     return JSON.parse(result.content[0].text) as T
   }
 
+  function shellQuote(value: string): string {
+    return `"${value.replace(/["\\$`]/g, '\\$&')}"`
+  }
+
+  function git(command: string, cwd = projectDir): string {
+    return execSync(command, { cwd, stdio: 'pipe' }).toString().trim()
+  }
+
+  function branchExists(branch: string): boolean {
+    try {
+      execSync(`git show-ref --verify --quiet ${shellQuote(`refs/heads/${branch}`)}`, {
+        cwd: projectDir,
+        stdio: 'pipe',
+      })
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  function parseWorktreeList(output: string): ParsedWorktree[] {
+    if (output.trim().length === 0) {
+      return []
+    }
+
+    return output
+      .trim()
+      .split('\n\n')
+      .filter(Boolean)
+      .map(block => {
+        const lines = block.split('\n')
+        const worktreeLine = lines.find(line => line.startsWith('worktree '))
+        const branchLine = lines.find(line => line.startsWith('branch '))
+
+        if (!worktreeLine) {
+          return null
+        }
+
+        return {
+          worktreePath: worktreeLine.replace('worktree ', ''),
+          branchRef: branchLine ? branchLine.replace('branch ', '') : null,
+        }
+      })
+      .filter((entry): entry is ParsedWorktree => entry !== null)
+  }
+
+  function normalizePath(targetPath: string): string {
+    return existsSync(targetPath) ? realpathSync(targetPath) : targetPath
+  }
+
   async function writeSessionState(sessionId: string, state: PipelineState): Promise<void> {
     const sessionDir = path.join(projectDir, '.invoke', 'sessions', sessionId)
     await mkdir(sessionDir, { recursive: true })
@@ -98,22 +157,84 @@ describe('registerSessionTools', () => {
     await writeFile(path.join(sessionDir, 'metrics.json'), JSON.stringify(metrics, null, 2) + '\n')
   }
 
+  async function createSessionWorktreeState(sessionId: string, overrides: Partial<PipelineState> = {}) {
+    const worktree = await sessionWorktreeManager.create(sessionId, 'invoke/sessions', 'main')
+    await writeSessionState(
+      sessionId,
+      createState({
+        ...overrides,
+        work_branch: worktree.workBranch,
+        work_branch_path: worktree.worktreePath,
+      })
+    )
+    return worktree
+  }
+
   beforeEach(async () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2026-04-05T12:00:00.000Z'))
 
     projectDir = await mkdtemp(path.join(os.tmpdir(), 'invoke-session-tools-'))
+    execSync('git init', { cwd: projectDir, stdio: 'pipe' })
+    execSync('git branch -M main', { cwd: projectDir, stdio: 'pipe' })
+    execSync('git config user.email "test@test.com"', { cwd: projectDir, stdio: 'pipe' })
+    execSync('git config user.name "Test"', { cwd: projectDir, stdio: 'pipe' })
+    await writeFile(path.join(projectDir, 'README.md'), '# Test\n')
+    execSync('git add .', { cwd: projectDir, stdio: 'pipe' })
+    execSync('git commit -m "initial"', { cwd: projectDir, stdio: 'pipe' })
+
     sessionManager = new SessionManager(projectDir)
+    sessionWorktreeManager = new SessionWorktreeManager(projectDir)
     registeredTools = new Map()
     registerTool.mockClear()
     vi.mocked(loadConfig).mockResolvedValue(TEST_CONFIG)
 
-    registerSessionTools(server, sessionManager, projectDir)
+    registerSessionTools(server, sessionManager, projectDir, sessionWorktreeManager)
   })
 
   afterEach(async () => {
-    vi.useRealTimers()
-    await rm(projectDir, { recursive: true, force: true })
+    try {
+      const worktrees = parseWorktreeList(git('git worktree list --porcelain'))
+      for (const worktree of worktrees) {
+        if (normalizePath(worktree.worktreePath) === normalizePath(projectDir)) {
+          continue
+        }
+
+        try {
+          execSync(`git worktree remove --force ${shellQuote(worktree.worktreePath)}`, {
+            cwd: projectDir,
+            stdio: 'pipe',
+          })
+        } catch {
+          // Missing directories are pruned below.
+        }
+      }
+
+      try {
+        execSync('git worktree prune', { cwd: projectDir, stdio: 'pipe' })
+      } catch {
+        // Best-effort cleanup for manually deleted directories.
+      }
+
+      const branches = git('git for-each-ref --format="%(refname:short)" refs/heads')
+        .split('\n')
+        .filter(Boolean)
+
+      for (const branch of branches) {
+        if (branch === 'main') {
+          continue
+        }
+
+        try {
+          execSync(`git branch -D ${shellQuote(branch)}`, { cwd: projectDir, stdio: 'pipe' })
+        } catch {
+          // Ignore branches that still cannot be deleted during teardown.
+        }
+      }
+    } finally {
+      vi.useRealTimers()
+      await rm(projectDir, { recursive: true, force: true })
+    }
   })
 
   it('registers session tool schemas', () => {
@@ -125,6 +246,9 @@ describe('registerSessionTools', () => {
     ).toBe(true)
     expect(
       getTool('invoke_cleanup_sessions').config.inputSchema.safeParse({ session_id: 'session-1' }).success
+    ).toBe(true)
+    expect(
+      getTool('invoke_cleanup_sessions').config.inputSchema.safeParse({ delete_work_branch: true }).success
     ).toBe(true)
   })
 
@@ -330,6 +454,68 @@ describe('registerSessionTools', () => {
     expect(existsSync(path.join(projectDir, '.invoke', 'sessions', 'session-active'))).toBe(true)
     expect(sessionManager.exists('session-complete')).toBe(false)
     expect(sessionManager.exists('session-stale')).toBe(false)
+  })
+
+  it('cleans a session worktree and keeps the branch when delete_work_branch is false', async () => {
+    const sessionId = 'cleanup-keep-branch'
+    const worktree = await createSessionWorktreeState(sessionId)
+
+    const result = await getTool('invoke_cleanup_sessions').handler({
+      session_id: sessionId,
+      delete_work_branch: false,
+    })
+
+    expect(result.isError).toBeUndefined()
+    expect(parseResponseText<string[]>(result)).toEqual([sessionId])
+    expect(existsSync(worktree.worktreePath)).toBe(false)
+    expect(branchExists(worktree.workBranch)).toBe(true)
+    expect(sessionManager.exists(sessionId)).toBe(false)
+  })
+
+  it('cleans a session worktree and deletes the branch when delete_work_branch is true', async () => {
+    const sessionId = 'cleanup-delete-branch'
+    const worktree = await createSessionWorktreeState(sessionId)
+
+    const result = await getTool('invoke_cleanup_sessions').handler({
+      session_id: sessionId,
+      delete_work_branch: true,
+    })
+
+    expect(result.isError).toBeUndefined()
+    expect(parseResponseText<string[]>(result)).toEqual([sessionId])
+    expect(existsSync(worktree.worktreePath)).toBe(false)
+    expect(branchExists(worktree.workBranch)).toBe(false)
+    expect(sessionManager.exists(sessionId)).toBe(false)
+  })
+
+  it('cleans a legacy session without worktree state', async () => {
+    const sessionId = 'legacy-session'
+    const cleanupSpy = vi.spyOn(sessionWorktreeManager, 'cleanup')
+    await writeSessionState(sessionId, createState({ current_stage: 'complete' }))
+
+    const result = await getTool('invoke_cleanup_sessions').handler({ session_id: sessionId })
+
+    expect(result.isError).toBeUndefined()
+    expect(parseResponseText<string[]>(result)).toEqual([sessionId])
+    expect(cleanupSpy).not.toHaveBeenCalled()
+    expect(sessionManager.exists(sessionId)).toBe(false)
+  })
+
+  it('continues cleanup when the session worktree directory was already deleted', async () => {
+    const sessionId = 'cleanup-missing-worktree-dir'
+    const worktree = await createSessionWorktreeState(sessionId)
+    await rm(worktree.worktreePath, { recursive: true, force: true })
+    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      const result = await getTool('invoke_cleanup_sessions').handler({ session_id: sessionId })
+
+      expect(result.isError).toBeUndefined()
+      expect(parseResponseText<string[]>(result)).toEqual([sessionId])
+      expect(sessionManager.exists(sessionId)).toBe(false)
+      expect(branchExists(worktree.workBranch)).toBe(true)
+    } finally {
+      consoleErrorSpy.mockRestore()
+    }
   })
 
   it('returns an error when a targeted session does not exist', async () => {
