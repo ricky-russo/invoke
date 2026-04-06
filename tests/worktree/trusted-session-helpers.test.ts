@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { execSync } from 'child_process'
 import { realpathSync } from 'fs'
 import { mkdtemp, rm, writeFile } from 'fs/promises'
@@ -78,13 +78,23 @@ describe('isSafeSessionWorkBranchPath', () => {
   })
 
   it('returns false for a path outside tmpdir', async () => {
-    // Create a session-shaped directory in the user's home — outside tmpdir.
-    // We can't use mkdtemp under tmpdir for this test, since paths there
-    // would (correctly) pass the location check.
-    const outsideDir = trackCleanup(
-      await mkdtemp(path.join(os.homedir(), 'invoke-session-outside-'))
+    const realTmpdir = os.tmpdir()
+    const mockedTmpdir = trackCleanup(
+      await mkdtemp(path.join(realTmpdir, 'invoke-mocked-tmpdir-'))
     )
-    expect(isSafeSessionWorkBranchPath(outsideDir, repoDir)).toBe(false)
+    const outsideDir = trackCleanup(
+      await mkdtemp(path.join(realTmpdir, 'invoke-session-outside-'))
+    )
+    const tmpdirSpy = vi.spyOn(os, 'tmpdir').mockReturnValue(mockedTmpdir)
+
+    try {
+      const canonicalOutside = realpathSync(outsideDir)
+      const canonicalMockedTmpdir = realpathSync(mockedTmpdir)
+      expect(canonicalOutside.startsWith(canonicalMockedTmpdir + path.sep)).toBe(false)
+      expect(isSafeSessionWorkBranchPath(outsideDir, repoDir)).toBe(false)
+    } finally {
+      tmpdirSpy.mockRestore()
+    }
   })
 
   it('returns false for a path under tmpdir but with the wrong basename', async () => {

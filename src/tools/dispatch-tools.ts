@@ -239,16 +239,12 @@ export function registerDispatchTools(
             }
           }
 
-          try {
-            const projectedDispatches = limitStatus.dispatches_used + estimatedDispatches
+          const projectedDispatches = limitStatus.dispatches_used + estimatedDispatches
 
-            if (projectedDispatches > limitStatus.max_dispatches!) {
-              warning = `Exceeding max_dispatches limit (${projectedDispatches}/${limitStatus.max_dispatches})`
-            } else if (projectedDispatches / limitStatus.max_dispatches! > 0.8) {
-              warning = `Approaching max_dispatches limit (${projectedDispatches}/${limitStatus.max_dispatches})`
-            }
-          } catch {
-            // Warning-only path stays fail-open.
+          if (projectedDispatches > limitStatus.max_dispatches!) {
+            warning = `Exceeding max_dispatches limit (${projectedDispatches}/${limitStatus.max_dispatches})`
+          } else if (projectedDispatches / limitStatus.max_dispatches! > 0.8) {
+            warning = `Approaching max_dispatches limit (${projectedDispatches}/${limitStatus.max_dispatches})`
           }
         }
 
