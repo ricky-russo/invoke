@@ -94,7 +94,7 @@ AskUserQuestion({
     options: [
       { label: "Fix all", description: "Accept all findings and dispatch fix agents" },
       { label: "Dismiss all", description: "Dismiss all findings — treats them as not actually a problem, nothing logged" },
-      { label: "Defer all (log as bugs)", description: "Accept all findings as real but log as bugs for later — no fix agents dispatched now" },
+      { label: "Defer all (offer to log)", description: "Accept all findings as real but defer them — you'll be asked whether to log them as bugs for later" },
       { label: "Triage individually", description: "Review each finding and choose fix, defer, or dismiss" }
     ]
   }]
@@ -108,11 +108,11 @@ After the user selects which findings to fix, if any findings were not selected,
 ```
 AskUserQuestion({
   questions: [{
-    question: "For the [N] findings you didn't select to fix — defer them (log as bugs for later) or dismiss them (treat as not a problem)?",
+    question: "For the [N] findings you didn't select to fix — defer them (you'll be offered to log them as bugs) or dismiss them (treat as not a problem)?",
     header: "Unselected findings",
     multiSelect: false,
     options: [
-      { label: "Defer (log as bugs)", description: "Agree they are real issues — log as bugs to fix later" },
+      { label: "Defer (offer to log)", description: "Agree they are real issues — you'll be asked whether to log them as bugs for later" },
       { label: "Dismiss", description: "Treat as not actually a problem — no follow-up needed" }
     ]
   }]
@@ -153,15 +153,29 @@ Each entry in `review_cycles` follows this schema:
 
 ### Deferred Findings as Bugs
 
-After the user completes triage, if any findings were **deferred** (the user agreed they are real issues but chose not to fix them now), automatically log each one as a bug:
+After the user completes triage, if any findings were **deferred** (the user agreed they are real issues but chose not to fix them now), ask whether to log them as bugs:
 
-1. For each deferred finding, call `invoke_report_bug` with:
+1. Call `AskUserQuestion` with:
+   ```
+   AskUserQuestion({
+     questions: [{
+       question: '[N] findings were deferred. Log them as bugs to track later?',
+       header: 'Log bugs',
+       multiSelect: false,
+       options: [
+         { label: 'Log all', description: 'Create bug entries for all [N] deferred findings' },
+         { label: 'Skip', description: 'Do not log them as bugs' }
+       ]
+     }]
+   })
+   ```
+2. If the user chose **Log all**, for each deferred finding call `invoke_report_bug` with:
    - `title` from `finding.issue`
    - `description` from `finding.suggestion`
    - `severity` from `finding.severity`
    - `file`/`line` from the finding location
    - `session_id` from the current pipeline
-2. Confirm: "Logged [N] bugs for later: [BUG-NNN, BUG-NNN, ...]"
+3. If bugs were logged, confirm: "Logged [N] bugs for later: [BUG-NNN, BUG-NNN, ...]"
 
 **Dismissed findings are not logged as bugs.** Dismissal means the finding is not actually a problem and requires no follow-up.
 
