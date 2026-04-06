@@ -109,7 +109,7 @@ export function registerStateTools(
             deferred: z.array(z.any()).optional(),
           }).optional(),
         })).optional(),
-        bug_ids: z.array(z.string()).optional(),
+        bug_ids: z.array(z.string().regex(/^BUG-\d+$/, 'bug_ids must be BUG-NNN format')).optional(),
       }),
     },
     async (updates) => {

@@ -40,7 +40,9 @@ const testConfig: InvokeConfig = {
 type RegisteredTool = {
   config: {
     inputSchema: {
-      safeParse: (input: unknown) => { success: boolean }
+      safeParse: (input: unknown) =>
+        | { success: true; data: Record<string, unknown> }
+        | { success: false; error: { issues: Array<{ message: string }> } }
     }
   }
   handler: (input: Record<string, unknown>) => Promise<{
@@ -54,7 +56,20 @@ let sessionManager: SessionManager
 let registeredTools: Map<string, RegisteredTool>
 
 const registerTool = vi.fn((name: string, config: RegisteredTool['config'], handler: RegisteredTool['handler']) => {
-  registeredTools.set(name, { config, handler })
+  registeredTools.set(name, {
+    config,
+    handler: async (input: Record<string, unknown>) => {
+      const parsed = config.inputSchema.safeParse(input)
+      if (!parsed.success) {
+        return {
+          content: [{ type: 'text', text: parsed.error.issues[0]?.message ?? 'Invalid input' }],
+          isError: true,
+        }
+      }
+
+      return handler(parsed.data)
+    },
+  })
 })
 
 const server = { registerTool } as unknown as McpServer
@@ -201,6 +216,40 @@ describe('registerStateTools', () => {
         ],
       },
     ])
+  })
+
+  it('round-trips valid bug_ids and rejects invalid bug_ids in invoke_set_state', async () => {
+    const setStateTool = getTool('invoke_set_state')
+    const validInput = {
+      session_id: 'session-1',
+      pipeline_id: 'pipeline-123',
+      bug_ids: ['BUG-001', 'BUG-002'],
+    }
+
+    expect(setStateTool.config.inputSchema.safeParse(validInput).success).toBe(true)
+
+    const setResult = await setStateTool.handler(validInput)
+    expect(setResult.isError).toBeUndefined()
+
+    const sessionStateManager = new StateManager(
+      TEST_DIR,
+      sessionManager.resolve('session-1')
+    )
+    const state = await sessionStateManager.get()
+    expect(state?.bug_ids).toEqual(['BUG-001', 'BUG-002'])
+
+    const getResult = await getTool('invoke_get_state').handler({ session_id: 'session-1' })
+    expect(getResult.isError).toBeUndefined()
+    expect(parseResponseText(getResult)).toMatchObject({
+      bug_ids: ['BUG-001', 'BUG-002'],
+    })
+
+    const invalidResult = await setStateTool.handler({
+      session_id: 'session-1',
+      bug_ids: ['invalid-id'],
+    })
+    expect(invalidResult.isError).toBe(true)
+    expect(invalidResult.content[0].text).toBe('bug_ids must be BUG-NNN format')
   })
 
   it('returns session-scoped state when session_id is provided to invoke_get_state', async () => {
