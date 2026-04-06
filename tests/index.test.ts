@@ -16,6 +16,7 @@ const mocks = vi.hoisted(() => ({
   registerMetricsTools: vi.fn(),
   registerSessionTools: vi.fn(),
   registerComparisonTools: vi.fn(),
+  registerBugTools: vi.fn(),
   checkForNewDefaults: vi.fn(),
   writeFile: vi.fn(),
   serverInstances: [] as any[],
@@ -28,6 +29,7 @@ const mocks = vi.hoisted(() => ({
   artifactManagerInstances: [] as any[],
   contextManagerInstances: [] as any[],
   metricsManagerInstances: [] as any[],
+  bugManagerInstances: [] as any[],
   sessionMigrationResult: { migrated: false } as { migrated: boolean; sessionId?: string },
 }))
 
@@ -146,6 +148,17 @@ vi.mock('../src/tools/context.js', () => ({
   },
 }))
 
+vi.mock('../src/bugs/manager.js', () => ({
+  BugManager: class {
+    projectDir: string
+
+    constructor(projectDir: string) {
+      this.projectDir = projectDir
+      mocks.bugManagerInstances.push(this)
+    }
+  },
+}))
+
 vi.mock('../src/metrics/manager.js', () => ({
   MetricsManager: class {
     projectDir: string
@@ -198,6 +211,10 @@ vi.mock('../src/tools/comparison-tools.js', () => ({
   registerComparisonTools: mocks.registerComparisonTools,
 }))
 
+vi.mock('../src/tools/bug-tools.js', () => ({
+  registerBugTools: mocks.registerBugTools,
+}))
+
 vi.mock('../src/defaults-checker.js', () => ({
   checkForNewDefaults: mocks.checkForNewDefaults,
 }))
@@ -245,6 +262,7 @@ describe('index bootstrap', () => {
     mocks.artifactManagerInstances.length = 0
     mocks.contextManagerInstances.length = 0
     mocks.metricsManagerInstances.length = 0
+    mocks.bugManagerInstances.length = 0
 
     mocks.validateConfig.mockResolvedValue({ warnings: [] })
     mocks.createProviderRegistry.mockReturnValue(new Map())
@@ -261,7 +279,7 @@ describe('index bootstrap', () => {
     vi.restoreAllMocks()
   })
 
-  it('instantiates SessionManager, runs migration, and registers session tools before state tools', async () => {
+  it('instantiates SessionManager, runs migration, and registers session and bug tools before state tools', async () => {
     mocks.loadConfig.mockResolvedValue(TEST_CONFIG)
     mocks.sessionMigrationResult = { migrated: true, sessionId: 'session-123' }
 
@@ -271,12 +289,14 @@ describe('index bootstrap', () => {
       expect(mocks.registerSessionTools).toHaveBeenCalledTimes(1)
       expect(mocks.registerComparisonTools).toHaveBeenCalledTimes(1)
       expect(mocks.registerStateTools).toHaveBeenCalledTimes(1)
+      expect(mocks.registerBugTools).toHaveBeenCalledTimes(1)
     })
 
     const server = mocks.serverInstances[0]
     const sessionManager = mocks.sessionManagerInstances[0]
     const stateManager = mocks.stateManagerInstances[0]
     const metricsManager = mocks.metricsManagerInstances[0]
+    const bugManager = mocks.bugManagerInstances[0]
 
     expect(sessionManager.projectDir).toBe(process.cwd())
     expect(sessionManager.migrate).toHaveBeenCalledTimes(1)
@@ -288,7 +308,9 @@ describe('index bootstrap', () => {
       .toBeLessThan(mocks.registerStateTools.mock.invocationCallOrder[0])
     expect(stateManager.projectDir).toBe(process.cwd())
     expect(metricsManager.projectDir).toBe(process.cwd())
+    expect(bugManager.projectDir).toBe(process.cwd())
     expect(mocks.registerStateTools).toHaveBeenCalledWith(server, stateManager, process.cwd(), sessionManager)
+    expect(mocks.registerBugTools).toHaveBeenCalledWith(server, bugManager)
     expect(console.error).toHaveBeenCalledWith('Migrated legacy state to session: session-123')
   })
 

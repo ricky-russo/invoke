@@ -11,6 +11,7 @@ import { BatchManager } from './dispatch/batch-manager.js'
 import { WorktreeManager } from './worktree/manager.js'
 import { MetricsManager } from './metrics/manager.js'
 import { SessionManager } from './session/manager.js'
+import { BugManager } from './bugs/manager.js'
 import { StateManager } from './tools/state.js'
 import { ArtifactManager } from './tools/artifacts.js'
 import { registerConfigTools } from './tools/config-tool.js'
@@ -24,6 +25,7 @@ import { registerConfigUpdateTools } from './tools/config-update-tools.js'
 import { ContextManager } from './tools/context.js'
 import { registerContextTools } from './tools/context-tools.js'
 import { registerMetricsTools } from './tools/metrics-tools.js'
+import { registerBugTools } from './tools/bug-tools.js'
 import { checkForNewDefaults } from './defaults-checker.js'
 import { writeFile } from 'fs/promises'
 import path from 'path'
@@ -80,6 +82,7 @@ async function main() {
   const contextManager = new ContextManager(projectDir)
   const metricsManager = new MetricsManager(projectDir)
   const sessionManager = new SessionManager(projectDir)
+  const bugManager = new BugManager(projectDir)
 
   // Run session migration and register tools
   const migration = await sessionManager.migrate()
@@ -96,6 +99,7 @@ async function main() {
   registerConfigUpdateTools(server, projectDir)
   registerContextTools(server, contextManager)
   registerMetricsTools(server, metricsManager, projectDir, sessionManager)
+  registerBugTools(server, bugManager)
 
   // Register dispatch tools (need config)
   if (config) {

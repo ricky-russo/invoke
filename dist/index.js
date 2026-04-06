@@ -291,10 +291,10 @@ function mergeDefs(...defs) {
 function cloneDef(schema) {
   return mergeDefs(schema._zod.def);
 }
-function getElementAtPath(obj, path14) {
-  if (!path14)
+function getElementAtPath(obj, path15) {
+  if (!path15)
     return obj;
-  return path14.reduce((acc, key) => acc?.[key], obj);
+  return path15.reduce((acc, key) => acc?.[key], obj);
 }
 function promiseAllObject(promisesObj) {
   const keys = Object.keys(promisesObj);
@@ -606,11 +606,11 @@ function aborted(x, startIndex = 0) {
   }
   return false;
 }
-function prefixIssues(path14, issues) {
+function prefixIssues(path15, issues) {
   return issues.map((iss) => {
     var _a2;
     (_a2 = iss).path ?? (_a2.path = []);
-    iss.path.unshift(path14);
+    iss.path.unshift(path15);
     return iss;
   });
 }
@@ -852,7 +852,7 @@ function formatError(error48, mapper = (issue2) => issue2.message) {
 }
 function treeifyError(error48, mapper = (issue2) => issue2.message) {
   const result = { errors: [] };
-  const processError = (error49, path14 = []) => {
+  const processError = (error49, path15 = []) => {
     var _a2, _b;
     for (const issue2 of error49.issues) {
       if (issue2.code === "invalid_union" && issue2.errors.length) {
@@ -862,7 +862,7 @@ function treeifyError(error48, mapper = (issue2) => issue2.message) {
       } else if (issue2.code === "invalid_element") {
         processError({ issues: issue2.issues }, issue2.path);
       } else {
-        const fullpath = [...path14, ...issue2.path];
+        const fullpath = [...path15, ...issue2.path];
         if (fullpath.length === 0) {
           result.errors.push(mapper(issue2));
           continue;
@@ -894,8 +894,8 @@ function treeifyError(error48, mapper = (issue2) => issue2.message) {
 }
 function toDotPath(_path) {
   const segs = [];
-  const path14 = _path.map((seg) => typeof seg === "object" ? seg.key : seg);
-  for (const seg of path14) {
+  const path15 = _path.map((seg) => typeof seg === "object" ? seg.key : seg);
+  for (const seg of path15) {
     if (typeof seg === "number")
       segs.push(`[${seg}]`);
     else if (typeof seg === "symbol")
@@ -13589,13 +13589,13 @@ function resolveRef(ref, ctx) {
   if (!ref.startsWith("#")) {
     throw new Error("External $ref is not supported, only local refs (#/...) are allowed");
   }
-  const path14 = ref.slice(1).split("/").filter(Boolean);
-  if (path14.length === 0) {
+  const path15 = ref.slice(1).split("/").filter(Boolean);
+  if (path15.length === 0) {
     return ctx.rootSchema;
   }
   const defsKey = ctx.version === "draft-2020-12" ? "$defs" : "definitions";
-  if (path14[0] === defsKey) {
-    const key = path14[1];
+  if (path15[0] === defsKey) {
+    const key = path15[1];
     if (!key || !ctx.defs[key]) {
       throw new Error(`Reference not found: ${ref}`);
     }
@@ -14474,10 +14474,10 @@ var require_code = __commonJS({
     function interpolate(x) {
       return typeof x == "number" || typeof x == "boolean" || x === null ? x : safeStringify(Array.isArray(x) ? x.join(",") : x);
     }
-    function stringify2(x) {
+    function stringify3(x) {
       return new _Code(safeStringify(x));
     }
-    exports.stringify = stringify2;
+    exports.stringify = stringify3;
     function safeStringify(x) {
       return JSON.stringify(x).replace(/\u2028/g, "\\u2028").replace(/\u2029/g, "\\u2029");
     }
@@ -17539,8 +17539,8 @@ var require_utils = __commonJS({
       }
       return ind;
     }
-    function removeDotSegments(path14) {
-      let input = path14;
+    function removeDotSegments(path15) {
+      let input = path15;
       const output = [];
       let nextSlash = -1;
       let len = 0;
@@ -17739,8 +17739,8 @@ var require_schemes = __commonJS({
         wsComponent.secure = void 0;
       }
       if (wsComponent.resourceName) {
-        const [path14, query] = wsComponent.resourceName.split("?");
-        wsComponent.path = path14 && path14 !== "/" ? path14 : void 0;
+        const [path15, query] = wsComponent.resourceName.split("?");
+        wsComponent.path = path15 && path15 !== "/" ? path15 : void 0;
         wsComponent.query = query;
         wsComponent.resourceName = void 0;
       }
@@ -17892,24 +17892,24 @@ var require_fast_uri = __commonJS({
     function normalize(uri, options) {
       if (typeof uri === "string") {
         uri = /** @type {T} */
-        serialize(parse5(uri, options), options);
+        serialize(parse6(uri, options), options);
       } else if (typeof uri === "object") {
         uri = /** @type {T} */
-        parse5(serialize(uri, options), options);
+        parse6(serialize(uri, options), options);
       }
       return uri;
     }
     function resolve(baseURI, relativeURI, options) {
       const schemelessOptions = options ? Object.assign({ scheme: "null" }, options) : { scheme: "null" };
-      const resolved = resolveComponent(parse5(baseURI, schemelessOptions), parse5(relativeURI, schemelessOptions), schemelessOptions, true);
+      const resolved = resolveComponent(parse6(baseURI, schemelessOptions), parse6(relativeURI, schemelessOptions), schemelessOptions, true);
       schemelessOptions.skipEscape = true;
       return serialize(resolved, schemelessOptions);
     }
     function resolveComponent(base, relative, options, skipNormalization) {
       const target = {};
       if (!skipNormalization) {
-        base = parse5(serialize(base, options), options);
-        relative = parse5(serialize(relative, options), options);
+        base = parse6(serialize(base, options), options);
+        relative = parse6(serialize(relative, options), options);
       }
       options = options || {};
       if (!options.tolerant && relative.scheme) {
@@ -17961,13 +17961,13 @@ var require_fast_uri = __commonJS({
     function equal(uriA, uriB, options) {
       if (typeof uriA === "string") {
         uriA = unescape(uriA);
-        uriA = serialize(normalizeComponentEncoding(parse5(uriA, options), true), { ...options, skipEscape: true });
+        uriA = serialize(normalizeComponentEncoding(parse6(uriA, options), true), { ...options, skipEscape: true });
       } else if (typeof uriA === "object") {
         uriA = serialize(normalizeComponentEncoding(uriA, true), { ...options, skipEscape: true });
       }
       if (typeof uriB === "string") {
         uriB = unescape(uriB);
-        uriB = serialize(normalizeComponentEncoding(parse5(uriB, options), true), { ...options, skipEscape: true });
+        uriB = serialize(normalizeComponentEncoding(parse6(uriB, options), true), { ...options, skipEscape: true });
       } else if (typeof uriB === "object") {
         uriB = serialize(normalizeComponentEncoding(uriB, true), { ...options, skipEscape: true });
       }
@@ -18036,7 +18036,7 @@ var require_fast_uri = __commonJS({
       return uriTokens.join("");
     }
     var URI_PARSE = /^(?:([^#/:?]+):)?(?:\/\/((?:([^#/?@]*)@)?(\[[^#/?\]]+\]|[^#/:?]*)(?::(\d*))?))?([^#?]*)(?:\?([^#]*))?(?:#((?:.|[\n\r])*))?/u;
-    function parse5(uri, opts) {
+    function parse6(uri, opts) {
       const options = Object.assign({}, opts);
       const parsed = {
         scheme: void 0,
@@ -18130,7 +18130,7 @@ var require_fast_uri = __commonJS({
       resolveComponent,
       equal,
       serialize,
-      parse: parse5
+      parse: parse6
     };
     module.exports = fastUri;
     module.exports.default = fastUri;
@@ -21200,17 +21200,17 @@ var require_visit = __commonJS({
     visit.BREAK = BREAK;
     visit.SKIP = SKIP;
     visit.REMOVE = REMOVE;
-    function visit_(key, node, visitor, path14) {
-      const ctrl = callVisitor(key, node, visitor, path14);
+    function visit_(key, node, visitor, path15) {
+      const ctrl = callVisitor(key, node, visitor, path15);
       if (identity.isNode(ctrl) || identity.isPair(ctrl)) {
-        replaceNode(key, path14, ctrl);
-        return visit_(key, ctrl, visitor, path14);
+        replaceNode(key, path15, ctrl);
+        return visit_(key, ctrl, visitor, path15);
       }
       if (typeof ctrl !== "symbol") {
         if (identity.isCollection(node)) {
-          path14 = Object.freeze(path14.concat(node));
+          path15 = Object.freeze(path15.concat(node));
           for (let i = 0; i < node.items.length; ++i) {
-            const ci = visit_(i, node.items[i], visitor, path14);
+            const ci = visit_(i, node.items[i], visitor, path15);
             if (typeof ci === "number")
               i = ci - 1;
             else if (ci === BREAK)
@@ -21221,13 +21221,13 @@ var require_visit = __commonJS({
             }
           }
         } else if (identity.isPair(node)) {
-          path14 = Object.freeze(path14.concat(node));
-          const ck = visit_("key", node.key, visitor, path14);
+          path15 = Object.freeze(path15.concat(node));
+          const ck = visit_("key", node.key, visitor, path15);
           if (ck === BREAK)
             return BREAK;
           else if (ck === REMOVE)
             node.key = null;
-          const cv = visit_("value", node.value, visitor, path14);
+          const cv = visit_("value", node.value, visitor, path15);
           if (cv === BREAK)
             return BREAK;
           else if (cv === REMOVE)
@@ -21248,17 +21248,17 @@ var require_visit = __commonJS({
     visitAsync.BREAK = BREAK;
     visitAsync.SKIP = SKIP;
     visitAsync.REMOVE = REMOVE;
-    async function visitAsync_(key, node, visitor, path14) {
-      const ctrl = await callVisitor(key, node, visitor, path14);
+    async function visitAsync_(key, node, visitor, path15) {
+      const ctrl = await callVisitor(key, node, visitor, path15);
       if (identity.isNode(ctrl) || identity.isPair(ctrl)) {
-        replaceNode(key, path14, ctrl);
-        return visitAsync_(key, ctrl, visitor, path14);
+        replaceNode(key, path15, ctrl);
+        return visitAsync_(key, ctrl, visitor, path15);
       }
       if (typeof ctrl !== "symbol") {
         if (identity.isCollection(node)) {
-          path14 = Object.freeze(path14.concat(node));
+          path15 = Object.freeze(path15.concat(node));
           for (let i = 0; i < node.items.length; ++i) {
-            const ci = await visitAsync_(i, node.items[i], visitor, path14);
+            const ci = await visitAsync_(i, node.items[i], visitor, path15);
             if (typeof ci === "number")
               i = ci - 1;
             else if (ci === BREAK)
@@ -21269,13 +21269,13 @@ var require_visit = __commonJS({
             }
           }
         } else if (identity.isPair(node)) {
-          path14 = Object.freeze(path14.concat(node));
-          const ck = await visitAsync_("key", node.key, visitor, path14);
+          path15 = Object.freeze(path15.concat(node));
+          const ck = await visitAsync_("key", node.key, visitor, path15);
           if (ck === BREAK)
             return BREAK;
           else if (ck === REMOVE)
             node.key = null;
-          const cv = await visitAsync_("value", node.value, visitor, path14);
+          const cv = await visitAsync_("value", node.value, visitor, path15);
           if (cv === BREAK)
             return BREAK;
           else if (cv === REMOVE)
@@ -21302,23 +21302,23 @@ var require_visit = __commonJS({
       }
       return visitor;
     }
-    function callVisitor(key, node, visitor, path14) {
+    function callVisitor(key, node, visitor, path15) {
       if (typeof visitor === "function")
-        return visitor(key, node, path14);
+        return visitor(key, node, path15);
       if (identity.isMap(node))
-        return visitor.Map?.(key, node, path14);
+        return visitor.Map?.(key, node, path15);
       if (identity.isSeq(node))
-        return visitor.Seq?.(key, node, path14);
+        return visitor.Seq?.(key, node, path15);
       if (identity.isPair(node))
-        return visitor.Pair?.(key, node, path14);
+        return visitor.Pair?.(key, node, path15);
       if (identity.isScalar(node))
-        return visitor.Scalar?.(key, node, path14);
+        return visitor.Scalar?.(key, node, path15);
       if (identity.isAlias(node))
-        return visitor.Alias?.(key, node, path14);
+        return visitor.Alias?.(key, node, path15);
       return void 0;
     }
-    function replaceNode(key, path14, node) {
-      const parent = path14[path14.length - 1];
+    function replaceNode(key, path15, node) {
+      const parent = path15[path15.length - 1];
       if (identity.isCollection(parent)) {
         parent.items[key] = node;
       } else if (identity.isPair(parent)) {
@@ -21926,10 +21926,10 @@ var require_Collection = __commonJS({
     var createNode = require_createNode();
     var identity = require_identity();
     var Node = require_Node();
-    function collectionFromPath(schema, path14, value) {
+    function collectionFromPath(schema, path15, value) {
       let v = value;
-      for (let i = path14.length - 1; i >= 0; --i) {
-        const k = path14[i];
+      for (let i = path15.length - 1; i >= 0; --i) {
+        const k = path15[i];
         if (typeof k === "number" && Number.isInteger(k) && k >= 0) {
           const a = [];
           a[k] = v;
@@ -21948,7 +21948,7 @@ var require_Collection = __commonJS({
         sourceObjects: /* @__PURE__ */ new Map()
       });
     }
-    var isEmptyPath = (path14) => path14 == null || typeof path14 === "object" && !!path14[Symbol.iterator]().next().done;
+    var isEmptyPath = (path15) => path15 == null || typeof path15 === "object" && !!path15[Symbol.iterator]().next().done;
     var Collection = class extends Node.NodeBase {
       constructor(type, schema) {
         super(type);
@@ -21978,11 +21978,11 @@ var require_Collection = __commonJS({
        * be a Pair instance or a `{ key, value }` object, which may not have a key
        * that already exists in the map.
        */
-      addIn(path14, value) {
-        if (isEmptyPath(path14))
+      addIn(path15, value) {
+        if (isEmptyPath(path15))
           this.add(value);
         else {
-          const [key, ...rest] = path14;
+          const [key, ...rest] = path15;
           const node = this.get(key, true);
           if (identity.isCollection(node))
             node.addIn(rest, value);
@@ -21996,8 +21996,8 @@ var require_Collection = __commonJS({
        * Removes a value from the collection.
        * @returns `true` if the item was found and removed.
        */
-      deleteIn(path14) {
-        const [key, ...rest] = path14;
+      deleteIn(path15) {
+        const [key, ...rest] = path15;
         if (rest.length === 0)
           return this.delete(key);
         const node = this.get(key, true);
@@ -22011,8 +22011,8 @@ var require_Collection = __commonJS({
        * scalar values from their surrounding node; to disable set `keepScalar` to
        * `true` (collections are always returned intact).
        */
-      getIn(path14, keepScalar) {
-        const [key, ...rest] = path14;
+      getIn(path15, keepScalar) {
+        const [key, ...rest] = path15;
         const node = this.get(key, true);
         if (rest.length === 0)
           return !keepScalar && identity.isScalar(node) ? node.value : node;
@@ -22030,8 +22030,8 @@ var require_Collection = __commonJS({
       /**
        * Checks if the collection includes a value with the key `key`.
        */
-      hasIn(path14) {
-        const [key, ...rest] = path14;
+      hasIn(path15) {
+        const [key, ...rest] = path15;
         if (rest.length === 0)
           return this.has(key);
         const node = this.get(key, true);
@@ -22041,8 +22041,8 @@ var require_Collection = __commonJS({
        * Sets a value in this collection. For `!!set`, `value` needs to be a
        * boolean to add/remove the item from the set.
        */
-      setIn(path14, value) {
-        const [key, ...rest] = path14;
+      setIn(path15, value) {
+        const [key, ...rest] = path15;
         if (rest.length === 0) {
           this.set(key, value);
         } else {
@@ -22589,7 +22589,7 @@ var require_stringify = __commonJS({
         props.push(doc.directives.tagString(tag));
       return props.join(" ");
     }
-    function stringify2(item, ctx, onComment, onChompKeep) {
+    function stringify3(item, ctx, onComment, onChompKeep) {
       if (identity.isPair(item))
         return item.toString(ctx, onComment, onChompKeep);
       if (identity.isAlias(item)) {
@@ -22618,7 +22618,7 @@ var require_stringify = __commonJS({
 ${ctx.indent}${str}`;
     }
     exports.createStringifyContext = createStringifyContext;
-    exports.stringify = stringify2;
+    exports.stringify = stringify3;
   }
 });
 
@@ -22628,7 +22628,7 @@ var require_stringifyPair = __commonJS({
     "use strict";
     var identity = require_identity();
     var Scalar = require_Scalar();
-    var stringify2 = require_stringify();
+    var stringify3 = require_stringify();
     var stringifyComment = require_stringifyComment();
     function stringifyPair({ key, value }, ctx, onComment, onChompKeep) {
       const { allNullValues, doc, indent, indentStep, options: { commentString, indentSeq, simpleKeys } } = ctx;
@@ -22650,7 +22650,7 @@ var require_stringifyPair = __commonJS({
       });
       let keyCommentDone = false;
       let chompKeep = false;
-      let str = stringify2.stringify(key, ctx, () => keyCommentDone = true, () => chompKeep = true);
+      let str = stringify3.stringify(key, ctx, () => keyCommentDone = true, () => chompKeep = true);
       if (!explicitKey && !ctx.inFlow && str.length > 1024) {
         if (simpleKeys)
           throw new Error("With simple keys, single line scalar must not span more than 1024 characters");
@@ -22702,7 +22702,7 @@ ${indent}:`;
         ctx.indent = ctx.indent.substring(2);
       }
       let valueCommentDone = false;
-      const valueStr = stringify2.stringify(value, ctx, () => valueCommentDone = true, () => chompKeep = true);
+      const valueStr = stringify3.stringify(value, ctx, () => valueCommentDone = true, () => chompKeep = true);
       let ws = " ";
       if (keyComment || vsb || vcb) {
         ws = vsb ? "\n" : "";
@@ -22840,7 +22840,7 @@ var require_addPairToJSMap = __commonJS({
     "use strict";
     var log = require_log();
     var merge2 = require_merge();
-    var stringify2 = require_stringify();
+    var stringify3 = require_stringify();
     var identity = require_identity();
     var toJS = require_toJS();
     function addPairToJSMap(ctx, map2, { key, value }) {
@@ -22876,7 +22876,7 @@ var require_addPairToJSMap = __commonJS({
       if (typeof jsKey !== "object")
         return String(jsKey);
       if (identity.isNode(key) && ctx?.doc) {
-        const strCtx = stringify2.createStringifyContext(ctx.doc, {});
+        const strCtx = stringify3.createStringifyContext(ctx.doc, {});
         strCtx.anchors = /* @__PURE__ */ new Set();
         for (const node of ctx.anchors.keys())
           strCtx.anchors.add(node.anchor);
@@ -22943,12 +22943,12 @@ var require_stringifyCollection = __commonJS({
   "node_modules/yaml/dist/stringify/stringifyCollection.js"(exports) {
     "use strict";
     var identity = require_identity();
-    var stringify2 = require_stringify();
+    var stringify3 = require_stringify();
     var stringifyComment = require_stringifyComment();
     function stringifyCollection(collection, ctx, options) {
       const flow = ctx.inFlow ?? collection.flow;
-      const stringify3 = flow ? stringifyFlowCollection : stringifyBlockCollection;
-      return stringify3(collection, ctx, options);
+      const stringify4 = flow ? stringifyFlowCollection : stringifyBlockCollection;
+      return stringify4(collection, ctx, options);
     }
     function stringifyBlockCollection({ comment, items }, ctx, { blockItemPrefix, flowChars, itemIndent, onChompKeep, onComment }) {
       const { indent, options: { commentString } } = ctx;
@@ -22973,7 +22973,7 @@ var require_stringifyCollection = __commonJS({
           }
         }
         chompKeep = false;
-        let str2 = stringify2.stringify(item, itemCtx, () => comment2 = null, () => chompKeep = true);
+        let str2 = stringify3.stringify(item, itemCtx, () => comment2 = null, () => chompKeep = true);
         if (comment2)
           str2 += stringifyComment.lineComment(str2, itemIndent, commentString(comment2));
         if (chompKeep && comment2)
@@ -23040,7 +23040,7 @@ ${indent}${line}` : "\n";
         }
         if (comment)
           reqNewline = true;
-        let str = stringify2.stringify(item, itemCtx, () => comment = null);
+        let str = stringify3.stringify(item, itemCtx, () => comment = null);
         reqNewline || (reqNewline = lines.length > linesAtValue || str.includes("\n"));
         if (i < items.length - 1) {
           str += ",";
@@ -24401,7 +24401,7 @@ var require_stringifyDocument = __commonJS({
   "node_modules/yaml/dist/stringify/stringifyDocument.js"(exports) {
     "use strict";
     var identity = require_identity();
-    var stringify2 = require_stringify();
+    var stringify3 = require_stringify();
     var stringifyComment = require_stringifyComment();
     function stringifyDocument(doc, options) {
       const lines = [];
@@ -24416,7 +24416,7 @@ var require_stringifyDocument = __commonJS({
       }
       if (hasDirectives)
         lines.push("---");
-      const ctx = stringify2.createStringifyContext(doc, options);
+      const ctx = stringify3.createStringifyContext(doc, options);
       const { commentString } = ctx.options;
       if (doc.commentBefore) {
         if (lines.length !== 1)
@@ -24438,7 +24438,7 @@ var require_stringifyDocument = __commonJS({
           contentComment = doc.contents.comment;
         }
         const onChompKeep = contentComment ? void 0 : () => chompKeep = true;
-        let body = stringify2.stringify(doc.contents, ctx, () => contentComment = null, onChompKeep);
+        let body = stringify3.stringify(doc.contents, ctx, () => contentComment = null, onChompKeep);
         if (contentComment)
           body += stringifyComment.lineComment(body, "", commentString(contentComment));
         if ((body[0] === "|" || body[0] === ">") && lines[lines.length - 1] === "---") {
@@ -24446,7 +24446,7 @@ var require_stringifyDocument = __commonJS({
         } else
           lines.push(body);
       } else {
-        lines.push(stringify2.stringify(doc.contents, ctx));
+        lines.push(stringify3.stringify(doc.contents, ctx));
       }
       if (doc.directives?.docEnd) {
         if (doc.comment) {
@@ -24554,9 +24554,9 @@ var require_Document = __commonJS({
           this.contents.add(value);
       }
       /** Adds a value to the document. */
-      addIn(path14, value) {
+      addIn(path15, value) {
         if (assertCollection(this.contents))
-          this.contents.addIn(path14, value);
+          this.contents.addIn(path15, value);
       }
       /**
        * Create a new `Alias` node, ensuring that the target `node` has the required anchor.
@@ -24631,14 +24631,14 @@ var require_Document = __commonJS({
        * Removes a value from the document.
        * @returns `true` if the item was found and removed.
        */
-      deleteIn(path14) {
-        if (Collection.isEmptyPath(path14)) {
+      deleteIn(path15) {
+        if (Collection.isEmptyPath(path15)) {
           if (this.contents == null)
             return false;
           this.contents = null;
           return true;
         }
-        return assertCollection(this.contents) ? this.contents.deleteIn(path14) : false;
+        return assertCollection(this.contents) ? this.contents.deleteIn(path15) : false;
       }
       /**
        * Returns item at `key`, or `undefined` if not found. By default unwraps
@@ -24653,10 +24653,10 @@ var require_Document = __commonJS({
        * scalar values from their surrounding node; to disable set `keepScalar` to
        * `true` (collections are always returned intact).
        */
-      getIn(path14, keepScalar) {
-        if (Collection.isEmptyPath(path14))
+      getIn(path15, keepScalar) {
+        if (Collection.isEmptyPath(path15))
           return !keepScalar && identity.isScalar(this.contents) ? this.contents.value : this.contents;
-        return identity.isCollection(this.contents) ? this.contents.getIn(path14, keepScalar) : void 0;
+        return identity.isCollection(this.contents) ? this.contents.getIn(path15, keepScalar) : void 0;
       }
       /**
        * Checks if the document includes a value with the key `key`.
@@ -24667,10 +24667,10 @@ var require_Document = __commonJS({
       /**
        * Checks if the document includes a value at `path`.
        */
-      hasIn(path14) {
-        if (Collection.isEmptyPath(path14))
+      hasIn(path15) {
+        if (Collection.isEmptyPath(path15))
           return this.contents !== void 0;
-        return identity.isCollection(this.contents) ? this.contents.hasIn(path14) : false;
+        return identity.isCollection(this.contents) ? this.contents.hasIn(path15) : false;
       }
       /**
        * Sets a value in this document. For `!!set`, `value` needs to be a
@@ -24687,13 +24687,13 @@ var require_Document = __commonJS({
        * Sets a value in this document. For `!!set`, `value` needs to be a
        * boolean to add/remove the item from the set.
        */
-      setIn(path14, value) {
-        if (Collection.isEmptyPath(path14)) {
+      setIn(path15, value) {
+        if (Collection.isEmptyPath(path15)) {
           this.contents = value;
         } else if (this.contents == null) {
-          this.contents = Collection.collectionFromPath(this.schema, Array.from(path14), value);
+          this.contents = Collection.collectionFromPath(this.schema, Array.from(path15), value);
         } else if (assertCollection(this.contents)) {
-          this.contents.setIn(path14, value);
+          this.contents.setIn(path15, value);
         }
       }
       /**
@@ -26578,7 +26578,7 @@ var require_cst_scalar = __commonJS({
 var require_cst_stringify = __commonJS({
   "node_modules/yaml/dist/parse/cst-stringify.js"(exports) {
     "use strict";
-    var stringify2 = (cst) => "type" in cst ? stringifyToken(cst) : stringifyItem(cst);
+    var stringify3 = (cst) => "type" in cst ? stringifyToken(cst) : stringifyItem(cst);
     function stringifyToken(token) {
       switch (token.type) {
         case "block-scalar": {
@@ -26631,7 +26631,7 @@ var require_cst_stringify = __commonJS({
         res += stringifyToken(value);
       return res;
     }
-    exports.stringify = stringify2;
+    exports.stringify = stringify3;
   }
 });
 
@@ -26650,9 +26650,9 @@ var require_cst_visit = __commonJS({
     visit.BREAK = BREAK;
     visit.SKIP = SKIP;
     visit.REMOVE = REMOVE;
-    visit.itemAtPath = (cst, path14) => {
+    visit.itemAtPath = (cst, path15) => {
       let item = cst;
-      for (const [field, index] of path14) {
+      for (const [field, index] of path15) {
         const tok = item?.[field];
         if (tok && "items" in tok) {
           item = tok.items[index];
@@ -26661,23 +26661,23 @@ var require_cst_visit = __commonJS({
       }
       return item;
     };
-    visit.parentCollection = (cst, path14) => {
-      const parent = visit.itemAtPath(cst, path14.slice(0, -1));
-      const field = path14[path14.length - 1][0];
+    visit.parentCollection = (cst, path15) => {
+      const parent = visit.itemAtPath(cst, path15.slice(0, -1));
+      const field = path15[path15.length - 1][0];
       const coll = parent?.[field];
       if (coll && "items" in coll)
         return coll;
       throw new Error("Parent collection not found");
     };
-    function _visit(path14, item, visitor) {
-      let ctrl = visitor(item, path14);
+    function _visit(path15, item, visitor) {
+      let ctrl = visitor(item, path15);
       if (typeof ctrl === "symbol")
         return ctrl;
       for (const field of ["key", "value"]) {
         const token = item[field];
         if (token && "items" in token) {
           for (let i = 0; i < token.items.length; ++i) {
-            const ci = _visit(Object.freeze(path14.concat([[field, i]])), token.items[i], visitor);
+            const ci = _visit(Object.freeze(path15.concat([[field, i]])), token.items[i], visitor);
             if (typeof ci === "number")
               i = ci - 1;
             else if (ci === BREAK)
@@ -26688,10 +26688,10 @@ var require_cst_visit = __commonJS({
             }
           }
           if (typeof ctrl === "function" && field === "key")
-            ctrl = ctrl(item, path14);
+            ctrl = ctrl(item, path15);
         }
       }
-      return typeof ctrl === "function" ? ctrl(item, path14) : ctrl;
+      return typeof ctrl === "function" ? ctrl(item, path15) : ctrl;
     }
     exports.visit = visit;
   }
@@ -28325,7 +28325,7 @@ var require_public_api = __commonJS({
       }
       return doc;
     }
-    function parse5(src, reviver, options) {
+    function parse6(src, reviver, options) {
       let _reviver = void 0;
       if (typeof reviver === "function") {
         _reviver = reviver;
@@ -28344,7 +28344,7 @@ var require_public_api = __commonJS({
       }
       return doc.toJS(Object.assign({ reviver: _reviver }, options));
     }
-    function stringify2(value, replacer, options) {
+    function stringify3(value, replacer, options) {
       let _replacer = null;
       if (typeof replacer === "function" || Array.isArray(replacer)) {
         _replacer = replacer;
@@ -28366,10 +28366,10 @@ var require_public_api = __commonJS({
         return value.toString(options);
       return new Document.Document(value, _replacer, options).toString(options);
     }
-    exports.parse = parse5;
+    exports.parse = parse6;
     exports.parseAllDocuments = parseAllDocuments;
     exports.parseDocument = parseDocument;
-    exports.stringify = stringify2;
+    exports.stringify = stringify3;
   }
 });
 
@@ -29061,8 +29061,8 @@ function getErrorMap() {
 
 // node_modules/zod/v3/helpers/parseUtil.js
 var makeIssue = (params) => {
-  const { data, path: path14, errorMaps, issueData } = params;
-  const fullPath = [...path14, ...issueData.path || []];
+  const { data, path: path15, errorMaps, issueData } = params;
+  const fullPath = [...path15, ...issueData.path || []];
   const fullIssue = {
     ...issueData,
     path: fullPath
@@ -29177,11 +29177,11 @@ var errorUtil;
 
 // node_modules/zod/v3/types.js
 var ParseInputLazyPath = class {
-  constructor(parent, value, path14, key) {
+  constructor(parent, value, path15, key) {
     this._cachedPath = [];
     this.parent = parent;
     this.data = value;
-    this._path = path14;
+    this._path = path15;
     this._key = key;
   }
   get path() {
@@ -40119,8 +40119,9 @@ var SessionManager = class {
   }
 };
 
-// src/tools/artifacts.ts
-import { readFile as readFile6, writeFile as writeFile3, mkdir as mkdir4, readdir as readdir3, unlink } from "fs/promises";
+// src/bugs/manager.ts
+var import_yaml2 = __toESM(require_dist2(), 1);
+import { mkdir as mkdir4, readFile as readFile6, writeFile as writeFile3 } from "fs/promises";
 import path8 from "path";
 
 // src/session/lock.ts
@@ -40138,27 +40139,128 @@ async function withLock(filePath, fn) {
   }
 }
 
+// src/bugs/manager.ts
+var BugManager = class {
+  bugsPath;
+  constructor(projectDir) {
+    this.bugsPath = path8.join(projectDir, ".invoke", "bugs.yaml");
+  }
+  async report(input) {
+    await mkdir4(path8.dirname(this.bugsPath), { recursive: true });
+    return withLock(this.bugsPath, async () => {
+      const bugsFile = await this.readBugsFile();
+      const now = (/* @__PURE__ */ new Date()).toISOString();
+      const bug = {
+        id: this.nextBugId(bugsFile.bugs),
+        title: input.title,
+        description: input.description,
+        status: "open",
+        severity: input.severity ?? "medium",
+        file: input.file ?? null,
+        line: input.line ?? null,
+        labels: [...input.labels ?? []],
+        session_id: input.session_id ?? null,
+        created: now,
+        updated: now,
+        resolution: null,
+        resolved_by_session: null
+      };
+      bugsFile.bugs.push(bug);
+      await this.writeBugsFile(bugsFile);
+      return bug;
+    });
+  }
+  async list(filters = {}) {
+    const bugsFile = await this.readBugsFile();
+    const status = filters.status ?? "open";
+    return bugsFile.bugs.filter((bug) => {
+      if (status !== "all" && bug.status !== status) {
+        return false;
+      }
+      if (filters.severity && bug.severity !== filters.severity) {
+        return false;
+      }
+      return true;
+    });
+  }
+  async update(id, changes) {
+    await mkdir4(path8.dirname(this.bugsPath), { recursive: true });
+    return withLock(this.bugsPath, async () => {
+      const bugsFile = await this.readBugsFile();
+      const bug = bugsFile.bugs.find((entry) => entry.id === id);
+      if (!bug) {
+        throw new Error(`Bug '${id}' not found`);
+      }
+      if (changes.status !== void 0) {
+        bug.status = changes.status;
+      }
+      if (changes.resolution !== void 0) {
+        bug.resolution = changes.resolution;
+      }
+      if (changes.status === "resolved" && changes.session_id) {
+        bug.resolved_by_session = changes.session_id;
+      }
+      bug.updated = (/* @__PURE__ */ new Date()).toISOString();
+      await this.writeBugsFile(bugsFile);
+      return bug;
+    });
+  }
+  nextBugId(bugs) {
+    const maxId = bugs.reduce((max, bug) => {
+      const match = /^BUG-(\d+)$/.exec(bug.id);
+      if (!match) {
+        return max;
+      }
+      return Math.max(max, Number.parseInt(match[1], 10));
+    }, 0);
+    return `BUG-${String(maxId + 1).padStart(3, "0")}`;
+  }
+  async readBugsFile() {
+    try {
+      const content = await readFile6(this.bugsPath, "utf-8");
+      const parsed = (0, import_yaml2.parse)(content);
+      if (!parsed || typeof parsed !== "object" || !Array.isArray(parsed.bugs)) {
+        return { bugs: [] };
+      }
+      return { bugs: parsed.bugs };
+    } catch (error48) {
+      if (this.isMissingFileError(error48)) {
+        return { bugs: [] };
+      }
+      throw error48;
+    }
+  }
+  async writeBugsFile(bugsFile) {
+    await writeFile3(this.bugsPath, (0, import_yaml2.stringify)(bugsFile));
+  }
+  isMissingFileError(error48) {
+    return error48 instanceof Error && "code" in error48 && error48.code === "ENOENT";
+  }
+};
+
 // src/tools/artifacts.ts
+import { readFile as readFile7, writeFile as writeFile4, mkdir as mkdir5, readdir as readdir3, unlink } from "fs/promises";
+import path9 from "path";
 var ArtifactManager = class {
   baseDir;
   constructor(projectDir) {
-    this.baseDir = path8.join(projectDir, ".invoke");
+    this.baseDir = path9.join(projectDir, ".invoke");
   }
   async save(stage, filename, content) {
-    const dir = path8.join(this.baseDir, stage);
-    await mkdir4(dir, { recursive: true });
-    const filePath = path8.join(dir, filename);
+    const dir = path9.join(this.baseDir, stage);
+    await mkdir5(dir, { recursive: true });
+    const filePath = path9.join(dir, filename);
     await withLock(filePath, async () => {
-      await writeFile3(filePath, content);
+      await writeFile4(filePath, content);
     });
     return filePath;
   }
   async read(stage, filename) {
-    const filePath = path8.join(this.baseDir, stage, filename);
-    return readFile6(filePath, "utf-8");
+    const filePath = path9.join(this.baseDir, stage, filename);
+    return readFile7(filePath, "utf-8");
   }
   async list(stage) {
-    const dir = path8.join(this.baseDir, stage);
+    const dir = path9.join(this.baseDir, stage);
     try {
       return await readdir3(dir);
     } catch {
@@ -40166,7 +40268,7 @@ var ArtifactManager = class {
     }
   }
   async delete(stage, filename) {
-    const filePath = path8.join(this.baseDir, stage, filename);
+    const filePath = path9.join(this.baseDir, stage, filename);
     await unlink(filePath);
   }
 };
@@ -40176,33 +40278,33 @@ init_zod();
 init_config();
 
 // src/init.ts
-import { cp, mkdir as mkdir5, readdir as readdir4 } from "fs/promises";
+import { cp, mkdir as mkdir6, readdir as readdir4 } from "fs/promises";
 import { existsSync as existsSync5 } from "fs";
-import path9 from "path";
+import path10 from "path";
 import { fileURLToPath as fileURLToPath3 } from "url";
-var __dirname3 = path9.dirname(fileURLToPath3(import.meta.url));
-var PACKAGE_ROOT3 = path9.join(__dirname3, "..");
+var __dirname3 = path10.dirname(fileURLToPath3(import.meta.url));
+var PACKAGE_ROOT3 = path10.join(__dirname3, "..");
 async function initProject(projectDir) {
-  const invokeDir = path9.join(projectDir, ".invoke");
-  const defaultsDir = path9.join(PACKAGE_ROOT3, "defaults");
-  await mkdir5(invokeDir, { recursive: true });
-  const configDest = path9.join(invokeDir, "pipeline.yaml");
+  const invokeDir = path10.join(projectDir, ".invoke");
+  const defaultsDir = path10.join(PACKAGE_ROOT3, "defaults");
+  await mkdir6(invokeDir, { recursive: true });
+  const configDest = path10.join(invokeDir, "pipeline.yaml");
   if (!existsSync5(configDest)) {
-    await cp(path9.join(defaultsDir, "pipeline.yaml"), configDest);
+    await cp(path10.join(defaultsDir, "pipeline.yaml"), configDest);
   }
-  await copyDefaults(path9.join(defaultsDir, "roles"), path9.join(invokeDir, "roles"));
-  await copyDefaults(path9.join(defaultsDir, "strategies"), path9.join(invokeDir, "strategies"));
-  await mkdir5(path9.join(invokeDir, "specs", "research"), { recursive: true });
-  await mkdir5(path9.join(invokeDir, "plans"), { recursive: true });
-  await mkdir5(path9.join(invokeDir, "reviews"), { recursive: true });
+  await copyDefaults(path10.join(defaultsDir, "roles"), path10.join(invokeDir, "roles"));
+  await copyDefaults(path10.join(defaultsDir, "strategies"), path10.join(invokeDir, "strategies"));
+  await mkdir6(path10.join(invokeDir, "specs", "research"), { recursive: true });
+  await mkdir6(path10.join(invokeDir, "plans"), { recursive: true });
+  await mkdir6(path10.join(invokeDir, "reviews"), { recursive: true });
 }
 async function copyDefaults(srcDir, destDir) {
   if (!existsSync5(srcDir)) return;
-  await mkdir5(destDir, { recursive: true });
+  await mkdir6(destDir, { recursive: true });
   const entries = await readdir4(srcDir, { withFileTypes: true });
   for (const entry of entries) {
-    const srcPath = path9.join(srcDir, entry.name);
-    const destPath = path9.join(destDir, entry.name);
+    const srcPath = path10.join(srcDir, entry.name);
+    const destPath = path10.join(destDir, entry.name);
     if (entry.isDirectory()) {
       await copyDefaults(srcPath, destPath);
     } else if (!existsSync5(destPath)) {
@@ -41086,13 +41188,13 @@ function registerArtifactTools(server, artifactManager) {
 init_zod();
 
 // src/tools/config-manager.ts
-var import_yaml2 = __toESM(require_dist2(), 1);
-import { readFile as readFile7, writeFile as writeFile4 } from "fs/promises";
-import path10 from "path";
+var import_yaml3 = __toESM(require_dist2(), 1);
+import { readFile as readFile8, writeFile as writeFile5 } from "fs/promises";
+import path11 from "path";
 var ConfigManager = class {
   constructor(projectDir) {
     this.projectDir = projectDir;
-    this.configPath = path10.join(projectDir, ".invoke", "pipeline.yaml");
+    this.configPath = path11.join(projectDir, ".invoke", "pipeline.yaml");
   }
   projectDir;
   configPath;
@@ -41154,11 +41256,11 @@ var ConfigManager = class {
     return this.writeAndReload(raw);
   }
   async readRaw() {
-    const content = await readFile7(this.configPath, "utf-8");
-    return (0, import_yaml2.parse)(content);
+    const content = await readFile8(this.configPath, "utf-8");
+    return (0, import_yaml3.parse)(content);
   }
   async writeAndReload(raw) {
-    await writeFile4(this.configPath, (0, import_yaml2.stringify)(raw));
+    await writeFile5(this.configPath, (0, import_yaml3.stringify)(raw));
     const { loadConfig: loadConfig2 } = await Promise.resolve().then(() => (init_config(), config_exports));
     return loadConfig2(this.projectDir);
   }
@@ -41272,13 +41374,13 @@ function buildOperation(input) {
 }
 
 // src/tools/context.ts
-import { readFile as readFile8, writeFile as writeFile5 } from "fs/promises";
+import { readFile as readFile9, writeFile as writeFile6 } from "fs/promises";
 import { existsSync as existsSync6 } from "fs";
-import path11 from "path";
+import path12 from "path";
 var ContextManager = class {
   constructor(projectDir) {
     this.projectDir = projectDir;
-    this.contextPath = path11.join(projectDir, ".invoke", "context.md");
+    this.contextPath = path12.join(projectDir, ".invoke", "context.md");
   }
   projectDir;
   contextPath;
@@ -41286,7 +41388,7 @@ var ContextManager = class {
     if (!existsSync6(this.contextPath)) {
       return null;
     }
-    let content = await readFile8(this.contextPath, "utf-8");
+    let content = await readFile9(this.contextPath, "utf-8");
     if (maxLength && content.length > maxLength) {
       content = content.slice(0, maxLength) + "\n\n(truncated)";
     }
@@ -41297,7 +41399,7 @@ var ContextManager = class {
   }
   async initialize(content) {
     await withLock(this.contextPath, async () => {
-      await writeFile5(this.contextPath, content);
+      await writeFile6(this.contextPath, content);
     });
   }
   async updateSection(sectionName, content, mode) {
@@ -41316,10 +41418,10 @@ var ContextManager = class {
       const sectionEnd = nextHeadingIndex === -1 ? current.length : nextHeadingIndex;
       if (mode === "replace") {
         const updated = current.slice(0, afterHeading) + "\n\n" + content + "\n" + current.slice(sectionEnd);
-        await writeFile5(this.contextPath, updated);
+        await writeFile6(this.contextPath, updated);
       } else {
         const updated = current.slice(0, sectionEnd) + content + "\n" + current.slice(sectionEnd);
-        await writeFile5(this.contextPath, updated);
+        await writeFile6(this.contextPath, updated);
       }
     });
   }
@@ -41445,16 +41547,109 @@ function registerMetricsTools(server, metricsManager, projectDir, sessionManager
   );
 }
 
+// src/tools/bug-tools.ts
+init_zod();
+function registerBugTools(server, bugManager) {
+  server.registerTool(
+    "invoke_report_bug",
+    {
+      description: "Report a bug discovered during a pipeline session.",
+      inputSchema: external_exports3.object({
+        title: external_exports3.string(),
+        description: external_exports3.string(),
+        severity: external_exports3.enum(["critical", "high", "medium", "low"]).default("medium"),
+        file: external_exports3.string().optional(),
+        line: external_exports3.number().optional(),
+        labels: external_exports3.array(external_exports3.string()).optional().default([]),
+        session_id: external_exports3.string().optional()
+      })
+    },
+    async ({ title, description, severity, file: file2, line, labels, session_id }) => {
+      try {
+        const bug = await bugManager.report({
+          title,
+          description,
+          severity,
+          file: file2,
+          line,
+          labels,
+          session_id
+        });
+        return {
+          content: [{ type: "text", text: JSON.stringify(bug, null, 2) }]
+        };
+      } catch (err) {
+        return {
+          content: [{ type: "text", text: err instanceof Error ? err.message : String(err) }],
+          isError: true
+        };
+      }
+    }
+  );
+  server.registerTool(
+    "invoke_list_bugs",
+    {
+      description: "List bugs, optionally filtered by status and severity.",
+      inputSchema: external_exports3.object({
+        status: external_exports3.enum(["open", "in_progress", "resolved", "all"]).default("open"),
+        severity: external_exports3.enum(["critical", "high", "medium", "low"]).optional()
+      })
+    },
+    async ({ status, severity }) => {
+      try {
+        const bugs = await bugManager.list({ status, severity });
+        return {
+          content: [{ type: "text", text: JSON.stringify(bugs, null, 2) }]
+        };
+      } catch (err) {
+        return {
+          content: [{ type: "text", text: err instanceof Error ? err.message : String(err) }],
+          isError: true
+        };
+      }
+    }
+  );
+  server.registerTool(
+    "invoke_update_bug",
+    {
+      description: "Update a bug entry (status, resolution, etc).",
+      inputSchema: external_exports3.object({
+        bug_id: external_exports3.string(),
+        status: external_exports3.enum(["open", "in_progress", "resolved"]).optional(),
+        resolution: external_exports3.string().optional(),
+        session_id: external_exports3.string().optional()
+      })
+    },
+    async ({ bug_id, status, resolution, session_id }) => {
+      try {
+        const bug = await bugManager.update(bug_id, {
+          status,
+          resolution,
+          session_id
+        });
+        return {
+          content: [{ type: "text", text: JSON.stringify(bug, null, 2) }]
+        };
+      } catch (err) {
+        return {
+          content: [{ type: "text", text: err instanceof Error ? err.message : String(err) }],
+          isError: true
+        };
+      }
+    }
+  );
+}
+
 // src/defaults-checker.ts
 import { readdir as readdir5 } from "fs/promises";
 import { existsSync as existsSync7 } from "fs";
-import path12 from "path";
+import path13 from "path";
 import { fileURLToPath as fileURLToPath4 } from "url";
-var __dirname4 = path12.dirname(fileURLToPath4(import.meta.url));
-var PACKAGE_ROOT4 = path12.join(__dirname4, "..");
+var __dirname4 = path13.dirname(fileURLToPath4(import.meta.url));
+var PACKAGE_ROOT4 = path13.join(__dirname4, "..");
 async function checkForNewDefaults(projectDir) {
-  const invokeDir = path12.join(projectDir, ".invoke");
-  const defaultsDir = path12.join(PACKAGE_ROOT4, "defaults");
+  const invokeDir = path13.join(projectDir, ".invoke");
+  const defaultsDir = path13.join(PACKAGE_ROOT4, "defaults");
   if (!existsSync7(invokeDir) || !existsSync7(defaultsDir)) {
     return [];
   }
@@ -41466,8 +41661,8 @@ async function scanDir(srcDir, destDir, relativePath, missing) {
   if (!existsSync7(srcDir)) return;
   const entries = await readdir5(srcDir, { withFileTypes: true });
   for (const entry of entries) {
-    const srcPath = path12.join(srcDir, entry.name);
-    const destPath = path12.join(destDir, entry.name);
+    const srcPath = path13.join(srcDir, entry.name);
+    const destPath = path13.join(destDir, entry.name);
     const relPath = relativePath ? `${relativePath}/${entry.name}` : entry.name;
     if (entry.isDirectory()) {
       await scanDir(srcPath, destPath, relPath, missing);
@@ -41480,19 +41675,19 @@ async function scanDir(srcDir, destDir, relativePath, missing) {
   }
 }
 function describeDefault(relPath) {
-  if (relPath.includes("roles/reviewer/")) return `New reviewer: ${path12.basename(relPath, ".md")}`;
-  if (relPath.includes("roles/researcher/")) return `New researcher: ${path12.basename(relPath, ".md")}`;
-  if (relPath.includes("roles/planner/")) return `New planner: ${path12.basename(relPath, ".md")}`;
-  if (relPath.includes("roles/builder/")) return `New builder: ${path12.basename(relPath, ".md")}`;
-  if (relPath.includes("presets/")) return `New preset: ${path12.basename(relPath, path12.extname(relPath))}`;
-  if (relPath.includes("strategies/")) return `New strategy: ${path12.basename(relPath, ".md")}`;
+  if (relPath.includes("roles/reviewer/")) return `New reviewer: ${path13.basename(relPath, ".md")}`;
+  if (relPath.includes("roles/researcher/")) return `New researcher: ${path13.basename(relPath, ".md")}`;
+  if (relPath.includes("roles/planner/")) return `New planner: ${path13.basename(relPath, ".md")}`;
+  if (relPath.includes("roles/builder/")) return `New builder: ${path13.basename(relPath, ".md")}`;
+  if (relPath.includes("presets/")) return `New preset: ${path13.basename(relPath, path13.extname(relPath))}`;
+  if (relPath.includes("strategies/")) return `New strategy: ${path13.basename(relPath, ".md")}`;
   if (relPath === "context-template.md") return "Project context template";
   return `New default: ${relPath}`;
 }
 
 // src/index.ts
-import { writeFile as writeFile6 } from "fs/promises";
-import path13 from "path";
+import { writeFile as writeFile7 } from "fs/promises";
+import path14 from "path";
 async function main() {
   const projectDir = process.cwd();
   const server = new McpServer({
@@ -41516,8 +41711,8 @@ async function main() {
       }
     }
     try {
-      await writeFile6(
-        path13.join(projectDir, ".invoke", "validation.json"),
+      await writeFile7(
+        path14.join(projectDir, ".invoke", "validation.json"),
         JSON.stringify(validation, null, 2)
       );
     } catch {
@@ -41536,6 +41731,7 @@ async function main() {
   const contextManager = new ContextManager(projectDir);
   const metricsManager = new MetricsManager(projectDir);
   const sessionManager = new SessionManager(projectDir);
+  const bugManager = new BugManager(projectDir);
   const migration = await sessionManager.migrate();
   if (migration.migrated) {
     console.error(`Migrated legacy state to session: ${migration.sessionId}`);
@@ -41549,6 +41745,7 @@ async function main() {
   registerConfigUpdateTools(server, projectDir);
   registerContextTools(server, contextManager);
   registerMetricsTools(server, metricsManager, projectDir, sessionManager);
+  registerBugTools(server, bugManager);
   if (config2) {
     const providers = createProviderRegistry(config2.providers);
     const parsers = createParserRegistry();
