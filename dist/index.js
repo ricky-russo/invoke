@@ -40475,6 +40475,11 @@ import { existsSync as existsSync4 } from "fs";
 import { mkdir as mkdir2, readFile as readFile4, readdir as readdir2, rename as rename2, rm } from "fs/promises";
 import path7 from "path";
 var MS_PER_DAY = 24 * 60 * 60 * 1e3;
+function validateSessionIdForRead(sessionId) {
+  if (!sessionId || sessionId === "." || sessionId === ".." || sessionId.includes("/") || sessionId.includes("\\") || sessionId.includes("\0")) {
+    throw new Error(`Invalid session ID: '${sessionId}'`);
+  }
+}
 var SessionManager = class {
   invokeDir;
   sessionsDir;
@@ -40489,7 +40494,7 @@ var SessionManager = class {
     return sessionDir;
   }
   resolve(sessionId) {
-    validateSessionId(sessionId);
+    validateSessionIdForRead(sessionId);
     const sessionDir = this.getSessionDir(sessionId);
     if (!existsSync4(sessionDir)) {
       throw new Error(`Session '${sessionId}' does not exist`);
@@ -40507,7 +40512,7 @@ var SessionManager = class {
     return sessions.filter((session) => session !== null).sort((left, right) => left.session_id.localeCompare(right.session_id));
   }
   async isStale(sessionId, staleDays = 7) {
-    validateSessionId(sessionId);
+    validateSessionIdForRead(sessionId);
     const state = await this.readState(sessionId);
     return this.isStateStale(state, staleDays);
   }
@@ -40519,7 +40524,7 @@ var SessionManager = class {
     const state = JSON.parse(await readFile4(legacyStatePath, "utf-8"));
     const sessionId = state.pipeline_id;
     try {
-      validateSessionId(sessionId);
+      validateSessionIdForRead(sessionId);
     } catch {
       return { migrated: false };
     }
@@ -40546,11 +40551,11 @@ var SessionManager = class {
     return { migrated: true, sessionId };
   }
   async cleanup(sessionId) {
-    validateSessionId(sessionId);
+    validateSessionIdForRead(sessionId);
     await rm(this.getSessionDir(sessionId), { recursive: true, force: true });
   }
   exists(sessionId) {
-    validateSessionId(sessionId);
+    validateSessionIdForRead(sessionId);
     return existsSync4(this.getSessionDir(sessionId));
   }
   getSessionDir(sessionId) {
@@ -42615,7 +42620,7 @@ function registerStateTools(server, stateManager, projectDir, sessionManager) {
     {
       description: "Get the current pipeline state.",
       inputSchema: external_exports3.object({
-        session_id: external_exports3.string().regex(SESSION_ID_PATTERN, "invalid session id format").optional()
+        session_id: external_exports3.string().optional()
       })
     },
     async ({ session_id }) => {
@@ -42697,7 +42702,7 @@ function registerStateTools(server, stateManager, projectDir, sessionManager) {
     {
       description: "Get the number of recorded review cycles, optionally filtered to a batch, plus the configured max review cycle limit when available.",
       inputSchema: external_exports3.object({
-        session_id: external_exports3.string().regex(SESSION_ID_PATTERN, "invalid session id format").optional(),
+        session_id: external_exports3.string().optional(),
         batch_id: external_exports3.number().optional()
       })
     },

@@ -6,6 +6,20 @@ import { validateSessionId } from '../worktree/session-id-validator.js'
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000
 
+function validateSessionIdForRead(sessionId: string): void {
+  // Legacy session IDs remain readable as long as they cannot escape the sessions directory.
+  if (
+    !sessionId ||
+    sessionId === '.' ||
+    sessionId === '..' ||
+    sessionId.includes('/') ||
+    sessionId.includes('\\') ||
+    sessionId.includes('\0')
+  ) {
+    throw new Error(`Invalid session ID: '${sessionId}'`)
+  }
+}
+
 export class SessionManager {
   private readonly invokeDir: string
   private readonly sessionsDir: string
@@ -23,7 +37,7 @@ export class SessionManager {
   }
 
   resolve(sessionId: string): string {
-    validateSessionId(sessionId)
+    validateSessionIdForRead(sessionId)
     const sessionDir = this.getSessionDir(sessionId)
     if (!existsSync(sessionDir)) {
       throw new Error(`Session '${sessionId}' does not exist`)
@@ -49,7 +63,7 @@ export class SessionManager {
   }
 
   async isStale(sessionId: string, staleDays = 7): Promise<boolean> {
-    validateSessionId(sessionId)
+    validateSessionIdForRead(sessionId)
     const state = await this.readState(sessionId)
     return this.isStateStale(state, staleDays)
   }
@@ -64,7 +78,7 @@ export class SessionManager {
     const sessionId = state.pipeline_id
 
     try {
-      validateSessionId(sessionId)
+      validateSessionIdForRead(sessionId)
     } catch {
       return { migrated: false }
     }
@@ -97,12 +111,12 @@ export class SessionManager {
   }
 
   async cleanup(sessionId: string): Promise<void> {
-    validateSessionId(sessionId)
+    validateSessionIdForRead(sessionId)
     await rm(this.getSessionDir(sessionId), { recursive: true, force: true })
   }
 
   exists(sessionId: string): boolean {
-    validateSessionId(sessionId)
+    validateSessionIdForRead(sessionId)
     return existsSync(this.getSessionDir(sessionId))
   }
 

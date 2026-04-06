@@ -83,9 +83,22 @@ describe('SessionManager', () => {
     '.session',
     '-session',
   ])(
-    'rejects invalid session IDs: %p',
+    'rejects invalid session IDs on create: %p',
     async sessionId => {
       await expect(manager.create(sessionId)).rejects.toThrow(`Invalid session ID: '${sessionId}'`)
+    }
+  )
+
+  it.each([
+    '',
+    '.',
+    '..',
+    '../evil',
+    'nested/path',
+    'nested\\path',
+  ])(
+    'rejects traversal-oriented session IDs on read paths: %p',
+    async sessionId => {
       expect(() => manager.resolve(sessionId)).toThrow(`Invalid session ID: '${sessionId}'`)
       await expect(manager.cleanup(sessionId)).rejects.toThrow(
         `Invalid session ID: '${sessionId}'`
@@ -96,6 +109,32 @@ describe('SessionManager', () => {
       )
     }
   )
+
+  it('reads and cleans up a manually-created legacy session directory', async () => {
+    const sessionId = 'legacy session-id'
+    const sessionDir = await writeSessionState(
+      sessionId,
+      createState({
+        pipeline_id: sessionId,
+        last_updated: '2026-03-20T12:00:00.000Z',
+      })
+    )
+
+    expect(manager.resolve(sessionId)).toBe(sessionDir)
+    expect(manager.exists(sessionId)).toBe(true)
+    await expect(manager.isStale(sessionId)).resolves.toBe(true)
+
+    await manager.cleanup(sessionId)
+
+    expect(manager.exists(sessionId)).toBe(false)
+    expect(existsSync(sessionDir)).toBe(false)
+  })
+
+  it('rejects creating a legacy-shaped session ID', async () => {
+    await expect(manager.create('legacy session-id')).rejects.toThrow(
+      "Invalid session ID: 'legacy session-id'"
+    )
+  })
 
   it('rejects a legacy pipeline_id that is invalid during migration', async () => {
     const invokeDir = path.join(projectDir, '.invoke')
@@ -219,7 +258,7 @@ describe('SessionManager', () => {
 
   it('migrates legacy root state and metrics into a session directory', async () => {
     const invokeDir = path.join(projectDir, '.invoke')
-    const legacyState = createState({ pipeline_id: 'legacy-pipeline' })
+    const legacyState = createState({ pipeline_id: 'legacy session-id' })
 
     await mkdir(invokeDir, { recursive: true })
     await writeFile(path.join(invokeDir, 'state.json'), JSON.stringify(legacyState, null, 2) + '\n')
@@ -227,10 +266,10 @@ describe('SessionManager', () => {
 
     await expect(manager.migrate()).resolves.toEqual({
       migrated: true,
-      sessionId: 'legacy-pipeline',
+      sessionId: 'legacy session-id',
     })
 
-    const sessionDir = path.join(projectDir, '.invoke', 'sessions', 'legacy-pipeline')
+    const sessionDir = path.join(projectDir, '.invoke', 'sessions', 'legacy session-id')
     expect(existsSync(path.join(invokeDir, 'state.json'))).toBe(false)
     expect(existsSync(path.join(invokeDir, 'metrics.json'))).toBe(false)
     expect(JSON.parse(await readFile(path.join(sessionDir, 'state.json'), 'utf-8'))).toEqual(legacyState)

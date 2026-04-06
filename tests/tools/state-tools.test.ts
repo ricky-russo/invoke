@@ -109,6 +109,28 @@ describe('registerStateTools', () => {
     ).toBe(true)
   })
 
+  it('accepts legacy-shaped session_id on read schemas and rejects it for invoke_set_state', async () => {
+    const legacySessionId = 'legacy session-id'
+
+    expect(
+      getTool('invoke_get_state').config.inputSchema.safeParse({ session_id: legacySessionId }).success
+    ).toBe(true)
+    expect(
+      getTool('invoke_get_review_cycle_count').config.inputSchema.safeParse({ session_id: legacySessionId }).success
+    ).toBe(true)
+
+    const parsed = getTool('invoke_set_state').config.inputSchema.safeParse({
+      session_id: legacySessionId,
+    })
+    expect(parsed.success).toBe(false)
+
+    const result = await getTool('invoke_set_state').handler({
+      session_id: legacySessionId,
+    })
+    expect(result.isError).toBe(true)
+    expect(result.content[0].text).toBe('invalid session id format')
+  })
+
   it('accepts batch_id, scope, and tier in invoke_set_state review_cycles', async () => {
     const createSpy = vi.spyOn(sessionManager, 'create')
     const setStateTool = getTool('invoke_set_state')
@@ -772,15 +794,15 @@ describe('registerStateTools', () => {
     }
   })
 
-  it('rejects malformed session_id in invoke_get_state at schema time', async () => {
+  it('rejects traversal-style session_id in invoke_get_state via SessionManager validation', async () => {
     const getStateTool = getTool('invoke_get_state')
-    const input = { session_id: 'session;rm -rf /' }
+    const input = { session_id: 'nested/path' }
 
-    expect(getStateTool.config.inputSchema.safeParse(input).success).toBe(false)
+    expect(getStateTool.config.inputSchema.safeParse(input).success).toBe(true)
 
     const result = await getStateTool.handler(input)
     expect(result.isError).toBe(true)
-    expect(result.content[0].text).toBe('invalid session id format')
+    expect(result.content[0].text).toBe("State error: Invalid session ID: 'nested/path'")
   })
 
   it('returns session-scoped state when session_id is provided to invoke_get_state', async () => {
