@@ -1,16 +1,70 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { StateManager } from '../../src/tools/state.js'
+import { SessionManager } from '../../src/session/manager.js'
+import { registerStateTools } from '../../src/tools/state-tools.js'
 import { mkdir, rm, readFile } from 'fs/promises'
 import { existsSync } from 'fs'
 import path from 'path'
+import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 
 const TEST_DIR = path.join(import.meta.dirname, 'fixtures', 'state-test')
 
 let stateManager: StateManager
+let sessionManager: SessionManager
+let registeredTools: Map<string, RegisteredTool>
+
+type RegisteredTool = {
+  config: {
+    inputSchema: {
+      safeParse: (input: unknown) =>
+        | { success: true; data: Record<string, unknown> }
+        | { success: false; error: { issues: Array<{ message: string, path: Array<string | number> }> } }
+    }
+  }
+  handler: (input: Record<string, unknown>) => Promise<{
+    content: Array<{ type: string, text: string }>
+    isError?: boolean
+  }>
+}
+
+const registerTool = vi.fn((name: string, config: RegisteredTool['config'], handler: RegisteredTool['handler']) => {
+  registeredTools.set(name, {
+    config,
+    handler: async (input: Record<string, unknown>) => {
+      const parsed = config.inputSchema.safeParse(input)
+      if (!parsed.success) {
+        return {
+          content: [{ type: 'text', text: parsed.error.issues[0]?.message ?? 'Invalid input' }],
+          isError: true,
+        }
+      }
+
+      return handler(parsed.data)
+    },
+  })
+})
+
+const server = { registerTool } as unknown as McpServer
+
+function getTool(name: string): RegisteredTool {
+  const tool = registeredTools.get(name)
+  if (!tool) {
+    throw new Error(`Tool ${name} was not registered`)
+  }
+  return tool
+}
+
+function parseResponseText(result: Awaited<ReturnType<RegisteredTool['handler']>>) {
+  return JSON.parse(result.content[0].text) as Record<string, unknown>
+}
 
 beforeEach(async () => {
   await mkdir(path.join(TEST_DIR, '.invoke'), { recursive: true })
   stateManager = new StateManager(TEST_DIR)
+  sessionManager = new SessionManager(TEST_DIR)
+  registeredTools = new Map()
+  registerTool.mockClear()
+  registerStateTools(server, stateManager, TEST_DIR, sessionManager)
 })
 
 afterEach(async () => {
@@ -264,5 +318,145 @@ describe('StateManager', () => {
     await expect(stateManager.getReviewCycleCount(1)).resolves.toBe(1)
     await expect(stateManager.getReviewCycleCount(2)).resolves.toBe(2)
     await expect(stateManager.getReviewCycleCount(99)).resolves.toBe(0)
+  })
+})
+
+describe('invoke_set_state schema alignment', () => {
+  it('persists base_branch and work_branch_path and round-trips them via invoke_get_state', async () => {
+    const setStateTool = getTool('invoke_set_state')
+    const input = {
+      session_id: 'session-1',
+      pipeline_id: 'pipeline-123',
+      base_branch: 'main',
+      work_branch_path: '/tmp/invoke/worktrees/session-1',
+    }
+
+    expect(setStateTool.config.inputSchema.safeParse(input).success).toBe(true)
+
+    const setResult = await setStateTool.handler(input)
+    expect(setResult.isError).toBeUndefined()
+
+    const storedState = await new StateManager(
+      TEST_DIR,
+      sessionManager.resolve('session-1')
+    ).get()
+    expect(storedState).toMatchObject({
+      pipeline_id: 'pipeline-123',
+      base_branch: 'main',
+      work_branch_path: '/tmp/invoke/worktrees/session-1',
+    })
+
+    const getResult = await getTool('invoke_get_state').handler({ session_id: 'session-1' })
+    expect(getResult.isError).toBeUndefined()
+    expect(parseResponseText(getResult)).toMatchObject({
+      pipeline_id: 'pipeline-123',
+      base_branch: 'main',
+      work_branch_path: '/tmp/invoke/worktrees/session-1',
+    })
+  })
+
+  it('accepts conflict status and conflict_attempts for tasks', async () => {
+    const setStateTool = getTool('invoke_set_state')
+    const input = {
+      session_id: 'session-1',
+      pipeline_id: 'pipeline-123',
+      batches: [
+        {
+          id: 1,
+          status: 'pending',
+          tasks: [
+            {
+              id: 'task-1',
+              status: 'conflict',
+              conflict_attempts: 2,
+            },
+          ],
+        },
+      ],
+    }
+
+    expect(setStateTool.config.inputSchema.safeParse(input).success).toBe(true)
+
+    const result = await setStateTool.handler(input)
+    expect(result.isError).toBeUndefined()
+
+    const storedState = await new StateManager(
+      TEST_DIR,
+      sessionManager.resolve('session-1')
+    ).get()
+    expect(storedState?.batches[0].tasks[0]).toMatchObject({
+      id: 'task-1',
+      status: 'conflict',
+      conflict_attempts: 2,
+    })
+  })
+
+  it('remains backward compatible when the new fields are omitted', async () => {
+    const setStateTool = getTool('invoke_set_state')
+    const input = {
+      session_id: 'session-1',
+      pipeline_id: 'pipeline-123',
+      work_branch: 'invoke/work-1234',
+      batches: [
+        {
+          id: 1,
+          status: 'pending',
+          tasks: [
+            {
+              id: 'task-1',
+              status: 'running',
+            },
+          ],
+        },
+      ],
+    }
+
+    expect(setStateTool.config.inputSchema.safeParse(input).success).toBe(true)
+
+    const result = await setStateTool.handler(input)
+    expect(result.isError).toBeUndefined()
+
+    const getResult = await getTool('invoke_get_state').handler({ session_id: 'session-1' })
+    expect(getResult.isError).toBeUndefined()
+    expect(parseResponseText(getResult)).toMatchObject({
+      pipeline_id: 'pipeline-123',
+      work_branch: 'invoke/work-1234',
+      batches: [
+        {
+          id: 1,
+          status: 'pending',
+          tasks: [
+            {
+              id: 'task-1',
+              status: 'running',
+            },
+          ],
+        },
+      ],
+    })
+  })
+
+  it('rejects invalid task status values', () => {
+    const result = getTool('invoke_set_state').config.inputSchema.safeParse({
+      session_id: 'session-1',
+      pipeline_id: 'pipeline-123',
+      batches: [
+        {
+          id: 1,
+          status: 'pending',
+          tasks: [
+            {
+              id: 'task-1',
+              status: 'foo',
+            },
+          ],
+        },
+      ],
+    })
+
+    expect(result.success).toBe(false)
+    if (!result.success) {
+      expect(result.error.issues.some(issue => issue.path.join('.') === 'batches.0.tasks.0.status')).toBe(true)
+    }
   })
 })

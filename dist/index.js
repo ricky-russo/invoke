@@ -41210,6 +41210,8 @@ function registerStateTools(server, stateManager, projectDir, sessionManager) {
         pipeline_id: external_exports3.string().optional(),
         current_stage: external_exports3.enum(["scope", "plan", "orchestrate", "build", "review", "complete"]).optional(),
         work_branch: external_exports3.string().optional(),
+        base_branch: external_exports3.string().optional(),
+        work_branch_path: external_exports3.string().optional(),
         spec: external_exports3.string().optional(),
         plan: external_exports3.string().optional(),
         tasks: external_exports3.string().optional(),
@@ -41220,9 +41222,10 @@ function registerStateTools(server, stateManager, projectDir, sessionManager) {
           merged_tasks: external_exports3.array(external_exports3.string()).optional(),
           tasks: external_exports3.array(external_exports3.object({
             id: external_exports3.string(),
-            status: external_exports3.enum(["pending", "dispatched", "running", "completed", "error", "timeout"]),
+            status: external_exports3.enum(["pending", "dispatched", "running", "completed", "error", "timeout", "conflict"]),
             worktree_path: external_exports3.string().optional(),
             worktree_branch: external_exports3.string().optional(),
+            conflict_attempts: external_exports3.number().optional(),
             result_summary: external_exports3.string().optional(),
             result_status: external_exports3.enum(["success", "error", "timeout"]).optional(),
             merged: external_exports3.boolean().optional()
