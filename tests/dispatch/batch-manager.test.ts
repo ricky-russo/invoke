@@ -220,7 +220,7 @@ describe('BatchManager', () => {
     })
 
     await vi.waitFor(() => {
-      expect(mockWorktreeManager.create).toHaveBeenCalledWith('task-1')
+      expect(mockWorktreeManager.create).toHaveBeenCalledWith('task-1', undefined)
     }, { timeout: 2000 })
   })
 

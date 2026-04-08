@@ -2,6 +2,16 @@ import { mkdir, readFile, writeFile, rename } from 'fs/promises';
 import { existsSync } from 'fs';
 import path from 'path';
 export class StateManager {
+    static PERSIST_ONCE_KEYS = [
+        'work_branch',
+        'work_branch_path',
+        'base_branch',
+        'spec',
+        'plan',
+        'tasks',
+        'strategy',
+        'bug_ids',
+    ];
     statePath;
     tmpPath;
     storageDir;
@@ -90,7 +100,8 @@ export class StateManager {
                 this.applyReviewCycleUpsert(next, updates.reviewCycleUpdate);
             }
             if (updates.partial) {
-                next = { ...next, ...updates.partial };
+                const safePartial = this.filterPersistOncePartial(updates.partial);
+                next = { ...next, ...safePartial };
             }
             next.last_updated = new Date().toISOString();
             await this.writeAtomic(next);
@@ -163,6 +174,15 @@ export class StateManager {
         await writeFile(this.tmpPath, content);
         await rename(this.tmpPath, this.statePath);
         this.cachedState = state;
+    }
+    filterPersistOncePartial(partial) {
+        const filtered = { ...partial };
+        for (const key of StateManager.PERSIST_ONCE_KEYS) {
+            if (filtered[key] === undefined || filtered[key] === null) {
+                delete filtered[key];
+            }
+        }
+        return filtered;
     }
     applyBatchUpsert(state, batch) {
         const batches = [...state.batches];

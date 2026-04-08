@@ -1,5 +1,6 @@
 import type { PipelineState, BatchState, ReviewCycle, TaskState } from '../types.js';
 export declare class StateManager {
+    private static readonly PERSIST_ONCE_KEYS;
     private statePath;
     private tmpPath;
     private storageDir;
@@ -42,6 +43,7 @@ export declare class StateManager {
     reset(): Promise<void>;
     private enqueueWrite;
     private writeAtomic;
+    private filterPersistOncePartial;
     private applyBatchUpsert;
     /**
      * Merge incoming task entries into an existing tasks array by task id.

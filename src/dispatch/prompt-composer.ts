@@ -260,7 +260,7 @@ export async function composePromptWithNonce(
     )
   }
 
-  const effectiveContext = {
+  const effectiveContext: Record<string, string> = {
     ...taskContext,
     scope_delim_start: `<<<SCOPE_DATA_START_${nonce}>>>`,
     scope_delim_end: `<<<SCOPE_DATA_END_${nonce}>>>`,

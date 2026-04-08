@@ -22,11 +22,15 @@ export class WorktreeManager {
     constructor(repoDir) {
         this.repoDir = repoDir;
     }
-    async create(taskId) {
+    async create(taskId, baseBranch) {
         const branch = `invoke-wt-${taskId}`;
         const worktreePath = path.join(os.tmpdir(), `invoke-worktree-${taskId}-${Date.now()}`);
         await withRepoLock(this.repoDir, async () => {
-            git(this.repoDir, ['worktree', 'add', worktreePath, '-b', branch]);
+            const args = ['worktree', 'add', worktreePath, '-b', branch];
+            if (baseBranch) {
+                args.push(baseBranch);
+            }
+            git(this.repoDir, args);
         });
         const info = { taskId, worktreePath, branch };
         this.worktrees.set(taskId, info);
