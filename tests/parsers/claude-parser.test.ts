@@ -85,6 +85,93 @@ describe('ClaudeParser', () => {
     expect(result.output.findings![1].severity).toBe('medium')
   })
 
+  it('extracts out_of_scope from **Out-of-Scope:** field', () => {
+    const output = `## Security Review
+
+### Finding 1
+**Severity:** low
+**File:** src/auth/token.ts
+**Line:** 42
+**Issue:** Missing input validation
+**Suggestion:** Validate the token input before processing
+**Out-of-Scope:** no
+
+### Finding 2
+**Severity:** high
+**File:** src/auth/session.ts
+**Line:** 15
+**Issue:** Session token stored in localStorage
+**Suggestion:** Use HttpOnly cookies for session storage
+**Out-of-Scope:** yes
+
+### Finding 3
+**Severity:** medium
+**File:** src/auth/cache.ts
+**Line:** 8
+**Issue:** Cache key uses predictable data
+**Suggestion:** Add a server-side secret to the cache key`
+
+    const result = parser.parse(output, 0, {
+      role: 'reviewer',
+      subrole: 'security',
+      provider: 'claude',
+      model: 'opus-4.6',
+      duration: 30000,
+    })
+
+    const findings = result.output.findings as Array<{ out_of_scope?: boolean }>
+
+    expect(findings).toHaveLength(3)
+    expect(findings[0].out_of_scope).toBe(false)
+    expect(findings[1].out_of_scope).toBe(true)
+    // Reviewer omitted the field — parser preserves undefined to distinguish
+    // "reviewer said in-scope" (false) from "reviewer didn't say" (undefined)
+    expect(findings[2].out_of_scope).toBeUndefined()
+  })
+
+  it('treats **Out-of-Scope:** case-insensitively and trims whitespace', () => {
+    const output = `## Security Review
+
+### Finding 1
+**Severity:** low
+**File:** src/auth/token.ts
+**Line:** 42
+**Issue:** Missing input validation
+**Suggestion:** Validate the token input before processing
+**Out-of-Scope:** YES
+
+### Finding 2
+**Severity:** medium
+**File:** src/auth/session.ts
+**Line:** 15
+**Issue:** Session token stored in localStorage
+**Suggestion:** Use HttpOnly cookies for session storage
+**Out-of-Scope:** Yes
+
+### Finding 3
+**Severity:** high
+**File:** src/auth/cache.ts
+**Line:** 8
+**Issue:** Cache key uses predictable data
+**Suggestion:** Add a server-side secret to the cache key
+**Out-of-Scope:**  yes   `
+
+    const result = parser.parse(output, 0, {
+      role: 'reviewer',
+      subrole: 'security',
+      provider: 'claude',
+      model: 'opus-4.6',
+      duration: 30000,
+    })
+
+    const findings = result.output.findings as Array<{ out_of_scope?: boolean }>
+
+    expect(findings).toHaveLength(3)
+    expect(findings[0].out_of_scope).toBe(true)
+    expect(findings[1].out_of_scope).toBe(true)
+    expect(findings[2].out_of_scope).toBe(true)
+  })
+
   it('returns raw output when findings cannot be parsed', () => {
     const output = 'Everything looks good, no issues found.'
 

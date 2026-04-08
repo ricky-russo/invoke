@@ -1,4 +1,6 @@
 node_modules
 docs/superpowers/
 .claude/
-.invoke
+.invoke/*
+!.invoke/roles/
+!.invoke/strategies/

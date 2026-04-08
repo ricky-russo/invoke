@@ -51,6 +51,7 @@ export class CodexParser implements Parser {
       const lineStr = this.extractField(block, 'Line')
       const issue = this.extractField(block, 'Issue')
       const suggestion = this.extractField(block, 'Suggestion')
+      const outOfScopeRaw = this.extractField(block, 'Out-of-Scope')
 
       if (severity && file && issue && suggestion) {
         findings.push({
@@ -59,6 +60,9 @@ export class CodexParser implements Parser {
           line: lineStr ? parseInt(lineStr, 10) : undefined,
           issue,
           suggestion,
+          ...(outOfScopeRaw != null && {
+            out_of_scope: outOfScopeRaw.toLowerCase().trim() === 'yes',
+          }),
         })
       }
     }

@@ -77,4 +77,87 @@ describe('CodexParser', () => {
     expect(result.output.findings![0].severity).toBe('critical')
     expect(result.output.findings![1].line).toBeUndefined()
   })
+
+  it('extracts out_of_scope from **Out-of-Scope:** field', () => {
+    const output = `## Security Review
+
+### Finding 1
+**Severity:** critical
+**File:** src/db/query.ts
+**Line:** 88
+**Issue:** Unsanitized user input in SQL query
+**Suggestion:** Use prepared statements
+**Out-of-Scope:** no
+
+### Finding 2
+**Severity:** high
+**File:** src/auth/session.ts
+**Line:** 24
+**Issue:** Session token is logged in plaintext
+**Suggestion:** Remove token values from logs
+**Out-of-Scope:** yes
+
+### Finding 3
+**Severity:** low
+**File:** src/utils/log.ts
+**Issue:** Sensitive data in log output
+**Suggestion:** Redact PII before logging`
+
+    const result = parser.parse(output, 0, {
+      role: 'reviewer',
+      subrole: 'security',
+      provider: 'codex',
+      model: 'gpt-5.4',
+      duration: 25000,
+    })
+
+    expect(result.status).toBe('success')
+    expect(result.output.findings).toHaveLength(3)
+    expect(result.output.findings![0].out_of_scope).toBe(false)
+    expect(result.output.findings![1].out_of_scope).toBe(true)
+    // Reviewer omitted the field — parser preserves undefined to distinguish
+    // "reviewer said in-scope" (false) from "reviewer didn't say" (undefined)
+    expect(result.output.findings![2].out_of_scope).toBeUndefined()
+  })
+
+  it('treats **Out-of-Scope:** case-insensitively and trims whitespace', () => {
+    const output = `## Security Review
+
+### Finding 1
+**Severity:** critical
+**File:** src/db/query.ts
+**Line:** 88
+**Issue:** Unsanitized user input in SQL query
+**Suggestion:** Use prepared statements
+**Out-of-Scope:** YES
+
+### Finding 2
+**Severity:** high
+**File:** src/auth/session.ts
+**Line:** 24
+**Issue:** Session token is logged in plaintext
+**Suggestion:** Remove token values from logs
+**Out-of-Scope:**   yEs   
+
+### Finding 3
+**Severity:** low
+**File:** src/utils/log.ts
+**Issue:** Sensitive data in log output
+**Suggestion:** Redact PII before logging
+**Out-of-Scope:** Yes`
+
+    const result = parser.parse(output, 0, {
+      role: 'reviewer',
+      subrole: 'security',
+      provider: 'codex',
+      model: 'gpt-5.4',
+      duration: 25000,
+    })
+
+    expect(result.status).toBe('success')
+    expect(result.output.findings).toHaveLength(3)
+    expect(result.output.findings![0].out_of_scope).toBe(true)
+    expect(result.output.findings![1].out_of_scope).toBe(true)
+    expect(result.output.findings![2].out_of_scope).toBe(true)
+  })
 })
