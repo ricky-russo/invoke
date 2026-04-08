@@ -55,4 +55,38 @@ describe('runPostMergeCommands', () => {
       timeout: 60000,
     })
   })
+
+  it('runs all configured post-merge commands in order', () => {
+    const config = structuredClone(TEST_CONFIG)
+    config.settings.post_merge_commands = ['npm install', 'npm run test', 'npm run build']
+    childProcessMocks.execSync
+      .mockReturnValueOnce(Buffer.from('install ok'))
+      .mockReturnValueOnce(Buffer.from('test ok'))
+      .mockReturnValueOnce(Buffer.from('build ok'))
+
+    const result = runPostMergeCommands(config, '/tmp/project')
+
+    expect(childProcessMocks.execSync).toHaveBeenNthCalledWith(1, 'npm install', {
+      cwd: '/tmp/project',
+      stdio: 'pipe',
+      timeout: 60000,
+    })
+    expect(childProcessMocks.execSync).toHaveBeenNthCalledWith(2, 'npm run test', {
+      cwd: '/tmp/project',
+      stdio: 'pipe',
+      timeout: 60000,
+    })
+    expect(childProcessMocks.execSync).toHaveBeenNthCalledWith(3, 'npm run build', {
+      cwd: '/tmp/project',
+      stdio: 'pipe',
+      timeout: 60000,
+    })
+    expect(result).toEqual({
+      commands: [
+        { command: 'npm install', success: true, output: 'install ok' },
+        { command: 'npm run test', success: true, output: 'test ok' },
+        { command: 'npm run build', success: true, output: 'build ok' },
+      ],
+    })
+  })
 })
