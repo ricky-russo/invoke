@@ -22,7 +22,8 @@ Implement this task completely and correctly:
 2. Follow the build strategy instructions provided below (if any).
 3. Implement the feature to meet all acceptance criteria.
 4. Verify your implementation works by running tests.
-5. Do not run `git commit`. Stage your work if convenient (`git add`), but invoke will commit on your behalf after the task succeeds.
+5. **After making any change to a `.ts` file, you MUST run `npm run build` (NOT `tsc --noEmit`).** The acceptance criterion "build succeeds" literally means `npm run build` exits 0 and `dist/` is updated. Type-check-only validation is insufficient because the MCP server loads code from `dist/`, and a failing build silently leaves the server running stale code.
+6. Do not run `git commit`. Stage your work if convenient (`git add`), but invoke will commit on your behalf after the task succeeds.
 
 ## Rules
 

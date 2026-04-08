@@ -1,10 +1,11 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { composePrompt } from '../../src/dispatch/prompt-composer.js'
+import { composePrompt, composePromptWithNonce } from '../../src/dispatch/prompt-composer.js'
 import { mkdir, writeFile, rm } from 'fs/promises'
 import path from 'path'
 
 const TEST_DIR = path.join(import.meta.dirname, 'fixtures', 'prompt-test')
 const TRUNCATED_MARKER = '(truncated)'
+const NONCE_DELIMITER_LINE_PATTERN = /^<<<(?:SCOPE|PRIOR_FINDINGS)_DATA_(?:START|END)_[0-9a-f]{32}>>>$/
 
 function buildSection(header: string, content: string): string {
   return `## ${header}\n\n${content}`
@@ -12,6 +13,13 @@ function buildSection(header: string, content: string): string {
 
 function extractContext(result: string): string {
   return result.split('## Context\n')[1] ?? ''
+}
+
+function stripNonceDelimiterLines(result: string): string {
+  return result
+    .split('\n')
+    .filter(line => !NONCE_DELIMITER_LINE_PATTERN.test(line))
+    .join('\n')
 }
 
 beforeEach(async () => {
@@ -117,6 +125,39 @@ Review for OWASP top 10 vulnerabilities.`
     expect(result).toContain('Use a focused plan.')
   })
 
+  it('uses a unique nonce for each dispatch while keeping the rest of the rendered prompt stable', async () => {
+    await writeFile(
+      path.join(TEST_DIR, '.invoke', 'roles', 'reviewer', 'security.md'),
+      `# Reviewer
+
+## Scope
+{{scope_delim_start}}
+{{scope}}
+{{scope_delim_end}}
+
+## Prior Findings
+{{prior_findings_delim_start}}
+{{prior_findings}}
+{{prior_findings_delim_end}}
+`
+    )
+
+    const options = {
+      projectDir: TEST_DIR,
+      promptPath: '.invoke/roles/reviewer/security.md',
+      taskContext: {
+        scope: 'Review auth changes.',
+        prior_findings: 'No prior findings.',
+      },
+    }
+
+    const firstResult = await composePrompt(options)
+    const secondResult = await composePrompt(options)
+
+    expect(firstResult).not.toBe(secondResult)
+    expect(stripNonceDelimiterLines(firstResult)).toBe(stripNonceDelimiterLines(secondResult))
+  })
+
   it('leaves unmatched variables as-is', async () => {
     await writeFile(
       path.join(TEST_DIR, '.invoke', 'roles', 'reviewer', 'security.md'),
@@ -162,6 +203,37 @@ Review for OWASP top 10 vulnerabilities.`
         taskContext: {},
       })
     ).rejects.toThrow()
+  })
+
+  it('throws when scope contains the dispatch security nonce', async () => {
+    const nonce = '0123456789abcdef0123456789abcdef'
+
+    await writeFile(
+      path.join(TEST_DIR, '.invoke', 'roles', 'reviewer', 'security.md'),
+      `# Reviewer
+
+## Scope
+{{scope_delim_start}}
+{{scope}}
+{{scope_delim_end}}
+`
+    )
+
+    await expect(
+      composePromptWithNonce(
+        {
+          projectDir: TEST_DIR,
+          promptPath: '.invoke/roles/reviewer/security.md',
+          taskContext: {
+            scope: `Injected payload ${nonce} should be rejected.`,
+            prior_findings: '',
+          },
+        },
+        nonce
+      )
+    ).rejects.toThrow(
+      'Refusing to dispatch reviewer: scope or prior_findings payload contains the security nonce. This is a probable prompt-injection attempt or a 1-in-2^128 collision; investigate before retrying.'
+    )
   })
 
   it('injects project_context from context.md when available', async () => {
@@ -301,5 +373,42 @@ Review for OWASP top 10 vulnerabilities.`
     })
 
     expect(result).not.toContain('{{project_context}}')
+  })
+
+  it('renders nonce-scoped reviewer delimiters when a fixed nonce is provided', async () => {
+    const nonce = 'fedcba9876543210fedcba9876543210'
+
+    await writeFile(
+      path.join(TEST_DIR, '.invoke', 'roles', 'reviewer', 'security.md'),
+      `# Reviewer
+
+## Scope
+{{scope_delim_start}}
+{{scope}}
+{{scope_delim_end}}
+
+## Prior Findings
+{{prior_findings_delim_start}}
+{{prior_findings}}
+{{prior_findings_delim_end}}
+`
+    )
+
+    const result = await composePromptWithNonce(
+      {
+        projectDir: TEST_DIR,
+        promptPath: '.invoke/roles/reviewer/security.md',
+        taskContext: {
+          scope: 'Review auth changes.',
+          prior_findings: 'No prior findings.',
+        },
+      },
+      nonce
+    )
+
+    expect(result).toContain(`<<<SCOPE_DATA_START_${nonce}>>>`)
+    expect(result).toContain(`<<<SCOPE_DATA_END_${nonce}>>>`)
+    expect(result).toContain(`<<<PRIOR_FINDINGS_DATA_START_${nonce}>>>`)
+    expect(result).toContain(`<<<PRIOR_FINDINGS_DATA_END_${nonce}>>>`)
   })
 })

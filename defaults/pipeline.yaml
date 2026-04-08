@@ -160,9 +160,10 @@ settings:
   default_provider_mode: parallel
   max_review_cycles: 3
   # Commands to run after merging worktrees (e.g., regenerate lockfiles):
-  # post_merge_commands:
-  #   - composer install
-  #   - npm install
+  post_merge_commands:
+    - npm install
+    - npm run test
+    - npm run build
   # Maximum agents to run in parallel per batch (omit for unlimited):
   # max_parallel_agents: 4
   # Global cap on total dispatches across the entire pipeline run:

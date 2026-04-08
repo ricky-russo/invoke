@@ -4,6 +4,17 @@ import path from 'path'
 import type { PipelineState, BatchState, ReviewCycle, TaskState } from '../types.js'
 
 export class StateManager {
+  private static readonly PERSIST_ONCE_KEYS = [
+    'work_branch',
+    'work_branch_path',
+    'base_branch',
+    'spec',
+    'plan',
+    'tasks',
+    'strategy',
+    'bug_ids',
+  ] as const satisfies ReadonlyArray<keyof PipelineState>
+
   private statePath: string
   private tmpPath: string
   private storageDir: string
@@ -104,7 +115,8 @@ export class StateManager {
         this.applyReviewCycleUpsert(next, updates.reviewCycleUpdate)
       }
       if (updates.partial) {
-        next = { ...next, ...updates.partial }
+        const safePartial = this.filterPersistOncePartial(updates.partial)
+        next = { ...next, ...safePartial }
       }
 
       next.last_updated = new Date().toISOString()
@@ -195,6 +207,18 @@ export class StateManager {
     await writeFile(this.tmpPath, content)
     await rename(this.tmpPath, this.statePath)
     this.cachedState = state
+  }
+
+  private filterPersistOncePartial(partial: Partial<PipelineState>): Partial<PipelineState> {
+    const filtered = { ...partial }
+
+    for (const key of StateManager.PERSIST_ONCE_KEYS) {
+      if (filtered[key] === undefined || filtered[key] === null) {
+        delete filtered[key]
+      }
+    }
+
+    return filtered
   }
 
   private applyBatchUpsert(state: PipelineState, batch: BatchState): void {

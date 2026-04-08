@@ -15,7 +15,7 @@ export declare class WorktreeManager {
     private repoDir;
     private worktrees;
     constructor(repoDir: string);
-    create(taskId: string): Promise<WorktreeInfo>;
+    create(taskId: string, baseBranch?: string): Promise<WorktreeInfo>;
     merge(taskId: string, options?: {
         commitMessage?: string;
         mergeTargetPath?: string;

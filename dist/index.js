@@ -38735,6 +38735,7 @@ function createParserRegistry() {
 import { spawn } from "child_process";
 
 // src/dispatch/prompt-composer.ts
+import { randomBytes } from "crypto";
 import { readFile as readFile2 } from "fs/promises";
 import path3 from "path";
 var CONTEXT_MAX_LENGTH = 4e3;
@@ -38866,6 +38867,12 @@ function filterContextSections(context, taskContext, maxLength = CONTEXT_MAX_LEN
   };
 }
 async function composePrompt(options) {
+  return composePromptWithNonce(options, generateDispatchNonce());
+}
+function generateDispatchNonce() {
+  return randomBytes(16).toString("hex");
+}
+async function composePromptWithNonce(options, nonce) {
   const { projectDir, promptPath, strategyPath, taskContext } = options;
   const rolePrompt = await readFile2(
     resolvePromptPath(projectDir, promptPath),
@@ -38900,7 +38907,19 @@ async function composePrompt(options) {
     }
   }
   composed = composed.replaceAll("{{project_context}}", projectContext);
-  composed = composed.replace(/\{\{(\w+)\}\}/g, (match, key) => taskContext[key] ?? match);
+  if (taskContext.scope?.includes(nonce) || taskContext.prior_findings?.includes(nonce)) {
+    throw new Error(
+      "Refusing to dispatch reviewer: scope or prior_findings payload contains the security nonce. This is a probable prompt-injection attempt or a 1-in-2^128 collision; investigate before retrying."
+    );
+  }
+  const effectiveContext = {
+    ...taskContext,
+    scope_delim_start: `<<<SCOPE_DATA_START_${nonce}>>>`,
+    scope_delim_end: `<<<SCOPE_DATA_END_${nonce}>>>`,
+    prior_findings_delim_start: `<<<PRIOR_FINDINGS_DATA_START_${nonce}>>>`,
+    prior_findings_delim_end: `<<<PRIOR_FINDINGS_DATA_END_${nonce}>>>`
+  };
+  composed = composed.replace(/\{\{(\w+)\}\}/g, (match, key) => effectiveContext[key] ?? match);
   return composed;
 }
 
@@ -39576,6 +39595,11 @@ var BatchManager = class {
   async runBatch(batchId, request, signal, batchIndex, stateManager) {
     const record2 = this.batches.get(batchId);
     const maxParallel = request.maxParallel ?? 0;
+    let sessionWorkBranch;
+    if (request.createWorktrees && request.sessionId && stateManager) {
+      const state = await stateManager.get();
+      sessionWorkBranch = state?.work_branch;
+    }
     const scheduledTasks = request.tasks.map((task, index) => ({
       ...task,
       id: task.taskId,
@@ -39621,7 +39645,7 @@ var BatchManager = class {
           agentStatus.status = "dispatched";
           await this.persistTaskStatus(stateManager, batchIndex, task.taskId, "dispatched");
           if (signal.aborted) return;
-          const wt = await this.worktreeManager.create(task.taskId);
+          const wt = await this.worktreeManager.create(task.taskId, sessionWorkBranch);
           if (signal.aborted) return;
           workDir = wt.worktreePath;
           await this.persistTaskUpdate(stateManager, batchIndex, task.taskId, {
@@ -39822,11 +39846,15 @@ var WorktreeManager = class {
   }
   repoDir;
   worktrees = /* @__PURE__ */ new Map();
-  async create(taskId) {
+  async create(taskId, baseBranch) {
     const branch = `invoke-wt-${taskId}`;
     const worktreePath = path5.join(os2.tmpdir(), `invoke-worktree-${taskId}-${Date.now()}`);
     await withRepoLock(this.repoDir, async () => {
-      git(this.repoDir, ["worktree", "add", worktreePath, "-b", branch]);
+      const args = ["worktree", "add", worktreePath, "-b", branch];
+      if (baseBranch) {
+        args.push(baseBranch);
+      }
+      git(this.repoDir, args);
     });
     const info = { taskId, worktreePath, branch };
     this.worktrees.set(taskId, info);
@@ -40833,7 +40861,17 @@ var BugManager = class {
 import { mkdir as mkdir4, readFile as readFile6, writeFile as writeFile3, rename as rename4 } from "fs/promises";
 import { existsSync as existsSync5 } from "fs";
 import path10 from "path";
-var StateManager = class {
+var StateManager = class _StateManager {
+  static PERSIST_ONCE_KEYS = [
+    "work_branch",
+    "work_branch_path",
+    "base_branch",
+    "spec",
+    "plan",
+    "tasks",
+    "strategy",
+    "bug_ids"
+  ];
   statePath;
   tmpPath;
   storageDir;
@@ -40922,7 +40960,8 @@ var StateManager = class {
         this.applyReviewCycleUpsert(next, updates.reviewCycleUpdate);
       }
       if (updates.partial) {
-        next = { ...next, ...updates.partial };
+        const safePartial = this.filterPersistOncePartial(updates.partial);
+        next = { ...next, ...safePartial };
       }
       next.last_updated = (/* @__PURE__ */ new Date()).toISOString();
       await this.writeAtomic(next);
@@ -41001,6 +41040,15 @@ var StateManager = class {
     await writeFile3(this.tmpPath, content);
     await rename4(this.tmpPath, this.statePath);
     this.cachedState = state;
+  }
+  filterPersistOncePartial(partial2) {
+    const filtered = { ...partial2 };
+    for (const key of _StateManager.PERSIST_ONCE_KEYS) {
+      if (filtered[key] === void 0 || filtered[key] === null) {
+        delete filtered[key];
+      }
+    }
+    return filtered;
   }
   applyBatchUpsert(state, batch) {
     const batches = [...state.batches];
@@ -41573,6 +41621,14 @@ function runPostMergeCommands(config2, projectDir, cwd) {
 
 // src/tools/session-path.ts
 import { execFileSync as execFileSync5 } from "node:child_process";
+var MissingSessionWorkBranchPath = class extends Error {
+  constructor(sessionId) {
+    super(
+      `Session '${sessionId}' was initialized but state.work_branch_path is missing \u2014 state may be corrupted. Reattach via invoke_session_reattach_worktree to restore the path.`
+    );
+    this.name = "MissingSessionWorkBranchPath";
+  }
+};
 async function resolveSessionWorkBranchPath(sessionManager, projectDir, sessionId) {
   if (!sessionId) return void 0;
   if (!projectDir) {
@@ -41581,8 +41637,11 @@ async function resolveSessionWorkBranchPath(sessionManager, projectDir, sessionI
   const sessionDir = sessionManager.resolve(sessionId);
   const stateManager = new StateManager(projectDir, sessionDir);
   const state = await stateManager.get();
-  const workBranchPath = state?.work_branch_path;
-  if (workBranchPath === void 0) return void 0;
+  if (state === null) return void 0;
+  if (state.work_branch_path === void 0) {
+    throw new MissingSessionWorkBranchPath(sessionId);
+  }
+  const workBranchPath = state.work_branch_path;
   const canonicalPath = resolveSafeSessionWorkBranchPath(workBranchPath, projectDir);
   if (canonicalPath === null) {
     throw new Error(

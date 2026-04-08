@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { execSync } from 'child_process'
 import { realpathSync } from 'fs'
-import { mkdtemp, rm, writeFile } from 'fs/promises'
+import { mkdtemp, readFile, rm, writeFile } from 'fs/promises'
 import os from 'os'
 import path from 'path'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
@@ -15,6 +15,8 @@ vi.mock('../../src/tools/post-merge.js', () => ({
 }))
 
 import { SessionManager } from '../../src/session/manager.js'
+import { registerSessionInitTools } from '../../src/tools/session-init-tools.js'
+import { StateManager } from '../../src/tools/state.js'
 import { registerWorktreeTools } from '../../src/tools/worktree-tools.js'
 import type { InvokeConfig, PipelineState } from '../../src/types.js'
 import type { WorktreeManager } from '../../src/worktree/manager.js'
@@ -74,6 +76,7 @@ async function createGitRepo(prefix: string): Promise<string> {
 describe('registerWorktreeTools', () => {
   let projectDir: string
   let sessionManager: SessionManager
+  let sessionWorktreeManager: SessionWorktreeManager
   let registeredTools: Map<string, RegisteredTool>
   let worktreeManager: WorktreeManager
   let tempDirs: string[]
@@ -101,6 +104,12 @@ describe('registerWorktreeTools', () => {
     await writeFile(path.join(sessionDir, 'state.json'), JSON.stringify(state, null, 2) + '\n')
   }
 
+  async function initializeSessionState(sessionId: string, pipelineId = sessionId): Promise<void> {
+    const sessionDir = await sessionManager.create(sessionId)
+    const stateManager = new StateManager(projectDir, sessionDir)
+    await stateManager.initialize(pipelineId)
+  }
+
   async function createSafeSessionWorktreePath(
     sessionId: string,
     repoDir = projectDir
@@ -117,6 +126,7 @@ describe('registerWorktreeTools', () => {
   beforeEach(async () => {
     projectDir = await createGitRepo('invoke-worktree-tools-')
     sessionManager = new SessionManager(projectDir)
+    sessionWorktreeManager = new SessionWorktreeManager(projectDir)
     registeredTools = new Map()
     tempDirs = [projectDir]
     registerTool.mockClear()
@@ -198,8 +208,8 @@ describe('registerWorktreeTools', () => {
     expect(worktreeManager.cleanup).toHaveBeenCalledWith('task-legacy')
   })
 
-  it('falls back to the repo dir for legacy sessions without work_branch_path', async () => {
-    await writeSessionState('legacy-session', createState())
+  it('falls back to the repo dir for legacy sessions without state', async () => {
+    await sessionManager.create('legacy-session')
     vi.mocked(worktreeManager.merge).mockResolvedValue({
       status: 'merged',
       commitSha: '0123456789abcdef0123456789abcdef01234567',
@@ -213,6 +223,54 @@ describe('registerWorktreeTools', () => {
     })
 
     expect(worktreeManager.merge).toHaveBeenCalledWith('task-legacy-session', undefined)
+  })
+
+  it('surfaces a corrupted-state error and does not fall back to repo dir when an initialized session loses work_branch_path', async () => {
+    const sessionId = 'session-corrupted'
+    await initializeSessionState(sessionId)
+
+    registerSessionInitTools(
+      server,
+      sessionWorktreeManager,
+      sessionManager,
+      () => TEST_CONFIG,
+      projectDir
+    )
+    registerWorktreeTools(server, worktreeManager, sessionManager, TEST_CONFIG, projectDir)
+
+    const initResult = await getTool('invoke_session_init_worktree').handler({
+      session_id: sessionId,
+      base_branch: 'main',
+    })
+    expect(initResult.isError).toBeUndefined()
+
+    const initialized = parseResponseText<{
+      work_branch_path: string
+    }>(initResult)
+    tempDirs.push(initialized.work_branch_path)
+
+    const statePath = path.join(sessionManager.resolve(sessionId), 'state.json')
+    const state = JSON.parse(await readFile(statePath, 'utf-8')) as PipelineState
+    delete state.work_branch_path
+    await writeFile(statePath, JSON.stringify(state, null, 2) + '\n')
+
+    const result = await getTool('invoke_merge_worktree').handler({
+      task_id: 'task-corrupted',
+      session_id: sessionId,
+    })
+
+    expect(result.isError).toBe(true)
+    expect(result.content[0].text).toContain('state may be corrupted')
+    expect(worktreeManager.merge).not.toHaveBeenCalled()
+    expect(worktreeManager.cleanup).not.toHaveBeenCalled()
+
+    const postMergeResult = await getTool('invoke_run_post_merge').handler({
+      session_id: sessionId,
+    })
+
+    expect(postMergeResult.isError).toBe(true)
+    expect(postMergeResult.content[0].text).toContain('state may be corrupted')
+    expect(postMergeMocks.runPostMergeCommands).not.toHaveBeenCalled()
   })
 
   it('returns a structured conflict response without cleanup', async () => {

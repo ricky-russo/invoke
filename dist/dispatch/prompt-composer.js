@@ -1,3 +1,4 @@
+import { randomBytes } from 'crypto';
 import { readFile } from 'fs/promises';
 import path from 'path';
 const CONTEXT_MAX_LENGTH = 4000;
@@ -138,6 +139,12 @@ function filterContextSections(context, taskContext, maxLength = CONTEXT_MAX_LEN
     };
 }
 export async function composePrompt(options) {
+    return composePromptWithNonce(options, generateDispatchNonce());
+}
+export function generateDispatchNonce() {
+    return randomBytes(16).toString('hex');
+}
+export async function composePromptWithNonce(options, nonce) {
     const { projectDir, promptPath, strategyPath, taskContext } = options;
     const rolePrompt = await readFile(resolvePromptPath(projectDir, promptPath), 'utf-8');
     let composed = rolePrompt;
@@ -169,7 +176,17 @@ export async function composePrompt(options) {
         }
     }
     composed = composed.replaceAll('{{project_context}}', projectContext);
-    composed = composed.replace(/\{\{(\w+)\}\}/g, (match, key) => taskContext[key] ?? match);
+    if (taskContext.scope?.includes(nonce) || taskContext.prior_findings?.includes(nonce)) {
+        throw new Error('Refusing to dispatch reviewer: scope or prior_findings payload contains the security nonce. This is a probable prompt-injection attempt or a 1-in-2^128 collision; investigate before retrying.');
+    }
+    const effectiveContext = {
+        ...taskContext,
+        scope_delim_start: `<<<SCOPE_DATA_START_${nonce}>>>`,
+        scope_delim_end: `<<<SCOPE_DATA_END_${nonce}>>>`,
+        prior_findings_delim_start: `<<<PRIOR_FINDINGS_DATA_START_${nonce}>>>`,
+        prior_findings_delim_end: `<<<PRIOR_FINDINGS_DATA_END_${nonce}>>>`,
+    };
+    composed = composed.replace(/\{\{(\w+)\}\}/g, (match, key) => effectiveContext[key] ?? match);
     return composed;
 }
 //# sourceMappingURL=prompt-composer.js.map

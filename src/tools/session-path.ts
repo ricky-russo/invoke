@@ -6,13 +6,24 @@ import {
 } from '../worktree/trusted-session-helpers.js'
 import { StateManager } from './state.js'
 
+export class MissingSessionWorkBranchPath extends Error {
+  constructor(sessionId: string) {
+    super(
+      `Session '${sessionId}' was initialized but state.work_branch_path is missing — ` +
+      `state may be corrupted. Reattach via invoke_session_reattach_worktree to restore the path.`
+    )
+    this.name = 'MissingSessionWorkBranchPath'
+  }
+}
+
 /**
  * Resolve the canonical filesystem path of a session's integration worktree
  * for the given session_id, verifying in this order:
  *
- *   1. The session actually has a `work_branch_path` in its state. Legacy
- *      sessions that predate per-session work branches return `undefined` so
- *      callers can fall through to append-only behavior.
+ *   1. If the session has not been initialized yet (`state === null`), return
+ *      `undefined` so legacy callers can fall through to append-only
+ *      behavior. If state exists but `work_branch_path` is missing, throw:
+ *      that indicates corrupted initialized state.
  *   2. The path passes `resolveSafeSessionWorkBranchPath`: it is under
  *      `realpath(os.tmpdir())`, its basename starts with `invoke-session-`,
  *      and its git-common-dir matches `projectDir`'s git-common-dir (cross-
@@ -27,9 +38,9 @@ import { StateManager } from './state.js'
  *      branch, not `<prefix>/<A>`, and we refuse to proceed.
  *
  * Returns the validated canonical path on success, or throws when any
- * defense-in-depth check fails. Returns `undefined` ONLY for legacy sessions
- * without a `work_branch_path` — callers treat that as "not_supported" so
- * legacy pipelines keep append-only behavior.
+ * defense-in-depth check fails. Returns `undefined` ONLY when `session_id` is
+ * omitted or the session has no state yet — callers treat that as legacy /
+ * not_supported behavior.
  *
  * Rationale: prior to tightening, a crafted `state.json` could silently
  * repoint session A's `work_branch_path` at session B's worktree, and the
@@ -49,11 +60,13 @@ export async function resolveSessionWorkBranchPath(
   const sessionDir = sessionManager.resolve(sessionId)
   const stateManager = new StateManager(projectDir, sessionDir)
   const state = await stateManager.get()
-  const workBranchPath = state?.work_branch_path
+  if (state === null) return undefined
+  if (state.work_branch_path === undefined) {
+    throw new MissingSessionWorkBranchPath(sessionId)
+  }
+  const workBranchPath = state.work_branch_path
 
-  if (workBranchPath === undefined) return undefined
-
-  // Gate 1+2: tmpdir + invoke-session- basename + same git-common-dir. Returns
+  // Gate 2: tmpdir + invoke-session- basename + same git-common-dir. Returns
   // the EXACT canonical path that was validated so we do not re-resolve.
   const canonicalPath = resolveSafeSessionWorkBranchPath(workBranchPath, projectDir)
   if (canonicalPath === null) {

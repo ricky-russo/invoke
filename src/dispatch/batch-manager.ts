@@ -462,6 +462,12 @@ export class BatchManager {
   ): Promise<void> {
     const record = this.batches.get(batchId)!
     const maxParallel = request.maxParallel ?? 0 // 0 = unlimited
+    let sessionWorkBranch: string | undefined
+
+    if (request.createWorktrees && request.sessionId && stateManager) {
+      const state = await stateManager.get()
+      sessionWorkBranch = state?.work_branch
+    }
 
     const scheduledTasks: ScheduledBatchTask[] = request.tasks.map((task, index) => ({
       ...task,
@@ -524,7 +530,7 @@ export class BatchManager {
 
           if (signal.aborted) return
 
-          const wt = await this.worktreeManager.create(task.taskId)
+          const wt = await this.worktreeManager.create(task.taskId, sessionWorkBranch)
           if (signal.aborted) return
 
           workDir = wt.worktreePath

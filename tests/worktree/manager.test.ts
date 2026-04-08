@@ -3,7 +3,7 @@ import { WorktreeManager } from '../../src/worktree/manager.js'
 import { SessionWorktreeManager } from '../../src/worktree/session-worktree.js'
 import { withRepoLock } from '../../src/worktree/repo-lock.js'
 import { execFileSync, execSync } from 'child_process'
-import { mkdtemp, rm, writeFile } from 'fs/promises'
+import { mkdtemp, readFile, rm, writeFile } from 'fs/promises'
 import { existsSync, realpathSync } from 'fs'
 import path from 'path'
 import os from 'os'
@@ -49,6 +49,24 @@ describe('WorktreeManager', () => {
     expect(wt1.worktreePath).not.toBe(wt2.worktreePath)
     expect(existsSync(wt1.worktreePath)).toBe(true)
     expect(existsSync(wt2.worktreePath)).toBe(true)
+  })
+
+  it('creates a worktree from an explicit base branch and preserves the legacy path when omitted', async () => {
+    const baseBranch = `session-base-${Date.now()}`
+
+    execSync(`git checkout -b "${baseBranch}"`, { cwd: repoDir })
+    await writeFile(path.join(repoDir, 'marker.txt'), 'unique base branch marker\n')
+    execSync('git add marker.txt && git commit -m "add marker"', { cwd: repoDir })
+    execSync('git checkout main', { cwd: repoDir })
+
+    const basedWorktree = await manager.create('task-1', baseBranch)
+    const legacyWorktree = await manager.create('task-2')
+
+    await expect(readFile(path.join(basedWorktree.worktreePath, 'marker.txt'), 'utf8')).resolves.toBe(
+      'unique base branch marker\n'
+    )
+    expect(existsSync(path.join(legacyWorktree.worktreePath, 'marker.txt'))).toBe(false)
+    expect(existsSync(path.join(legacyWorktree.worktreePath, 'README.md'))).toBe(true)
   })
 
   it('squash merges a worktree back into the work branch', async () => {
