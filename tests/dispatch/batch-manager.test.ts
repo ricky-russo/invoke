@@ -33,7 +33,7 @@ const mockEngine = {
 } as unknown as DispatchEngine
 
 const mockWorktreeManager = {
-  create: vi.fn().mockImplementation(async (taskId: string) => ({
+  create: vi.fn().mockImplementation(async (taskId: string, _baseBranch?: string) => ({
     taskId,
     worktreePath: `/tmp/wt-${taskId}`,
     branch: `invoke-wt-${taskId}`,
@@ -1003,6 +1003,30 @@ describe('BatchManager with state persistence', () => {
       result_summary: mockResult.output.summary,
       result_status: mockResult.status,
     })
+  })
+
+  it('passes the session work branch to each worktree creation when available', async () => {
+    persistedState = {
+      ...persistedState,
+      work_branch: 'invoke/work/session-A',
+    }
+
+    const batchId = await statefulManager.dispatchBatch({
+      tasks: [
+        { taskId: 'task-2', role: 'builder', subrole: 'default', taskContext: {} },
+        { taskId: 'task-3', role: 'builder', subrole: 'default', taskContext: {} },
+      ],
+      createWorktrees: true,
+      sessionId: 'session-A',
+    })
+
+    await vi.waitFor(() => {
+      expect(statefulManager.getStatus(batchId)!.status).toBe('completed')
+    }, { timeout: 3000 })
+
+    expect(mockWorktreeManager.create).toHaveBeenNthCalledWith(1, 'task-2', 'invoke/work/session-A')
+    expect(mockWorktreeManager.create).toHaveBeenNthCalledWith(2, 'task-3', 'invoke/work/session-A')
+    expect((stateManager.get as any)).toHaveBeenCalledTimes(2)
   })
 
   it('derives batch index from persisted state instead of an instance counter', async () => {
