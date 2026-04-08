@@ -119,15 +119,17 @@ describe('ClaudeParser', () => {
       duration: 30000,
     })
 
-    const findings = result.output.findings as Array<{ out_of_scope: boolean }>
+    const findings = result.output.findings as Array<{ out_of_scope?: boolean }>
 
     expect(findings).toHaveLength(3)
     expect(findings[0].out_of_scope).toBe(false)
     expect(findings[1].out_of_scope).toBe(true)
-    expect(findings[2].out_of_scope).toBe(false)
+    // Reviewer omitted the field — parser preserves undefined to distinguish
+    // "reviewer said in-scope" (false) from "reviewer didn't say" (undefined)
+    expect(findings[2].out_of_scope).toBeUndefined()
   })
 
-  it('treats **Out-of-Scope:** YES as out_of_scope=true', () => {
+  it('treats **Out-of-Scope:** case-insensitively and trims whitespace', () => {
     const output = `## Security Review
 
 ### Finding 1
@@ -162,7 +164,7 @@ describe('ClaudeParser', () => {
       duration: 30000,
     })
 
-    const findings = result.output.findings as Array<{ out_of_scope: boolean }>
+    const findings = result.output.findings as Array<{ out_of_scope?: boolean }>
 
     expect(findings).toHaveLength(3)
     expect(findings[0].out_of_scope).toBe(true)

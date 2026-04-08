@@ -27,6 +27,7 @@ const ReviewCycleSchema = z.object({
     batch_id: z.number().optional(),
     scope: z.enum(['batch', 'final']).optional(),
     tier: z.string().optional(),
+    reviewed_sha: z.string().regex(/^[0-9a-f]{7,40}$/, 'reviewed_sha must be a 7-40 char lowercase hex SHA').optional(),
     triaged: z.object({
         accepted: z.array(z.any()),
         dismissed: z.array(z.any()),

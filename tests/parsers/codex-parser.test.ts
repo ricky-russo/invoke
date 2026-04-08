@@ -115,10 +115,12 @@ describe('CodexParser', () => {
     expect(result.output.findings).toHaveLength(3)
     expect(result.output.findings![0].out_of_scope).toBe(false)
     expect(result.output.findings![1].out_of_scope).toBe(true)
-    expect(result.output.findings![2].out_of_scope).toBe(false)
+    // Reviewer omitted the field — parser preserves undefined to distinguish
+    // "reviewer said in-scope" (false) from "reviewer didn't say" (undefined)
+    expect(result.output.findings![2].out_of_scope).toBeUndefined()
   })
 
-  it('treats **Out-of-Scope:** YES as out_of_scope=true', () => {
+  it('treats **Out-of-Scope:** case-insensitively and trims whitespace', () => {
     const output = `## Security Review
 
 ### Finding 1

@@ -74,6 +74,7 @@ Call `invoke_get_review_cycle_count` with `session_id: <pipeline_id>` to get an 
     1. [HIGH] src/auth/token.ts:42 — SQL injection
        Fix: Use parameterized queries
     ```
+    **Cap the checklist at 20 entries OR 4000 characters, whichever comes first.** If the prior cycle's accepted-and-in-scope findings exceed either limit, truncate and append a single overflow line: `(N more prior findings truncated — review the delta diff for full context)`. Prefer to filter the checklist to findings relevant to the current reviewer's specialty when reviewer-relevance metadata is available; otherwise use the natural order from `triaged.accepted`.
   - **If `reviewed_sha` is absent OR present but invalid** (rev-parse fails, diff fails for any reason): emit `⚠️ No prior review SHA — falling back to full diff`, use `git diff main...HEAD` as the diff, and set `priorFindings = '(prior cycle had no usable reviewed_sha — full diff being reviewed)'`.
 
 Both `specContext` and `priorFindings` **MUST** always be set to a non-empty string before dispatching — never `undefined`.
@@ -142,7 +143,7 @@ AskUserQuestion({
 })
 ```
 
-- **Log all (Recommended):** For each finding in `outOfScopeFindings`, call `invoke_report_bug` with `title` (from `finding.issue`), `description` (from `finding.suggestion`), `severity`, `file`, `line`, and `session_id`. Collect the returned bug IDs, store findings under `triaged.deferred`, and append bug IDs to `state.bug_ids` via `invoke_set_state`. Confirm: "Logged [N] out-of-scope findings as bugs: [BUG-NNN, ...]"
+- **Log all (Recommended):** For each finding in `outOfScopeFindings`, call `invoke_report_bug` with `title` (from `finding.issue`), `description` (from `finding.suggestion`), `severity`, `file`, `line`, and `session_id`. Collect the returned bug IDs, store findings under `triaged.deferred` (and mark them as already-logged so step 6.1's "Deferred Findings as Bugs" prompt does not re-offer them). To append bug IDs to `state.bug_ids`: first call `invoke_get_state` to read the existing `state.bug_ids` array, then call `invoke_set_state` with `bug_ids: [...existing, ...newBugIds]` (deduplicated). **Do NOT pass only the new bug IDs to `invoke_set_state` — `invoke_set_state` REPLACES top-level arrays, it does not merge them, so passing only the new IDs would silently drop any pre-existing pipeline bugs.** Confirm: "Logged [N] out-of-scope findings as bugs: [BUG-NNN, ...]"
 - **Override:** Clear `out_of_scope` on each overridden finding and merge them into `inScopeFindings` for normal triage in step 6.
 
 ### 6. User Triage
@@ -209,14 +210,22 @@ Each `review_cycle_update` follows this schema:
     }
   ],
   "triaged": {
-    "accepted": ["<finding-id>"],
-    "deferred": ["<finding-id>"],
-    "dismissed": ["<finding-id>"]
+    "accepted": [
+      {
+        "severity": "HIGH",
+        "file": "src/auth/token.ts",
+        "line": 42,
+        "issue": "SQL injection",
+        "suggestion": "Use parameterized queries"
+      }
+    ],
+    "deferred": [],
+    "dismissed": []
   }
 }
 ```
 
-`scope` is only set on final review cycles. `tier` is omitted in fallback mode. `agreed_by` is omitted when there is only one reviewer.
+`scope` is only set on final review cycles. `tier` is omitted in fallback mode. `agreed_by` is omitted when there is only one reviewer. **Each entry in `triaged.accepted`, `triaged.deferred`, and `triaged.dismissed` MUST be a full Finding object** (with `severity`, `file`, `line`, `issue`, `suggestion`, optional `out_of_scope`, optional `agreed_by`), NOT just an ID — substep 3.3 of the next cycle reads these objects to render the prior-findings checklist.
 
 ### Deferred Findings as Bugs
 
