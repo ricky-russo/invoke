@@ -183,6 +183,17 @@ After the user completes triage, if any findings were **deferred** (the user agr
 
 **Dismissed findings are not logged as bugs.** Dismissal means the finding is not actually a problem and requires no follow-up.
 
+### 6.5 Fixup Target Resolution
+
+Before dispatching fix tasks, resolve the commit each fix should fold into. This lets step 7 pass `commit_message: 'fixup! <original-title>'` to `invoke_merge_worktree` so the end-of-review autosquash (step 8.5) can collapse the fix into its originating task commit.
+
+1. Read `config.settings.commit_style` via `invoke_get_config`. Default to `'per-task'` if unset.
+2. Read pipeline state via `invoke_get_state({ session_id: <pipeline_id> })`.
+3. Build a flat lookup table `taskCommitSha` — for each batch in `state.batches`, for each task in `batch.tasks`, if `task.commit_sha` exists, record `taskCommitSha[task.id] = task.commit_sha`. For `per-batch` mode where task commit_shas were replaced with the batch SHA during build, this lookup still works because each task in the batch carries the batch SHA.
+4. For each accepted finding, determine its originating task — the skill already tracks which task each finding came from during triage. Then:
+   - If `originalTaskId` is set and appears in `taskCommitSha`, call `invoke_get_commit_title({ session_id: <pipeline_id>, commit_sha: taskCommitSha[originalTaskId] })` to look up the commit's title on the session work branch. Store `finding.fixup_target_sha` and `finding.fixup_target_title` on the finding for step 7.
+   - If not (missing `commit_sha`, legacy pipeline with no work branch, or the finding spans multiple original tasks), store `None` for both. Cross-task findings MUST be split into per-task fix tasks before dispatch — one fix task per originating task — so each resulting fix has a single fixup target. If a finding is genuinely cross-cutting and unsplittable, leave the target unresolved; step 7 will dispatch it as a normal (non-fixup) commit and it will remain visible after autosquash.
+
 ### 7. Auto-Fix Accepted Findings
 
 **ALWAYS dispatch builder agents for fixes — NEVER fix code directly in the session.** Fixing directly bypasses the pipeline (no worktrees, no state tracking, no validation).
@@ -201,6 +212,28 @@ Call `invoke_get_batch_status` with `{ batch_id, session_id: <pipeline_id> }` �
 When any fix task transitions to a terminal state (`completed`, `error`, or `timeout`), call `invoke_get_task_result({ batch_id, task_id, session_id: <pipeline_id> })` for that task to fetch its full result. Use `result.output` to decide whether to merge, retry, or skip that task — do not make merge or retry decisions before the result is fetched. **Never call `invoke_get_task_result` for tasks still `pending`, `dispatched`, or `running` — the tool errors for non-terminal tasks.**
 
 Once a fix task's result indicates success, call `invoke_merge_worktree` for that task, then call `invoke_run_post_merge` before merging the next task. Never merge two fix tasks back-to-back without running `invoke_run_post_merge` between them.
+
+When calling `invoke_merge_worktree`, pick the `commit_message` based on `commit_style` and whether step 6.5 resolved a fixup target for this finding:
+
+```
+finding = finding_for(fix_task.id)
+
+if commit_style == 'per-task' and finding.fixup_target_title:
+  commit_message = 'fixup! ' + finding.fixup_target_title
+elif commit_style == 'per-task':
+  commit_message = 'feat: ' + fix_task.id        # no target resolved — land as own commit
+elif commit_style in ('one-commit', 'per-batch') and finding.fixup_target_title:
+  commit_message = 'fixup! ' + finding.fixup_target_title
+elif commit_style in ('one-commit', 'per-batch'):
+  commit_message = 'feat: ' + fix_task.id
+elif commit_style == 'custom':
+  commit_message = None                           # pass-through; invoke_merge_worktree uses its default
+
+invoke_merge_worktree({ task_id: fix_task.id, session_id: <pipeline_id>, commit_message })
+invoke_run_post_merge({ session_id: <pipeline_id> })
+```
+
+Record the fix task's returned `commit_sha` via `batch_update.tasks` the same way build merges do — this is only needed for tracking/debugging since fix commits are typically folded by step 8.5.
 
 The same polling pattern — `invoke_get_batch_status` to track status, `invoke_get_task_result` for terminal tasks, `invoke_merge_worktree` + `invoke_run_post_merge` between merges — applies to any subsequent fix dispatches triggered during nested same-tier re-review cycles.
 
@@ -227,6 +260,42 @@ If `review_tiers` is NOT configured, keep the current behavior:
 If another cycle: loop back to step 3.
 If satisfied: proceed to completion.
 
+### 8.5 Autosquash Session / Commit-Style Collapse
+
+After ALL review cycles are finished and EVERY accepted finding has been merged, fold `fixup!` fix commits into their originating task commits (or collapse everything per the commit_style setting). Run this step exactly once, before transitioning state to `complete`.
+
+Read `commit_style` from config (same value as step 6.5 used):
+
+```
+fold_result = None  # for step 9 summary
+
+if commit_style == 'one-commit':
+  # Collapse the entire session branch (all tasks + all review fixes) into a single commit.
+  # Determine the base SHA the session branched from:
+  base_sha = git merge-base <state.base_branch> HEAD   # on state.work_branch_path
+  result = invoke_collapse_commits({
+    session_id: <pipeline_id>,
+    base_sha: base_sha,
+    message: 'feat: ' + (spec_title_or_pipeline_id),
+  })
+  fold_result = 'Collapsed pipeline into single commit ' + result.commit_sha
+
+elif commit_style == 'custom':
+  fold_result = 'commit_style=custom; leaving commits untouched.'
+
+else:
+  # per-task and per-batch: absorb fixup! commits into their target commits
+  result = invoke_autosquash_session({ session_id: <pipeline_id> })
+  if result.status == 'ok':
+    fold_result = 'Folded ' + result.fixups_absorbed + ' review fixes into ' + result.commits_after + ' task commits'
+  elif result.status == 'not_supported':
+    fold_result = 'Legacy session — autosquash skipped; review fix commits remain on work branch.'
+  elif result.status == 'conflict_aborted':
+    fold_result = 'Autosquash aborted: ' + result.message + '. Review fix commits remain on work branch. Conflicting files: ' + result.conflicting_files.join(', ')
+```
+
+Print `fold_result` immediately so the user sees it during the run. Step 9's final summary also includes it so the user can reference it after the fact. `conflict_aborted` is a non-blocking warning — the pipeline continues to `complete` normally, and the user can inspect the work branch manually to resolve any residual fix commits.
+
 ### 9. Complete Pipeline
 
 Use the same slug from the spec/plan filenames. Save the review history using `invoke_save_artifact`:
@@ -251,7 +320,7 @@ After saving the review history, update context.md to record what was built:
    - `mode: "append"`
    - `content: "\n- [finding summary] (deferred from pipeline [id])"`
 
-At pipeline completion, call `invoke_get_metrics` with `session_id: <pipeline_id>` and print a usage summary:
+At pipeline completion, call `invoke_get_metrics` with `session_id: <pipeline_id>` and print a usage summary, then print the fold result from step 8.5:
 
 ```
 📊 Pipeline Usage Summary
@@ -260,9 +329,19 @@ At pipeline completion, call `invoke_get_metrics` with `session_id: <pipeline_id
    ├─ By provider: claude ([N]), codex ([N])
    ├─ Total prompt chars: [N]
    └─ Total duration: [N]s
+
+📝 Commit fold: [fold_result from step 8.5]
 ```
 
-Get this data from `invoke_get_metrics`: use `summary.total_dispatches`, `summary.total_prompt_chars`, `summary.total_duration_ms`, and `summary.by_stage`; convert `summary.total_duration_ms` to seconds for the final line; aggregate `entries` by `provider` for the provider line; print `0` for any missing stage before rendering the summary.
+Example `fold_result` values:
+- `Folded 3 review fixes into 5 task commits` — per-task/per-batch autosquash succeeded
+- `Folded 0 review fixes into 5 task commits` — no fix commits needed folding (clean run)
+- `Collapsed pipeline into single commit abc1234` — one-commit mode
+- `commit_style=custom; leaving commits untouched.` — custom mode
+- `Autosquash aborted: <git error>. Review fix commits remain on work branch. Conflicting files: <files>` — conflict fallback
+- `Legacy session — autosquash skipped; review fix commits remain on work branch.` — legacy pipeline
+
+Get the metrics data from `invoke_get_metrics`: use `summary.total_dispatches`, `summary.total_prompt_chars`, `summary.total_duration_ms`, and `summary.by_stage`; convert `summary.total_duration_ms` to seconds for the final line; aggregate `entries` by `provider` for the provider line; print `0` for any missing stage before rendering the summary.
 
 ### 10. Commit Strategy
 
