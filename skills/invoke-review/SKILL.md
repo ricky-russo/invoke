@@ -50,13 +50,42 @@ Skip any named tier that is not configured. `polish` is optional even when confi
 
 Before dispatching reviewers, call `invoke_get_review_cycle_count` with the `session_id`. If the count meets or exceeds the configured `max_review_cycles`, inform the user: "Review cycle limit reached ([count]/[max]). Findings from this point will be advisory only — no further fix cycles will be dispatched." This is the same guard rail used in invoke-build for inter-batch review. When the limit is reached, findings are advisory only. Do NOT dispatch builder fix agents or re-review loops. Present the findings to the user but skip steps 7 (Auto-Fix) and 8 (Next Cycle fix loops). The user can still read and act on findings manually.
 
+### Pre-Dispatch Preparation
+
+Before dispatching reviewers, complete these three substeps in order.
+
+**3.1 Read Spec Context**
+
+Read `state.spec` from pipeline state. Call `invoke_read_artifact({ stage: 'specs', filename: <basename of state.spec> })` to load the spec text. Hard-truncate to 4000 characters; if truncated, append `\n\n(spec truncated at 4000 chars)`. Store the result as `specContext`. If the read fails, set `specContext = '(spec unavailable for this cycle)'` and emit: `⚠️ Spec artifact not found — reviewers will not have scope context this cycle`.
+
+**3.2 Capture Current SHA**
+
+Run `git rev-parse HEAD` in the session worktree. Store the result as `currentSha`. This SHA will be persisted on the `review_cycle_update` in step 6 so that cycle 2+ can compute a delta diff.
+
+**3.3 Detect Cycle and Compute Prior Findings**
+
+Call `invoke_get_review_cycle_count` with `session_id: <pipeline_id>` to get an overall count, but **do not use that count alone to decide cycle 1 vs cycle ≥ 2**. Instead, look up the most recent prior `ReviewCycle` whose `batch_id` matches the current dispatch `batch_id` AND whose `scope` matches the current review `scope` AND (in tiered mode) whose `tier` matches the current `tier`. Only an exact match on all three keys triggers the cycle ≥ 2 path. A non-empty `state.review_cycles` from earlier or unrelated batches does NOT.
+
+- **No matching prior cycle (treat as cycle 1):** Set `priorFindings = '(first review cycle — no prior findings)'`. Use the full `git diff main...HEAD` (or `git diff $(git merge-base HEAD main)...HEAD`) as the diff.
+
+- **Matching prior cycle exists (cycle ≥ 2):** Read its `reviewed_sha`.
+  - If `reviewed_sha` is present AND `git rev-parse --verify <reviewed_sha>^{commit}` succeeds AND `git diff <reviewed_sha>...HEAD` succeeds: use the delta diff as the diff. Build `priorFindings` as a numbered checklist of that cycle's `triaged.accepted` findings, **excluding any with `out_of_scope === true`**:
+    ```
+    1. [HIGH] src/auth/token.ts:42 — SQL injection
+       Fix: Use parameterized queries
+    ```
+    **Cap the checklist at 20 entries OR 4000 characters, whichever comes first.** If the prior cycle's accepted-and-in-scope findings exceed either limit, truncate and append a single overflow line: `(N more prior findings truncated — review the delta diff for full context)`. Prefer to filter the checklist to findings relevant to the current reviewer's specialty when reviewer-relevance metadata is available; otherwise use the natural order from `triaged.accepted`.
+  - **If `reviewed_sha` is absent OR present but invalid** (rev-parse fails, diff fails for any reason): emit `⚠️ No prior review SHA — falling back to full diff`, use `git diff main...HEAD` as the diff, and set `priorFindings = '(prior cycle had no usable reviewed_sha — full diff being reviewed)'`.
+
+Both `specContext` and `priorFindings` **MUST** always be set to a non-empty string before dispatching — never `undefined`.
+
 ### 4. Dispatch Reviewers
 
 Dispatch either the selected reviewers from the fallback flow or the reviewers from the current tier using `invoke_dispatch_batch`:
 - `create_worktrees: false` (reviewers don't modify code)
-- `task_context: { task_description: "<what was built — summary from plan>", diff: "<git diff of all changes>" }`
+- `task_context: { task_description: "<what was built — summary from plan>", diff: "<delta diff or full diff per step 3.3>", scope: specContext, prior_findings: priorFindings }`
 
-Get the diff using `git diff main...HEAD` (or `git diff $(git merge-base HEAD main)...HEAD` if the base branch is not main). This shows all changes on the work branch relative to the base.
+Use the diff computed in step 3.3 (delta diff for cycle ≥ 2 when `reviewed_sha` is available, full `git diff main...HEAD` for cycle 1 or when no prior SHA exists). `scope` and `prior_findings` MUST always be the strings resolved in pre-dispatch steps 3.1 and 3.3 — never `undefined`.
 
 Check the batch response before moving on. It includes `dispatch_estimate`, and may include `warning` when the projected usage is approaching or exceeding `max_dispatches`. Surface that warning to the user as an advisory notice before the dispatch summary and status polling.
 
@@ -85,14 +114,48 @@ When using tiered review, prefix the reviewer heading with the tier name: `### C
 In tiered review, include the tier name in the heading so the user can see which gate is being evaluated, for example:
 > **Critical Tier — Security Review** (3 findings)
 
+### 5.1 Partition Out-of-Scope Findings
+
+Before triage, partition all findings:
+
+- **`inScopeFindings`** — findings where `out_of_scope !== true`
+- **`outOfScopeFindings`** — findings where `out_of_scope === true`
+
+In the step 5 output, show only `inScopeFindings` in the reviewer-grouped sections. Append a separate section at the end for out-of-scope findings:
+
+> **📋 Out-of-Scope (will be logged as bugs)**
+> 1. [HIGH] src/legacy/module.ts:88 — Hard-coded API key
+>    Suggestion: Move to environment variable
+
+**Out-of-scope confirmation** — if `outOfScopeFindings.length > 0`, ask before the standard triage question:
+
+```
+AskUserQuestion({
+  questions: [{
+    question: '[N] findings were flagged as out-of-scope. How would you like to handle them?',
+    header: 'Out-of-scope findings',
+    multiSelect: false,
+    options: [
+      { label: 'Log all N out-of-scope findings as bugs (Recommended)', description: 'Auto-defer and log each as a tracked bug for later' },
+      { label: 'Override — triage them manually', description: 'Clear the out-of-scope flag and include them in normal triage' }
+    ]
+  }]
+})
+```
+
+- **Log all (Recommended):** For each finding in `outOfScopeFindings`, call `invoke_report_bug` with `title` (from `finding.issue`), `description` (from `finding.suggestion`), `severity`, `file`, `line`, and `session_id`. Collect the returned bug IDs, store findings under `triaged.deferred` (and mark them as already-logged so step 6.1's "Deferred Findings as Bugs" prompt does not re-offer them). To append bug IDs to `state.bug_ids`: first call `invoke_get_state` to read the existing `state.bug_ids` array, then call `invoke_set_state` with `bug_ids: [...existing, ...newBugIds]` (deduplicated). **Do NOT pass only the new bug IDs to `invoke_set_state` — `invoke_set_state` REPLACES top-level arrays, it does not merge them, so passing only the new IDs would silently drop any pre-existing pipeline bugs.** Confirm: "Logged [N] out-of-scope findings as bugs: [BUG-NNN, ...]"
+- **Override:** Clear `out_of_scope` on each overridden finding and merge them into `inScopeFindings` for normal triage in step 6.
+
 ### 6. User Triage
+
+The following triage operates on **`inScopeFindings` only**. Out-of-scope findings were handled in step 5.1 and are excluded from the count below.
 
 THEN, in a separate message, ask the user how to handle the findings using `AskUserQuestion`. Always offer bulk options first:
 
 ```
 AskUserQuestion({
   questions: [{
-    question: "[N] findings from [M] reviewers[ in the <tier name> tier]. How would you like to proceed?",
+    question: "[N] in-scope findings from [M] reviewers[ in the <tier name> tier]. How would you like to proceed?",
     header: "Review triage",
     multiSelect: false,
     options: [
@@ -123,7 +186,7 @@ AskUserQuestion({
 })
 ```
 
-After triage, record the review cycle using `invoke_set_state` with `session_id: <pipeline_id>` and `review_cycle_update`. First call `invoke_get_review_cycle_count` with `session_id: <pipeline_id>` to read the current count; use `count + 1` as the new monotonic `id`. Save the reviewers, findings, and triage result (`accepted` / `deferred` / `dismissed`). For tiered review cycles, include `tier: "<tier name>"`. In fallback mode, leave `tier` unset. For final review cycles in this stage, include `scope: 'final'`.
+After triage, record the review cycle using `invoke_set_state` with `session_id: <pipeline_id>` and `review_cycle_update`. First call `invoke_get_review_cycle_count` with `session_id: <pipeline_id>` to read the current count; use `count + 1` as the new monotonic `id`. Save the reviewers, findings, and triage result (`accepted` / `deferred` / `dismissed`). For tiered review cycles, include `tier: "<tier name>"`. In fallback mode, leave `tier` unset. For final review cycles in this stage, include `scope: 'final'`. Always include `reviewed_sha: currentSha` (the SHA captured in pre-dispatch step 3.2) on every cycle.
 
 Each `review_cycle_update` follows this schema:
 
@@ -133,6 +196,7 @@ Each `review_cycle_update` follows this schema:
   "reviewers": ["<subrole>"],
   "scope": "final",
   "batch_id": "<batch-id>",
+  "reviewed_sha": "<git sha at time of dispatch>",
   "tier": "critical",
   "findings": [
     {
@@ -146,14 +210,22 @@ Each `review_cycle_update` follows this schema:
     }
   ],
   "triaged": {
-    "accepted": ["<finding-id>"],
-    "deferred": ["<finding-id>"],
-    "dismissed": ["<finding-id>"]
+    "accepted": [
+      {
+        "severity": "HIGH",
+        "file": "src/auth/token.ts",
+        "line": 42,
+        "issue": "SQL injection",
+        "suggestion": "Use parameterized queries"
+      }
+    ],
+    "deferred": [],
+    "dismissed": []
   }
 }
 ```
 
-`scope` is only set on final review cycles. `tier` is omitted in fallback mode. `agreed_by` is omitted when there is only one reviewer.
+`scope` is only set on final review cycles. `tier` is omitted in fallback mode. `agreed_by` is omitted when there is only one reviewer. **Each entry in `triaged.accepted`, `triaged.deferred`, and `triaged.dismissed` MUST be a full Finding object** (with `severity`, `file`, `line`, `issue`, `suggestion`, optional `out_of_scope`, optional `agreed_by`), NOT just an ID — substep 3.3 of the next cycle reads these objects to render the prior-findings checklist.
 
 ### Deferred Findings as Bugs
 
@@ -187,6 +259,8 @@ After the user completes triage, if any findings were **deferred** (the user agr
 
 **ALWAYS dispatch builder agents for fixes — NEVER fix code directly in the session.** Fixing directly bypasses the pipeline (no worktrees, no state tracking, no validation).
 
+Out-of-scope findings were never added to `triaged.accepted`, so the dispatch loop below automatically excludes them.
+
 Bundle accepted findings as fix tasks. For each finding, create a task:
 - `task_description`: the finding details + suggestion
 - `acceptance_criteria`: the specific fix expected
@@ -210,7 +284,7 @@ In tiered review, when accepted findings came from a tier, re-review that same t
 
 If `review_tiers` is configured, run staged tiered review:
 
-A finding is **unresolved** if it has been accepted (triaged into the accepted list) but not yet fixed by a builder. A finding is **resolved** if it has been fixed or dismissed. Do not count dismissed findings when checking whether a tier has unresolved critical/high findings.
+A finding is **unresolved** if it has been accepted (triaged into the accepted list) but not yet fixed by a builder. A finding is **resolved** if it has been fixed or dismissed. Do not count dismissed findings when checking whether a tier has unresolved critical/high findings. **Out-of-scope findings are also excluded from this count** — only in-scope findings determine whether a tier has unresolved critical/high findings blocking tier progression.
 
 1. `critical` tier: dispatch only the configured critical-tier reviewers first (for example, `spec-compliance` and `security` when those reviewers are configured). Present findings, let the user triage them, record the cycle with `tier: "critical"`, and fix any accepted findings by dispatching builders. After fixes merge and validate, re-review the `critical` tier only. Do NOT start the `quality` tier until the latest critical-tier cycle has no unresolved `critical` or `high` findings after triage and any accepted fixes have been re-reviewed.
 2. `quality` tier: once the critical tier clears, dispatch only the configured quality-tier reviewers (for example, `code-quality` and `performance`). Use the same triage -> fix -> same-tier re-review loop. Do NOT proceed past quality until the current quality-tier cycle has no unresolved accepted findings remaining.

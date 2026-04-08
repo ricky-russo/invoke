@@ -38618,13 +38618,17 @@ var ClaudeParser = class {
       const lineStr = this.extractField(block, "Line");
       const issue2 = this.extractField(block, "Issue");
       const suggestion = this.extractField(block, "Suggestion");
+      const outOfScopeRaw = this.extractField(block, "Out-of-Scope");
       if (severity && file2 && issue2 && suggestion) {
         findings.push({
           severity: this.normalizeSeverity(severity),
           file: file2,
           line: lineStr ? parseInt(lineStr, 10) : void 0,
           issue: issue2,
-          suggestion
+          suggestion,
+          ...outOfScopeRaw != null && {
+            out_of_scope: outOfScopeRaw.toLowerCase().trim() === "yes"
+          }
         });
       }
     }
@@ -38685,13 +38689,17 @@ var CodexParser = class {
       const lineStr = this.extractField(block, "Line");
       const issue2 = this.extractField(block, "Issue");
       const suggestion = this.extractField(block, "Suggestion");
+      const outOfScopeRaw = this.extractField(block, "Out-of-Scope");
       if (severity && file2 && issue2 && suggestion) {
         findings.push({
           severity: this.normalizeSeverity(severity),
           file: file2,
           line: lineStr ? parseInt(lineStr, 10) : void 0,
           issue: issue2,
-          suggestion
+          suggestion,
+          ...outOfScopeRaw != null && {
+            out_of_scope: outOfScopeRaw.toLowerCase().trim() === "yes"
+          }
         });
       }
     }
@@ -42527,6 +42535,7 @@ var ReviewCycleSchema = external_exports3.object({
   batch_id: external_exports3.number().optional(),
   scope: external_exports3.enum(["batch", "final"]).optional(),
   tier: external_exports3.string().optional(),
+  reviewed_sha: external_exports3.string().regex(/^[0-9a-f]{7,40}$/, "reviewed_sha must be a 7-40 char lowercase hex SHA").optional(),
   triaged: external_exports3.object({
     accepted: external_exports3.array(external_exports3.any()),
     dismissed: external_exports3.array(external_exports3.any()),

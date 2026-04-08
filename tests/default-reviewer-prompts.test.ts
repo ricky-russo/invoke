@@ -106,6 +106,17 @@ describe('default reviewer prompts', () => {
     expect(content).toContain('**Line:**')
     expect(content).toContain('**Issue:**')
     expect(content).toContain('**Suggestion:**')
+    expect(content).toContain('## Scope')
+    expect(content).toContain('{{scope}}')
+    expect(content).toContain('## Prior Findings')
+    expect(content).toContain('{{prior_findings}}')
+    expect(content).toContain('**Out-of-Scope:**')
+    // Anti-prompt-injection sentinel wrappers around untrusted template content
+    expect(content).toContain('<<<SCOPE_DATA_START>>>')
+    expect(content).toContain('<<<SCOPE_DATA_END>>>')
+    expect(content).toContain('<<<PRIOR_FINDINGS_DATA_START>>>')
+    expect(content).toContain('<<<PRIOR_FINDINGS_DATA_END>>>')
+    expect(content).toContain('untrusted data')
     expect(content).toContain(nothingFound)
 
     for (const antiPattern of antiPatterns) {
@@ -118,5 +129,17 @@ describe('default reviewer prompts', () => {
 
     const doNotMatches = content.match(/^- DO NOT /gm) ?? []
     expect(doNotMatches.length).toBeGreaterThanOrEqual(3)
+  })
+
+  // Drift guard: the runtime reviewer dispatch path reads from .invoke/roles/reviewer/,
+  // not defaults/. If the .invoke/ tree drifts from defaults/, this dogfeeding repo's
+  // reviews silently regress on every change. This test asserts byte-for-byte equality
+  // between the two trees so any drift breaks CI immediately.
+  it.each(REVIEWER_PROMPTS)('.invoke/ reviewer prompt is byte-for-byte identical to defaults/: $file', async ({ file }) => {
+    const defaultsPath = path.join(import.meta.dirname, '..', 'defaults', 'roles', 'reviewer', file)
+    const invokePath = path.join(import.meta.dirname, '..', '.invoke', 'roles', 'reviewer', file)
+    const defaultsContent = await readFile(defaultsPath, 'utf-8')
+    const invokeContent = await readFile(invokePath, 'utf-8')
+    expect(invokeContent).toBe(defaultsContent)
   })
 })
