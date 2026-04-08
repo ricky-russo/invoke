@@ -49,7 +49,7 @@ Write tests that exercise real behavior across component boundaries. Cover the p
 3. Add or update integration tests in the most appropriate existing test location.
 4. Reuse existing setup only when it keeps the assertions explicit and the behavior under test visible.
 5. Run the relevant tests and fix failures caused by the new coverage.
-6. Commit your work with a clear, descriptive message.
+6. Do not run `git commit`. Stage your work if convenient (`git add`), but invoke will commit on your behalf after the task succeeds.
 
 ## Output Format
 

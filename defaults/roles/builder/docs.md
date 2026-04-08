@@ -62,3 +62,7 @@ When complete, report:
 - What sections were added or updated in each file.
 - The source code `file:line` citations that support the documented claims.
 - If no documentation changes were needed, a clear statement saying no updates were necessary and why.
+
+## IMPORTANT
+
+Do not run `git commit`. Stage your work if convenient (`git add`), but invoke will commit on your behalf after the task succeeds.

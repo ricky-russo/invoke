@@ -50,7 +50,7 @@ Implement this task completely and correctly:
 2. Follow the build strategy instructions provided below (if any).
 3. Implement the feature to meet all acceptance criteria.
 4. Verify your implementation works by running tests.
-5. Commit your work with a clear, descriptive message.
+5. Do not run `git commit`. Stage your work if convenient (`git add`), but invoke will commit on your behalf after the task succeeds.
 
 ## Rules
 
