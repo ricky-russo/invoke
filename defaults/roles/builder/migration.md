@@ -27,7 +27,7 @@ Implement this migration completely and safely:
 6. Verify the migration with realistic data volumes and representative states. Do not rely on empty-table assumptions.
 7. Document rollback procedures before finishing.
 8. Verify your implementation works by running tests.
-9. Commit your work with a clear, descriptive message.
+9. Do not run `git commit`. Stage your work if convenient (`git add`), but invoke will commit on your behalf after the task succeeds.
 
 ## Behavioral Guardrails
 

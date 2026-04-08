@@ -19,6 +19,7 @@ const mocks = vi.hoisted(() => ({
   registerSessionTools: vi.fn(),
   registerComparisonTools: vi.fn(),
   registerBugTools: vi.fn(),
+  registerRebaseTools: vi.fn(),
   checkForNewDefaults: vi.fn(),
   writeFile: vi.fn(),
   serverInstances: [] as any[],
@@ -237,6 +238,10 @@ vi.mock('../src/tools/bug-tools.js', () => ({
   registerBugTools: mocks.registerBugTools,
 }))
 
+vi.mock('../src/tools/rebase-tools.js', () => ({
+  registerRebaseTools: mocks.registerRebaseTools,
+}))
+
 vi.mock('../src/defaults-checker.js', () => ({
   checkForNewDefaults: mocks.checkForNewDefaults,
 }))
@@ -313,6 +318,7 @@ describe('index bootstrap', () => {
       expect(mocks.registerComparisonTools).toHaveBeenCalledTimes(1)
       expect(mocks.registerStateTools).toHaveBeenCalledTimes(1)
       expect(mocks.registerBugTools).toHaveBeenCalledTimes(1)
+      expect(mocks.registerRebaseTools).toHaveBeenCalledTimes(1)
     })
 
     const server = mocks.serverInstances[0]
@@ -360,6 +366,7 @@ describe('index bootstrap', () => {
     expect(bugManager.projectDir).toBe(process.cwd())
     expect(mocks.registerStateTools).toHaveBeenCalledWith(server, stateManager, process.cwd(), sessionManager)
     expect(mocks.registerBugTools).toHaveBeenCalledWith(server, bugManager)
+    expect(mocks.registerRebaseTools).toHaveBeenCalledWith(server, sessionManager, process.cwd())
     expect(console.error).toHaveBeenCalledWith('Migrated legacy state to session: session-123')
   })
 

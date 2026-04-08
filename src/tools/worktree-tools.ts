@@ -1,37 +1,10 @@
-import { realpathSync } from 'fs'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
 import type { SessionManager } from '../session/manager.js'
 import type { WorktreeManager } from '../worktree/manager.js'
 import type { InvokeConfig } from '../types.js'
-import { isSafeSessionWorkBranchPath } from '../worktree/trusted-session-helpers.js'
 import { runPostMergeCommands } from './post-merge.js'
-import { StateManager } from './state.js'
-
-async function resolveSessionWorkBranchPath(
-  sessionManager: SessionManager,
-  projectDir: string | undefined,
-  sessionId?: string
-): Promise<string | undefined> {
-  if (!sessionId) return undefined
-  if (!projectDir) {
-    throw new Error('Project directory is required when session_id is provided')
-  }
-
-  const sessionDir = sessionManager.resolve(sessionId)
-  const stateManager = new StateManager(projectDir, sessionDir)
-  const state = await stateManager.get()
-  const workBranchPath = state?.work_branch_path
-
-  if (workBranchPath === undefined) return undefined
-  if (!isSafeSessionWorkBranchPath(workBranchPath, projectDir)) {
-    throw new Error(
-      `Refusing to use unsafe session work branch path for session '${sessionId}'`
-    )
-  }
-
-  return realpathSync(workBranchPath)
-}
+import { resolveSessionWorkBranchPath } from './session-path.js'
 
 export function registerWorktreeTools(
   server: McpServer,
@@ -96,7 +69,14 @@ export function registerWorktreeTools(
         }
         await worktreeManager.cleanup(task_id)
         return {
-          content: [{ type: 'text', text: JSON.stringify({ task_id, status: 'merged' }) }],
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
+              task_id,
+              status: 'merged',
+              commit_sha: result.commitSha,
+            }),
+          }],
         }
       } catch (err) {
         return {

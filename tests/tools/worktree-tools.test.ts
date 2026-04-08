@@ -104,11 +104,14 @@ describe('registerWorktreeTools', () => {
   async function createSafeSessionWorktreePath(
     sessionId: string,
     repoDir = projectDir
-  ): Promise<string> {
+  ): Promise<{ path: string; workBranch: string }> {
     const sessionWorktreeManager = new SessionWorktreeManager(repoDir)
     const worktree = await sessionWorktreeManager.create(sessionId, 'invoke/sessions', 'main')
     tempDirs.push(worktree.worktreePath)
-    return realpathSync(worktree.worktreePath)
+    return {
+      path: realpathSync(worktree.worktreePath),
+      workBranch: worktree.workBranch,
+    }
   }
 
   beforeEach(async () => {
@@ -150,9 +153,15 @@ describe('registerWorktreeTools', () => {
   })
 
   it('resolves session work_branch_path and passes it as mergeTargetPath', async () => {
-    const worktreePath = await createSafeSessionWorktreePath('session-1')
-    await writeSessionState('session-1', createState({ work_branch_path: worktreePath }))
-    vi.mocked(worktreeManager.merge).mockResolvedValue({ status: 'merged' })
+    const { path: worktreePath, workBranch } = await createSafeSessionWorktreePath('session-1')
+    await writeSessionState('session-1', createState({
+      work_branch_path: worktreePath,
+      work_branch: workBranch,
+    }))
+    vi.mocked(worktreeManager.merge).mockResolvedValue({
+      status: 'merged',
+      commitSha: '0123456789abcdef0123456789abcdef01234567',
+    })
 
     registerWorktreeTools(server, worktreeManager, sessionManager, TEST_CONFIG, projectDir)
 
@@ -165,14 +174,21 @@ describe('registerWorktreeTools', () => {
       mergeTargetPath: worktreePath,
     })
     expect(worktreeManager.cleanup).toHaveBeenCalledWith('task-1')
-    expect(parseResponseText<{ task_id: string; status: string }>(result)).toEqual({
-      task_id: 'task-1',
-      status: 'merged',
-    })
+    const parsed = parseResponseText<{
+      task_id: string
+      status: string
+      commit_sha: string
+    }>(result)
+    expect(parsed.task_id).toBe('task-1')
+    expect(parsed.status).toBe('merged')
+    expect(parsed.commit_sha).toMatch(/^[0-9a-f]{40}$/)
   })
 
   it('merges into the repo dir when session_id is omitted', async () => {
-    vi.mocked(worktreeManager.merge).mockResolvedValue({ status: 'merged' })
+    vi.mocked(worktreeManager.merge).mockResolvedValue({
+      status: 'merged',
+      commitSha: '0123456789abcdef0123456789abcdef01234567',
+    })
 
     registerWorktreeTools(server, worktreeManager, sessionManager, TEST_CONFIG, projectDir)
 
@@ -184,7 +200,10 @@ describe('registerWorktreeTools', () => {
 
   it('falls back to the repo dir for legacy sessions without work_branch_path', async () => {
     await writeSessionState('legacy-session', createState())
-    vi.mocked(worktreeManager.merge).mockResolvedValue({ status: 'merged' })
+    vi.mocked(worktreeManager.merge).mockResolvedValue({
+      status: 'merged',
+      commitSha: '0123456789abcdef0123456789abcdef01234567',
+    })
 
     registerWorktreeTools(server, worktreeManager, sessionManager, TEST_CONFIG, projectDir)
 
@@ -225,8 +244,11 @@ describe('registerWorktreeTools', () => {
   })
 
   it('runs post-merge commands in the session worktree dir', async () => {
-    const worktreePath = await createSafeSessionWorktreePath('session-1')
-    await writeSessionState('session-1', createState({ work_branch_path: worktreePath }))
+    const { path: worktreePath, workBranch } = await createSafeSessionWorktreePath('session-1')
+    await writeSessionState('session-1', createState({
+      work_branch_path: worktreePath,
+      work_branch: workBranch,
+    }))
     postMergeMocks.runPostMergeCommands.mockReturnValue({
       commands: [{ command: 'npm install', success: true, output: 'ok' }],
     })
@@ -279,7 +301,7 @@ describe('registerWorktreeTools', () => {
   it('rejects invoke_merge_worktree when the session work_branch_path belongs to a different repo', async () => {
     const externalRepoDir = await createGitRepo('invoke-worktree-tools-external-')
     tempDirs.push(externalRepoDir)
-    const foreignWorktreePath = await createSafeSessionWorktreePath('foreign-session', externalRepoDir)
+    const { path: foreignWorktreePath } = await createSafeSessionWorktreePath('foreign-session', externalRepoDir)
     await writeSessionState('session-cross-repo', createState({ work_branch_path: foreignWorktreePath }))
 
     registerWorktreeTools(server, worktreeManager, sessionManager, TEST_CONFIG, projectDir)
@@ -299,7 +321,7 @@ describe('registerWorktreeTools', () => {
   it('rejects invoke_run_post_merge when the session work_branch_path belongs to a different repo', async () => {
     const externalRepoDir = await createGitRepo('invoke-worktree-tools-external-')
     tempDirs.push(externalRepoDir)
-    const foreignWorktreePath = await createSafeSessionWorktreePath('foreign-session', externalRepoDir)
+    const { path: foreignWorktreePath } = await createSafeSessionWorktreePath('foreign-session', externalRepoDir)
     await writeSessionState('session-cross-repo', createState({ work_branch_path: foreignWorktreePath }))
 
     registerWorktreeTools(server, worktreeManager, sessionManager, TEST_CONFIG, projectDir)

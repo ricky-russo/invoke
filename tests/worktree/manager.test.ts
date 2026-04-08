@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { WorktreeManager } from '../../src/worktree/manager.js'
 import { SessionWorktreeManager } from '../../src/worktree/session-worktree.js'
 import { withRepoLock } from '../../src/worktree/repo-lock.js'
-import { execSync } from 'child_process'
+import { execFileSync, execSync } from 'child_process'
 import { mkdtemp, rm, writeFile } from 'fs/promises'
 import { existsSync, realpathSync } from 'fs'
 import path from 'path'
@@ -58,13 +58,18 @@ describe('WorktreeManager', () => {
     await writeFile(path.join(wt.worktreePath, 'new-file.ts'), 'export const x = 1')
     execSync('git add . && git commit -m "add new file"', { cwd: wt.worktreePath })
 
-    await manager.merge('task-1')
+    const result = await manager.merge('task-1')
 
+    expect(result.status).toBe('merged')
+    expect(result.commitSha).toMatch(/^[0-9a-f]{40}$/)
     expect(existsSync(path.join(repoDir, 'new-file.ts'))).toBe(true)
 
     // Verify squash merge produces a single commit with the default message
     const log = execSync('git log --oneline -1', { cwd: repoDir }).toString().trim()
     expect(log).toContain('feat: task-1')
+
+    const headSha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repoDir }).toString().trim()
+    expect(result.commitSha).toBe(headSha)
 
     // Verify it is NOT a merge commit (squash merge has only one parent)
     const parentCount = execSync('git cat-file -p HEAD', { cwd: repoDir })
@@ -81,8 +86,10 @@ describe('WorktreeManager', () => {
     // Simulate agent writing a file without committing (sandbox restriction)
     await writeFile(path.join(wt.worktreePath, 'sandbox-file.ts'), 'export const z = 3')
 
-    await manager.merge('task-sandbox')
+    const result = await manager.merge('task-sandbox')
 
+    expect(result.status).toBe('merged')
+    expect(result.commitSha).toMatch(/^[0-9a-f]{40}$/)
     expect(existsSync(path.join(repoDir, 'sandbox-file.ts'))).toBe(true)
   })
 
@@ -93,8 +100,10 @@ describe('WorktreeManager', () => {
     await writeFile(path.join(wt.worktreePath, 'custom-file.ts'), 'export const y = 2')
     execSync('git add . && git commit -m "add custom file"', { cwd: wt.worktreePath })
 
-    await manager.merge('task-custom', { commitMessage: 'chore: my custom message' })
+    const result = await manager.merge('task-custom', { commitMessage: 'chore: my custom message' })
 
+    expect(result.status).toBe('merged')
+    expect(result.commitSha).toMatch(/^[0-9a-f]{40}$/)
     const log = execSync('git log --oneline -1', { cwd: repoDir }).toString().trim()
     expect(log).toContain('chore: my custom message')
   })
@@ -135,6 +144,7 @@ describe('WorktreeManager merge with custom target', () => {
       const result = await manager.merge('task-target', { mergeTargetPath: sessionWorktreePath })
 
       expect(result.status).toBe('merged')
+      expect(result.commitSha).toMatch(/^[0-9a-f]{40}$/)
       // File should be present in the session worktree, NOT in the main repo dir
       expect(existsSync(path.join(sessionWorktreePath, 'target-file.ts'))).toBe(true)
       expect(existsSync(path.join(repoDir, 'target-file.ts'))).toBe(false)
@@ -161,6 +171,7 @@ describe('WorktreeManager merge with custom target', () => {
     execSync('git add . && git commit -m "a changes shared"', { cwd: wt1.worktreePath })
     const r1 = await manager.merge('task-a')
     expect(r1.status).toBe('merged')
+    expect(r1.commitSha).toMatch(/^[0-9a-f]{40}$/)
 
     // Second worktree branched off the original base — its change to shared.ts will conflict
     const wt2 = await manager.create('task-b')
@@ -353,6 +364,7 @@ describe('WorktreeManager merge with custom target', () => {
     const dangerous = 'feat: $(echo pwned) and `whoami` "quoted" \\backslash'
     const result = await manager.merge('task-injection', { commitMessage: dangerous })
     expect(result.status).toBe('merged')
+    expect(result.commitSha).toMatch(/^[0-9a-f]{40}$/)
 
     const subject = execSync('git log -1 --pretty=%s', { cwd: repoDir }).toString().trim()
     expect(subject).toBe(dangerous)
@@ -374,6 +386,7 @@ describe('WorktreeManager merge with custom target', () => {
     const [mergeResult, cleanupResult] = await Promise.all([mergePromise, cleanupPromise])
 
     expect(mergeResult.status).toBe('merged')
+    expect(mergeResult.commitSha).toMatch(/^[0-9a-f]{40}$/)
     expect(cleanupResult).toBeUndefined()
 
     // After both: file landed in repoDir, worktree gone
@@ -436,7 +449,9 @@ describe('WorktreeManager mutex helpers', () => {
 
     for (const r of results) {
       expect(r.status).toBe('merged')
+      expect(r.commitSha).toMatch(/^[0-9a-f]{40}$/)
     }
+    expect(new Set(results.map(r => r.commitSha)).size).toBe(3)
 
     // All three files should be present in the main repo dir
     expect(existsSync(path.join(repoDir, 'm1.ts'))).toBe(true)

@@ -25910,8 +25910,8 @@ var require_resolve_flow_scalar = __commonJS({
     };
     function parseCharCode(source, offset, length, onError) {
       const cc = source.substr(offset, length);
-      const ok2 = cc.length === length && /^[0-9a-fA-F]+$/.test(cc);
-      const code = ok2 ? parseInt(cc, 16) : NaN;
+      const ok3 = cc.length === length && /^[0-9a-fA-F]+$/.test(cc);
+      const code = ok3 ? parseInt(cc, 16) : NaN;
       if (isNaN(code)) {
         const raw = source.substr(offset - 2, length + 2);
         onError(offset - 2, "BAD_DQ_ESCAPE", `Invalid escape sequence ${raw}`);
@@ -35932,7 +35932,7 @@ var Protocol = class {
     const capturedTransport = this._transport;
     const relatedTaskId = request.params?._meta?.[RELATED_TASK_META_KEY]?.taskId;
     if (handler === void 0) {
-      const errorResponse3 = {
+      const errorResponse4 = {
         jsonrpc: "2.0",
         id: request.id,
         error: {
@@ -35943,11 +35943,11 @@ var Protocol = class {
       if (relatedTaskId && this._taskMessageQueue) {
         this._enqueueTaskMessage(relatedTaskId, {
           type: "error",
-          message: errorResponse3,
+          message: errorResponse4,
           timestamp: Date.now()
         }, capturedTransport?.sessionId).catch((error48) => this._onerror(new Error(`Failed to enqueue error response: ${error48}`)));
       } else {
-        capturedTransport?.send(errorResponse3).catch((error48) => this._onerror(new Error(`Failed to send an error response: ${error48}`)));
+        capturedTransport?.send(errorResponse4).catch((error48) => this._onerror(new Error(`Failed to send an error response: ${error48}`)));
       }
       return;
     }
@@ -36017,7 +36017,7 @@ var Protocol = class {
       if (abortController.signal.aborted) {
         return;
       }
-      const errorResponse3 = {
+      const errorResponse4 = {
         jsonrpc: "2.0",
         id: request.id,
         error: {
@@ -36029,11 +36029,11 @@ var Protocol = class {
       if (relatedTaskId && this._taskMessageQueue) {
         await this._enqueueTaskMessage(relatedTaskId, {
           type: "error",
-          message: errorResponse3,
+          message: errorResponse4,
           timestamp: Date.now()
         }, capturedTransport?.sessionId);
       } else {
-        await capturedTransport?.send(errorResponse3);
+        await capturedTransport?.send(errorResponse4);
       }
     }).catch((error48) => this._onerror(new Error(`Failed to send response: ${error48}`))).finally(() => {
       if (this._requestHandlerAbortControllers.get(request.id) === abortController) {
@@ -39750,7 +39750,6 @@ import { realpathSync as realpathSync2 } from "fs";
 import os from "os";
 import path4 from "path";
 var INVOKE_SESSION_BASENAME_PREFIX = "invoke-session-";
-var gitCommonDirCache = /* @__PURE__ */ new Map();
 function getTmpdirRealpath() {
   try {
     return realpathSync2(os.tmpdir());
@@ -39758,16 +39757,18 @@ function getTmpdirRealpath() {
     return os.tmpdir();
   }
 }
-function resolveGitCommonDir(cwd) {
-  const cached2 = gitCommonDirCache.get(cwd);
-  if (cached2 !== void 0) return cached2;
+function resolveGitCommonDir(cwd, memo) {
+  if (memo) {
+    const cached2 = memo.get(cwd);
+    if (cached2 !== void 0) return cached2;
+  }
   try {
     const output = execFileSync2("git", ["rev-parse", "--git-common-dir"], {
       cwd,
       stdio: "pipe"
     }).toString().trim();
     const resolved = realpathSync2(path4.resolve(cwd, output));
-    gitCommonDirCache.set(cwd, resolved);
+    if (memo) memo.set(cwd, resolved);
     return resolved;
   } catch {
     return null;
@@ -39778,24 +39779,29 @@ function isSafeWorkBranch(workBranch, sessionId, workBranchPrefix) {
   return workBranch === `${workBranchPrefix}/${sessionId}`;
 }
 function isSafeSessionWorkBranchPath(workBranchPath, repoDir) {
-  if (!workBranchPath || !path4.isAbsolute(workBranchPath)) return false;
+  return resolveSafeSessionWorkBranchPath(workBranchPath, repoDir) !== null;
+}
+function resolveSafeSessionWorkBranchPath(workBranchPath, repoDir) {
+  if (!workBranchPath || !path4.isAbsolute(workBranchPath)) return null;
   let canonicalTarget;
   try {
     canonicalTarget = realpathSync2(workBranchPath);
   } catch {
-    return false;
+    return null;
   }
   const canonicalTmp = getTmpdirRealpath();
   if (canonicalTarget !== canonicalTmp && !canonicalTarget.startsWith(canonicalTmp + path4.sep)) {
-    return false;
+    return null;
   }
   if (!path4.basename(canonicalTarget).startsWith(INVOKE_SESSION_BASENAME_PREFIX)) {
-    return false;
+    return null;
   }
-  const targetCommonDir = resolveGitCommonDir(canonicalTarget);
-  const repoCommonDir = resolveGitCommonDir(repoDir);
-  if (!targetCommonDir || !repoCommonDir) return false;
-  return targetCommonDir === repoCommonDir;
+  const memo = /* @__PURE__ */ new Map();
+  const targetCommonDir = resolveGitCommonDir(canonicalTarget, memo);
+  const repoCommonDir = resolveGitCommonDir(repoDir, memo);
+  if (!targetCommonDir || !repoCommonDir) return null;
+  if (targetCommonDir !== repoCommonDir) return null;
+  return canonicalTarget;
 }
 
 // src/worktree/manager.ts
@@ -39876,7 +39882,11 @@ var WorktreeManager = class {
         return { status: "conflict", conflictingFiles, mergeTargetPath };
       }
       git(mergeTargetPath, ["commit", "-m", message]);
-      return { status: "merged" };
+      const commitSha = git(mergeTargetPath, ["rev-parse", "HEAD"]).trim();
+      if (!commitSha) {
+        throw new Error("Failed to capture commit SHA after merge");
+      }
+      return { status: "merged", commitSha };
     });
   }
   collectConflictingFiles(targetPath) {
@@ -41262,7 +41272,7 @@ function registerDispatchTools(server, engine, batchManager, projectDir, metrics
       stateManager: getScopedStateManager(sessionDir)
     };
   }
-  function errorResponse3(text) {
+  function errorResponse4(text) {
     return {
       content: [{ type: "text", text }],
       isError: true
@@ -41272,17 +41282,17 @@ function registerDispatchTools(server, engine, batchManager, projectDir, metrics
     const owner = batchManager.getBatchOwner(batchId);
     switch (owner.kind) {
       case "not_found":
-        return errorResponse3(`Batch not found: ${batchId}`);
+        return errorResponse4(`Batch not found: ${batchId}`);
       case "unowned":
         return null;
       case "owned":
         if (sessionId === void 0) {
-          return errorResponse3(
+          return errorResponse4(
             `Batch ${batchId} is owned by a session and requires session_id parameter`
           );
         }
         if (owner.sessionId !== sessionId) {
-          return errorResponse3(`Batch ${batchId} is not owned by session ${sessionId}`);
+          return errorResponse4(`Batch ${batchId} is not owned by session ${sessionId}`);
         }
         return null;
     }
@@ -41388,7 +41398,7 @@ function registerDispatchTools(server, engine, batchManager, projectDir, metrics
             limitStatus = await resolveLimitStatus(config2, pipelineId, sessionScope?.sessionDir);
           } catch (err) {
             console.error("Failed to evaluate dispatch limit \u2014 failing closed", err);
-            return errorResponse3("Dispatch blocked: failed to evaluate dispatch limit");
+            return errorResponse4("Dispatch blocked: failed to evaluate dispatch limit");
           }
           if (limitStatus.at_limit) {
             const pipelineLabel = pipelineId ? `pipeline ${pipelineId}` : "active pipeline";
@@ -41431,7 +41441,7 @@ function registerDispatchTools(server, engine, batchManager, projectDir, metrics
           }) }]
         };
       } catch (err) {
-        return errorResponse3(
+        return errorResponse4(
           `Dispatch error: ${err instanceof Error ? err.message : String(err)}`
         );
       }
@@ -41457,7 +41467,7 @@ function registerDispatchTools(server, engine, batchManager, projectDir, metrics
       const waitSeconds = wait ?? 60;
       const status = waitSeconds > 0 ? await batchManager.waitForStatus(batch_id, waitSeconds) : batchManager.getStatus(batch_id);
       if (!status) {
-        return errorResponse3(`Batch not found: ${batch_id}`);
+        return errorResponse4(`Batch not found: ${batch_id}`);
       }
       const projectedStatus = {
         batchId: status.batchId,
@@ -41496,13 +41506,13 @@ function registerDispatchTools(server, engine, batchManager, projectDir, metrics
             content: [{ type: "text", text: JSON.stringify(result.result, null, 2) }]
           };
         case "batch_not_found":
-          return errorResponse3(`Batch not found: ${batch_id}`);
+          return errorResponse4(`Batch not found: ${batch_id}`);
         case "task_not_found":
-          return errorResponse3(`Task not found in batch ${batch_id}: ${task_id}`);
+          return errorResponse4(`Task not found in batch ${batch_id}: ${task_id}`);
         case "not_terminal":
-          return errorResponse3(`Task not in terminal state; keep polling (current status: ${result.status})`);
+          return errorResponse4(`Task not in terminal state; keep polling (current status: ${result.status})`);
         case "no_result":
-          return errorResponse3(
+          return errorResponse4(
             `Task reached terminal state without a stored result in batch ${batch_id}: ${task_id}`
           );
       }
@@ -41534,7 +41544,6 @@ function registerDispatchTools(server, engine, batchManager, projectDir, metrics
 
 // src/tools/worktree-tools.ts
 init_zod();
-import { realpathSync as realpathSync4 } from "fs";
 
 // src/tools/post-merge.ts
 import { execSync } from "child_process";
@@ -41562,7 +41571,8 @@ function runPostMergeCommands(config2, projectDir, cwd) {
   return { commands: results };
 }
 
-// src/tools/worktree-tools.ts
+// src/tools/session-path.ts
+import { execFileSync as execFileSync5 } from "node:child_process";
 async function resolveSessionWorkBranchPath(sessionManager, projectDir, sessionId) {
   if (!sessionId) return void 0;
   if (!projectDir) {
@@ -41573,13 +41583,38 @@ async function resolveSessionWorkBranchPath(sessionManager, projectDir, sessionI
   const state = await stateManager.get();
   const workBranchPath = state?.work_branch_path;
   if (workBranchPath === void 0) return void 0;
-  if (!isSafeSessionWorkBranchPath(workBranchPath, projectDir)) {
+  const canonicalPath = resolveSafeSessionWorkBranchPath(workBranchPath, projectDir);
+  if (canonicalPath === null) {
     throw new Error(
       `Refusing to use unsafe session work branch path for session '${sessionId}'`
     );
   }
-  return realpathSync4(workBranchPath);
+  const workBranchPrefix = state?.work_branch ? state.work_branch.split("/").slice(0, -1).join("/") : "invoke/work";
+  if (!isSafeWorkBranch(state?.work_branch, sessionId, workBranchPrefix)) {
+    throw new Error(
+      `Refusing to use session '${sessionId}': state.work_branch '${state?.work_branch ?? "<unset>"}' does not match the expected session branch name`
+    );
+  }
+  let currentBranch;
+  try {
+    currentBranch = execFileSync5("git", ["symbolic-ref", "--short", "HEAD"], {
+      cwd: canonicalPath,
+      stdio: "pipe"
+    }).toString().trim();
+  } catch (err) {
+    throw new Error(
+      `Refusing to use session '${sessionId}': could not read HEAD at '${canonicalPath}' (${err instanceof Error ? err.message : String(err)})`
+    );
+  }
+  if (currentBranch !== state.work_branch) {
+    throw new Error(
+      `Refusing to use session '${sessionId}': worktree at '${canonicalPath}' is checked out on '${currentBranch}', expected '${state.work_branch}'`
+    );
+  }
+  return canonicalPath;
 }
+
+// src/tools/worktree-tools.ts
 function registerWorktreeTools(server, worktreeManager, sessionManager, config2, projectDir) {
   server.registerTool(
     "invoke_create_worktree",
@@ -41636,7 +41671,14 @@ function registerWorktreeTools(server, worktreeManager, sessionManager, config2,
         }
         await worktreeManager.cleanup(task_id);
         return {
-          content: [{ type: "text", text: JSON.stringify({ task_id, status: "merged" }) }]
+          content: [{
+            type: "text",
+            text: JSON.stringify({
+              task_id,
+              status: "merged",
+              commit_sha: result.commitSha
+            })
+          }]
         };
       } catch (err) {
         return {
@@ -41909,9 +41951,9 @@ function matchesCleanupFilter(session, filter) {
 init_zod();
 
 // src/worktree/base-branch.ts
-import { execFileSync as execFileSync5 } from "child_process";
+import { execFileSync as execFileSync6 } from "child_process";
 function runGit(repoDir, args) {
-  return execFileSync5("git", args, {
+  return execFileSync6("git", args, {
     cwd: repoDir,
     stdio: "pipe"
   }).toString().trim();
@@ -41925,7 +41967,7 @@ function tryRunGit(repoDir, args) {
 }
 function branchExists(repoDir, branch) {
   try {
-    execFileSync5("git", ["show-ref", "--verify", `refs/heads/${branch}`], {
+    execFileSync6("git", ["show-ref", "--verify", `refs/heads/${branch}`], {
       cwd: repoDir,
       stdio: "pipe"
     });
@@ -41990,13 +42032,14 @@ function registerSessionInitTools(server, sessionWorktreeManager, sessionManager
       }
     }
   );
+  const SESSION_INIT_BASE_BRANCH_PATTERN = /^(?![-.])[A-Za-z0-9_.][A-Za-z0-9._/-]{0,254}$/;
   server.registerTool(
     "invoke_session_init_worktree",
     {
       description: "Initialize the per-session work branch and integration worktree for the given session.",
       inputSchema: external_exports3.object({
         session_id: external_exports3.string(),
-        base_branch: external_exports3.string()
+        base_branch: external_exports3.string().regex(SESSION_INIT_BASE_BRANCH_PATTERN, "base_branch must be a safe git ref name").refine((v) => !v.includes("..") && !v.includes("@{"), 'base_branch must not contain ".." or "@{" revspec constructs')
       })
     },
     async ({ session_id, base_branch }) => {
@@ -42090,8 +42133,8 @@ function registerSessionInitTools(server, sessionWorktreeManager, sessionManager
 // src/tools/pr-tools.ts
 init_zod();
 init_config();
-import { execFileSync as execFileSync6 } from "child_process";
-import { realpathSync as realpathSync5 } from "fs";
+import { execFileSync as execFileSync7 } from "child_process";
+import { realpathSync as realpathSync4 } from "fs";
 function registerPrTools(server, sessionManager, projectDir) {
   server.registerTool(
     "invoke_pr_create",
@@ -42128,11 +42171,11 @@ function registerPrTools(server, sessionManager, projectDir) {
           );
         }
         const workBranch = state.work_branch;
-        const cwd = realpathSync5(state.work_branch_path);
+        const cwd = realpathSync4(state.work_branch_path);
         const effectiveTitle = title ?? `feat: ${workBranch}`;
         const effectiveBody = body ?? "";
         try {
-          execFileSync6("git", ["push", "-u", "origin", workBranch], {
+          execFileSync7("git", ["push", "-u", "origin", workBranch], {
             cwd,
             stdio: "pipe"
           });
@@ -42163,7 +42206,7 @@ function registerPrTools(server, sessionManager, projectDir) {
           });
         }
         try {
-          execFileSync6("gh", ["auth", "status"], { cwd, stdio: "pipe" });
+          execFileSync7("gh", ["auth", "status"], { cwd, stdio: "pipe" });
         } catch {
           return ok({
             status: "pushed",
@@ -42176,7 +42219,7 @@ function registerPrTools(server, sessionManager, projectDir) {
           });
         }
         try {
-          const existing = execFileSync6(
+          const existing = execFileSync7(
             "gh",
             ["pr", "view", workBranch, "--json", "number,url"],
             { cwd, stdio: "pipe" }
@@ -42195,7 +42238,7 @@ function registerPrTools(server, sessionManager, projectDir) {
         } catch {
         }
         try {
-          const output = execFileSync6(
+          const output = execFileSync7(
             "gh",
             [
               "pr",
@@ -42240,7 +42283,7 @@ function errorResponse(msg) {
 }
 function computeCompareUrl(cwd, baseBranch, headBranch) {
   try {
-    const remoteUrl = execFileSync6("git", ["remote", "get-url", "origin"], {
+    const remoteUrl = execFileSync7("git", ["remote", "get-url", "origin"], {
       cwd,
       stdio: "pipe"
     }).toString().trim();
@@ -42520,13 +42563,15 @@ var TaskSchema2 = external_exports3.object({
   conflicting_files: external_exports3.array(external_exports3.string()).optional(),
   result_summary: external_exports3.string().optional(),
   result_status: external_exports3.enum(["success", "error", "timeout"]).optional(),
-  merged: external_exports3.boolean().optional()
+  merged: external_exports3.boolean().optional(),
+  commit_sha: external_exports3.string().optional()
 });
 var BatchSchema = external_exports3.object({
   id: external_exports3.number(),
   status: external_exports3.enum(["pending", "in_progress", "partial", "completed", "error"]),
   merged_tasks: external_exports3.array(external_exports3.string()).optional(),
-  tasks: external_exports3.array(TaskSchema2)
+  tasks: external_exports3.array(TaskSchema2),
+  commit_sha: external_exports3.string().optional()
 });
 var ReviewCycleSchema = external_exports3.object({
   id: external_exports3.number(),
@@ -42543,12 +42588,13 @@ var ReviewCycleSchema = external_exports3.object({
   }).optional()
 });
 var WORK_BRANCH_PATTERN = /^(?!.*\.\.)[A-Za-z0-9][A-Za-z0-9._/-]{0,255}$/;
+var BASE_BRANCH_PATTERN = /^(?![-.])[A-Za-z0-9_.][A-Za-z0-9._/-]{0,254}$/;
 var SetStateInputSchema = external_exports3.object({
   session_id: external_exports3.string().regex(SESSION_ID_PATTERN, "invalid session id format").optional(),
   pipeline_id: external_exports3.string().optional(),
   current_stage: external_exports3.enum(["scope", "plan", "orchestrate", "build", "review", "complete"]).optional(),
   work_branch: external_exports3.string().regex(WORK_BRANCH_PATTERN, "invalid work_branch format").optional(),
-  base_branch: external_exports3.string().optional(),
+  base_branch: external_exports3.string().regex(BASE_BRANCH_PATTERN, "base_branch must be a safe git ref name (no leading -, no whitespace, no shell metacharacters)").refine((v) => !v.includes("..") && !v.includes("@{"), 'base_branch must not contain ".." or "@{" revspec constructs').optional(),
   work_branch_path: external_exports3.string().refine(
     (value) => path14.isAbsolute(value) && path14.basename(value).startsWith("invoke-session-"),
     "work_branch_path must be an absolute path with invoke-session- basename"
@@ -43267,6 +43313,281 @@ function logToolError(toolName, error48) {
   console.error(`[bug-tools] ${toolName} failed`, error48);
 }
 
+// src/tools/rebase-tools.ts
+init_zod();
+import { execFileSync as execFileSync8 } from "node:child_process";
+var CONFLICT_STATUS_PREFIXES2 = ["UU", "AA", "DD", "UA", "AU", "UD", "DU"];
+var SENSITIVE_GIT_ENV_VARS = [
+  "GIT_DIR",
+  "GIT_WORK_TREE",
+  "GIT_INDEX_FILE",
+  "GIT_OBJECT_DIRECTORY",
+  "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+  "GIT_EDITOR",
+  "GIT_SEQUENCE_EDITOR",
+  "GIT_PAGER",
+  "GIT_SSH",
+  "GIT_SSH_COMMAND",
+  "GIT_EXTERNAL_DIFF",
+  "GIT_CONFIG",
+  "GIT_CONFIG_COUNT",
+  "GIT_CONFIG_GLOBAL",
+  "GIT_CONFIG_SYSTEM",
+  "GIT_CONFIG_NOSYSTEM",
+  "GIT_NAMESPACE",
+  "GIT_COMMITTER_NAME",
+  "GIT_COMMITTER_EMAIL",
+  "GIT_AUTHOR_NAME",
+  "GIT_AUTHOR_EMAIL",
+  "GIT_ASKPASS",
+  "GIT_TERMINAL_PROMPT",
+  "GIT_HTTP_USER_AGENT"
+];
+function sanitizedGitEnv(extra) {
+  const env = {};
+  for (const [key, value] of Object.entries(process.env)) {
+    if (SENSITIVE_GIT_ENV_VARS.includes(key)) continue;
+    env[key] = value;
+  }
+  if (extra) {
+    for (const [key, value] of Object.entries(extra)) {
+      env[key] = value;
+    }
+  }
+  return env;
+}
+var SAFE_REF_NAME = /^(?![-.])[A-Za-z0-9_.][A-Za-z0-9._/-]{0,254}$/;
+function validateBaseBranch(baseBranch) {
+  if (!SAFE_REF_NAME.test(baseBranch)) {
+    throw new Error(
+      `Refusing to use base_branch '${baseBranch}': must match a conservative git ref name pattern`
+    );
+  }
+  if (baseBranch.includes("..") || baseBranch.includes("@{")) {
+    throw new Error(`Refusing to use base_branch '${baseBranch}': contains '..' or '@{' revspec construct`);
+  }
+}
+var AutosquashInputSchema = external_exports3.object({
+  session_id: external_exports3.string().regex(SESSION_ID_PATTERN)
+});
+var CollapseInputSchema = external_exports3.object({
+  session_id: external_exports3.string().regex(SESSION_ID_PATTERN),
+  base_sha: external_exports3.string().regex(/^[0-9a-f]{7,40}$/, "base_sha must be a git SHA"),
+  message: external_exports3.string().min(1)
+});
+var GetCommitTitleInputSchema = external_exports3.object({
+  session_id: external_exports3.string().regex(SESSION_ID_PATTERN),
+  commit_sha: external_exports3.string().regex(/^[0-9a-f]{7,40}$/)
+});
+function countCommitsSince(cwd, baseRef) {
+  return parseInt(
+    execFileSync8("git", ["rev-list", "--count", `${baseRef}..HEAD`], {
+      cwd,
+      stdio: "pipe",
+      env: sanitizedGitEnv()
+    }).toString().trim(),
+    10
+  );
+}
+function git2(cwd, args) {
+  return execFileSync8("git", args, { cwd, stdio: "pipe", env: sanitizedGitEnv() }).toString();
+}
+function countFixupCommits(cwd, baseRef) {
+  try {
+    const output = git2(cwd, ["log", `${baseRef}..HEAD`, "--format=%s"]);
+    return output.split("\n").filter((line) => line.startsWith("fixup! ")).length;
+  } catch {
+    return 0;
+  }
+}
+function formatExecError(error48) {
+  if (typeof error48 === "object" && error48 !== null && "stderr" in error48) {
+    const stderr = error48.stderr;
+    if (Buffer.isBuffer(stderr)) {
+      const message = stderr.toString().trim();
+      if (message) {
+        return message;
+      }
+    } else if (typeof stderr === "string" && stderr.trim()) {
+      return stderr.trim();
+    }
+  }
+  return error48 instanceof Error ? error48.message : String(error48);
+}
+function isConflictFailure(rebaseError, conflictingFiles) {
+  if (conflictingFiles.length > 0) return true;
+  const msg = formatExecError(rebaseError).toLowerCase();
+  return msg.includes("could not apply") || msg.includes("merge conflict") || msg.includes("needs merge") || msg.includes("cherry-pick") || msg.includes("resolve all conflicts");
+}
+function ok2(payload) {
+  return {
+    content: [{ type: "text", text: JSON.stringify(payload) }]
+  };
+}
+function errorResponse3(message) {
+  return {
+    content: [{ type: "text", text: message }],
+    isError: true
+  };
+}
+async function getSessionState(projectDir, sessionManager, sessionId) {
+  const sessionDir = sessionManager.resolve(sessionId);
+  return new StateManager(projectDir, sessionDir).get();
+}
+function collectConflictingFiles(cwd) {
+  try {
+    return git2(cwd, ["status", "--porcelain"]).split("\n").filter((line) => {
+      if (line.length < 2) return false;
+      const xy = line.slice(0, 2);
+      return CONFLICT_STATUS_PREFIXES2.includes(xy);
+    }).map((line) => line.slice(3));
+  } catch {
+    return [];
+  }
+}
+function requireSessionPath(sessionPath, sessionId) {
+  if (sessionPath) {
+    return sessionPath;
+  }
+  return errorResponse3(
+    `Session ${sessionId} has no work_branch_path - was it initialized via invoke_session_init_worktree?`
+  );
+}
+function registerRebaseTools(server, sessionManager, projectDir) {
+  server.registerTool(
+    "invoke_autosquash_session",
+    {
+      description: "Run git autosquash in the session work branch and cleanly abort on conflicts.",
+      inputSchema: AutosquashInputSchema
+    },
+    async ({ session_id }) => {
+      try {
+        const sessionPath = await resolveSessionWorkBranchPath(sessionManager, projectDir, session_id);
+        if (!sessionPath) {
+          return ok2({
+            status: "not_supported",
+            message: "session has no work_branch_path (legacy)"
+          });
+        }
+        return await withMergeTargetLock(sessionPath, async () => {
+          const state = await getSessionState(projectDir, sessionManager, session_id);
+          const baseBranch = state?.base_branch ?? "main";
+          validateBaseBranch(baseBranch);
+          const mergeBase = git2(sessionPath, ["merge-base", baseBranch, "HEAD"]).trim();
+          const commitsBefore = countCommitsSince(sessionPath, mergeBase);
+          const fixupsBefore = countFixupCommits(sessionPath, mergeBase);
+          const preRebaseHead = git2(sessionPath, ["rev-parse", "HEAD"]).trim();
+          try {
+            execFileSync8("git", ["rebase", "-i", "--autosquash", mergeBase], {
+              cwd: sessionPath,
+              stdio: "pipe",
+              env: sanitizedGitEnv({ GIT_SEQUENCE_EDITOR: "true" })
+            });
+            const commitsAfter = countCommitsSince(sessionPath, mergeBase);
+            return ok2({
+              status: "ok",
+              commits_before: commitsBefore,
+              commits_after: commitsAfter,
+              fixups_absorbed: fixupsBefore
+            });
+          } catch (error48) {
+            const conflictingFiles = collectConflictingFiles(sessionPath);
+            let abortFailed = false;
+            try {
+              git2(sessionPath, ["rebase", "--abort"]);
+            } catch {
+              try {
+                git2(sessionPath, ["reset", "--hard", preRebaseHead]);
+              } catch {
+                abortFailed = true;
+              }
+            }
+            if (isConflictFailure(error48, conflictingFiles)) {
+              return ok2({
+                status: "conflict_aborted",
+                conflicting_files: conflictingFiles,
+                message: formatExecError(error48)
+              });
+            }
+            return ok2({
+              status: "error",
+              message: abortFailed ? `${formatExecError(error48)} (AND rebase --abort failed; session worktree may be in a mixed state)` : formatExecError(error48)
+            });
+          }
+        });
+      } catch (error48) {
+        return errorResponse3(formatExecError(error48));
+      }
+    }
+  );
+  server.registerTool(
+    "invoke_collapse_commits",
+    {
+      description: "Collapse all commits after a base SHA into a single commit in the session work branch.",
+      inputSchema: CollapseInputSchema
+    },
+    async ({ session_id, base_sha, message }) => {
+      try {
+        const sessionPathOrError = requireSessionPath(
+          await resolveSessionWorkBranchPath(sessionManager, projectDir, session_id),
+          session_id
+        );
+        if (typeof sessionPathOrError !== "string") {
+          return sessionPathOrError;
+        }
+        return await withMergeTargetLock(sessionPathOrError, async () => {
+          try {
+            try {
+              git2(sessionPathOrError, ["merge-base", "--is-ancestor", base_sha, "HEAD"]);
+            } catch {
+              throw new Error("base_sha is not an ancestor of HEAD");
+            }
+            git2(sessionPathOrError, ["reset", "--soft", base_sha]);
+            git2(sessionPathOrError, ["commit", "-m", message]);
+            const commitSha = git2(sessionPathOrError, ["rev-parse", "HEAD"]).trim();
+            return ok2({
+              status: "ok",
+              commit_sha: commitSha
+            });
+          } catch (error48) {
+            return errorResponse3(formatExecError(error48));
+          }
+        });
+      } catch (error48) {
+        return errorResponse3(formatExecError(error48));
+      }
+    }
+  );
+  server.registerTool(
+    "invoke_get_commit_title",
+    {
+      description: "Read a commit title from the session work branch.",
+      inputSchema: GetCommitTitleInputSchema
+    },
+    async ({ session_id, commit_sha }) => {
+      try {
+        const sessionPathOrError = requireSessionPath(
+          await resolveSessionWorkBranchPath(sessionManager, projectDir, session_id),
+          session_id
+        );
+        if (typeof sessionPathOrError !== "string") {
+          return sessionPathOrError;
+        }
+        const title = git2(sessionPathOrError, [
+          "log",
+          "-1",
+          "--format=%s",
+          `${commit_sha}^{commit}`,
+          "--"
+        ]).trim();
+        return ok2({ title });
+      } catch (error48) {
+        return errorResponse3(formatExecError(error48));
+      }
+    }
+  );
+}
+
 // src/defaults-checker.ts
 import { readdir as readdir5 } from "fs/promises";
 import { existsSync as existsSync8 } from "fs";
@@ -43374,6 +43695,7 @@ async function main() {
   registerContextTools(server, contextManager);
   registerMetricsTools(server, metricsManager, projectDir, sessionManager);
   registerBugTools(server, bugManager);
+  registerRebaseTools(server, sessionManager, projectDir);
   registerPrTools(server, sessionManager, projectDir);
   registerSessionInitTools(server, sessionWorktreeManager, sessionManager, () => config2, projectDir);
   if (config2) {

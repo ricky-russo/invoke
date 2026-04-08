@@ -26,11 +26,18 @@ export function registerSessionInitTools(server, sessionWorktreeManager, session
             };
         }
     });
+    // Conservative git ref-name pattern for `base_branch` at the input layer.
+    // Mirrors the `BASE_BRANCH_PATTERN` in state-tools.ts so every write path
+    // into `state.base_branch` enforces the same guarantees, closing the loop
+    // with the read-side validation in rebase-tools.ts (`validateBaseBranch`).
+    const SESSION_INIT_BASE_BRANCH_PATTERN = /^(?![-.])[A-Za-z0-9_.][A-Za-z0-9._/-]{0,254}$/;
     server.registerTool('invoke_session_init_worktree', {
         description: 'Initialize the per-session work branch and integration worktree for the given session.',
         inputSchema: z.object({
             session_id: z.string(),
-            base_branch: z.string(),
+            base_branch: z.string()
+                .regex(SESSION_INIT_BASE_BRANCH_PATTERN, 'base_branch must be a safe git ref name')
+                .refine(v => !v.includes('..') && !v.includes('@{'), 'base_branch must not contain ".." or "@{" revspec constructs'),
         }),
     }, async ({ session_id, base_branch }) => {
         try {
