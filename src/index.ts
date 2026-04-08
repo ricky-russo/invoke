@@ -30,6 +30,7 @@ import { ContextManager } from './tools/context.js'
 import { registerContextTools } from './tools/context-tools.js'
 import { registerMetricsTools } from './tools/metrics-tools.js'
 import { registerBugTools } from './tools/bug-tools.js'
+import { registerRebaseTools } from './tools/rebase-tools.js'
 import { checkForNewDefaults } from './defaults-checker.js'
 import { writeFile } from 'fs/promises'
 import path from 'path'
@@ -105,6 +106,7 @@ async function main() {
   registerContextTools(server, contextManager)
   registerMetricsTools(server, metricsManager, projectDir, sessionManager)
   registerBugTools(server, bugManager)
+  registerRebaseTools(server, sessionManager, projectDir)
   registerPrTools(server, sessionManager, projectDir)
   registerSessionInitTools(server, sessionWorktreeManager, sessionManager, () => config, projectDir)
 

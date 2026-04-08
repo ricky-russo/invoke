@@ -136,9 +136,11 @@ describe.sequential('index bootstrap smoke', () => {
     expect(console.error).toHaveBeenCalledWith('Migrated legacy state to session: legacy-pipeline')
     expect(console.error).toHaveBeenCalledWith('invoke-mcp server running on stdio')
     expect(toolNames).toEqual([
+      'invoke_autosquash_session',
       'invoke_cancel_batch',
       'invoke_cleanup_sessions',
       'invoke_cleanup_worktrees',
+      'invoke_collapse_commits',
       'invoke_compare_sessions',
       'invoke_create_worktree',
       'invoke_delete_artifact',
@@ -146,6 +148,7 @@ describe.sequential('index bootstrap smoke', () => {
       'invoke_dispatch_batch',
       'invoke_get_base_branch_candidates',
       'invoke_get_batch_status',
+      'invoke_get_commit_title',
       'invoke_get_config',
       'invoke_get_context',
       'invoke_get_metrics',
