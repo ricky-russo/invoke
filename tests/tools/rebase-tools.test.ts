@@ -246,10 +246,8 @@ describe('registerRebaseTools', () => {
     expect(git(worktreePath, ['rev-parse', 'HEAD'])).toBe(headBefore)
   })
 
-  it('returns not_supported for legacy sessions without work_branch_path', async () => {
-    const sessionDir = await sessionManager.create('session-legacy')
-    const stateManager = new StateManager(projectDir, sessionDir)
-    await stateManager.initialize('session-legacy')
+  it('returns not_supported for legacy sessions without state', async () => {
+    await sessionManager.create('session-legacy')
 
     const result = await getTool('invoke_autosquash_session').handler({
       session_id: 'session-legacy',

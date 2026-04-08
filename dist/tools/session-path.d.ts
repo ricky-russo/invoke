@@ -1,11 +1,15 @@
 import type { SessionManager } from '../session/manager.js';
+export declare class MissingSessionWorkBranchPath extends Error {
+    constructor(sessionId: string);
+}
 /**
  * Resolve the canonical filesystem path of a session's integration worktree
  * for the given session_id, verifying in this order:
  *
- *   1. The session actually has a `work_branch_path` in its state. Legacy
- *      sessions that predate per-session work branches return `undefined` so
- *      callers can fall through to append-only behavior.
+ *   1. If the session has not been initialized yet (`state === null`), return
+ *      `undefined` so legacy callers can fall through to append-only
+ *      behavior. If state exists but `work_branch_path` is missing, throw:
+ *      that indicates corrupted initialized state.
  *   2. The path passes `resolveSafeSessionWorkBranchPath`: it is under
  *      `realpath(os.tmpdir())`, its basename starts with `invoke-session-`,
  *      and its git-common-dir matches `projectDir`'s git-common-dir (cross-
@@ -20,9 +24,9 @@ import type { SessionManager } from '../session/manager.js';
  *      branch, not `<prefix>/<A>`, and we refuse to proceed.
  *
  * Returns the validated canonical path on success, or throws when any
- * defense-in-depth check fails. Returns `undefined` ONLY for legacy sessions
- * without a `work_branch_path` — callers treat that as "not_supported" so
- * legacy pipelines keep append-only behavior.
+ * defense-in-depth check fails. Returns `undefined` ONLY when `session_id` is
+ * omitted or the session has no state yet — callers treat that as legacy /
+ * not_supported behavior.
  *
  * Rationale: prior to tightening, a crafted `state.json` could silently
  * repoint session A's `work_branch_path` at session B's worktree, and the

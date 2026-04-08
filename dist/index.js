@@ -41573,6 +41573,14 @@ function runPostMergeCommands(config2, projectDir, cwd) {
 
 // src/tools/session-path.ts
 import { execFileSync as execFileSync5 } from "node:child_process";
+var MissingSessionWorkBranchPath = class extends Error {
+  constructor(sessionId) {
+    super(
+      `Session '${sessionId}' was initialized but state.work_branch_path is missing \u2014 state may be corrupted. Reattach via invoke_session_reattach_worktree to restore the path.`
+    );
+    this.name = "MissingSessionWorkBranchPath";
+  }
+};
 async function resolveSessionWorkBranchPath(sessionManager, projectDir, sessionId) {
   if (!sessionId) return void 0;
   if (!projectDir) {
@@ -41581,8 +41589,11 @@ async function resolveSessionWorkBranchPath(sessionManager, projectDir, sessionI
   const sessionDir = sessionManager.resolve(sessionId);
   const stateManager = new StateManager(projectDir, sessionDir);
   const state = await stateManager.get();
-  const workBranchPath = state?.work_branch_path;
-  if (workBranchPath === void 0) return void 0;
+  if (state === null) return void 0;
+  if (state.work_branch_path === void 0) {
+    throw new MissingSessionWorkBranchPath(sessionId);
+  }
+  const workBranchPath = state.work_branch_path;
   const canonicalPath = resolveSafeSessionWorkBranchPath(workBranchPath, projectDir);
   if (canonicalPath === null) {
     throw new Error(
