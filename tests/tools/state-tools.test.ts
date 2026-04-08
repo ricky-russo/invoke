@@ -86,6 +86,12 @@ function parseResponseText(result: Awaited<ReturnType<RegisteredTool['handler']>
   return JSON.parse(result.content[0].text) as Record<string, unknown>
 }
 
+function registerFreshStateTools() {
+  registeredTools = new Map()
+  registerTool.mockClear()
+  registerStateTools(server, new StateManager(TEST_DIR), TEST_DIR, new SessionManager(TEST_DIR))
+}
+
 beforeEach(async () => {
   await mkdir(path.join(TEST_DIR, '.invoke'), { recursive: true })
   stateManager = new StateManager(TEST_DIR)
@@ -303,6 +309,127 @@ describe('registerStateTools', () => {
         ],
       },
     ])
+  })
+
+  it('persists and retrieves commit_sha on TaskState via batch_update.tasks upsert', async () => {
+    const commitSha = 'abc1234567890deadbeef0000000000000000'
+    const sessionDir = await sessionManager.create('session-1')
+    const sessionStateManager = new StateManager(TEST_DIR, sessionDir)
+    await sessionStateManager.initialize('pipeline-123')
+    await sessionStateManager.update({
+      batches: [
+        {
+          id: 1,
+          status: 'in_progress',
+          tasks: [{ id: 'task-1', status: 'running' }],
+        },
+      ],
+    })
+
+    const result = await getTool('invoke_set_state').handler({
+      session_id: 'session-1',
+      batch_update: {
+        id: 1,
+        status: 'completed',
+        tasks: [
+          {
+            id: 'task-1',
+            status: 'completed',
+            commit_sha: commitSha,
+          },
+        ],
+      },
+    })
+
+    expect(result.isError).toBeUndefined()
+    expect(parseResponseText(result)).toMatchObject({
+      batches: [
+        {
+          id: 1,
+          status: 'completed',
+          tasks: [
+            {
+              id: 'task-1',
+              status: 'completed',
+              commit_sha: commitSha,
+            },
+          ],
+        },
+      ],
+    })
+
+    registerFreshStateTools()
+    const roundTrip = await getTool('invoke_get_state').handler({ session_id: 'session-1' })
+
+    expect(roundTrip.isError).toBeUndefined()
+    expect(parseResponseText(roundTrip)).toMatchObject({
+      batches: [
+        {
+          id: 1,
+          status: 'completed',
+          tasks: [
+            {
+              id: 'task-1',
+              status: 'completed',
+              commit_sha: commitSha,
+            },
+          ],
+        },
+      ],
+    })
+  })
+
+  it('persists and retrieves commit_sha on BatchState via batch_update upsert', async () => {
+    const commitSha = 'abc1234567890deadbeef0000000000000000'
+    const sessionDir = await sessionManager.create('session-1')
+    const sessionStateManager = new StateManager(TEST_DIR, sessionDir)
+    await sessionStateManager.initialize('pipeline-123')
+    await sessionStateManager.update({
+      batches: [
+        {
+          id: 1,
+          status: 'in_progress',
+          tasks: [{ id: 'task-1', status: 'running' }],
+        },
+      ],
+    })
+
+    const result = await getTool('invoke_set_state').handler({
+      session_id: 'session-1',
+      batch_update: {
+        id: 1,
+        status: 'completed',
+        commit_sha: commitSha,
+        tasks: [],
+      },
+    })
+
+    expect(result.isError).toBeUndefined()
+    expect(parseResponseText(result)).toMatchObject({
+      batches: [
+        {
+          id: 1,
+          status: 'completed',
+          commit_sha: commitSha,
+          tasks: [{ id: 'task-1', status: 'running' }],
+        },
+      ],
+    })
+
+    registerFreshStateTools()
+    const roundTrip = await getTool('invoke_get_state').handler({ session_id: 'session-1' })
+
+    expect(roundTrip.isError).toBeUndefined()
+    expect(parseResponseText(roundTrip)).toMatchObject({
+      batches: [
+        {
+          id: 1,
+          status: 'completed',
+          commit_sha: commitSha,
+          tasks: [{ id: 'task-1', status: 'running' }],
+        },
+      ],
+    })
   })
 
   it('updates an existing batch in place without affecting other batches', async () => {

@@ -5,6 +5,7 @@ interface WorktreeInfo {
 }
 export type MergeResult = {
     status: 'merged';
+    commitSha: string;
 } | {
     status: 'conflict';
     conflictingFiles: string[];

@@ -197,6 +197,7 @@ export interface BatchState {
   status: 'pending' | 'in_progress' | 'partial' | 'completed' | 'error'
   tasks: TaskState[]
   merged_tasks?: string[]
+  commit_sha?: string // set when commit_style=per-batch collapses this batch
 }
 
 export interface TaskState {
@@ -210,6 +211,7 @@ export interface TaskState {
   result_status?: 'success' | 'error' | 'timeout'
   depends_on?: string[]
   merged?: boolean
+  commit_sha?: string // set after a successful merge captures the squash-commit SHA
 }
 
 export interface ReviewCycle {

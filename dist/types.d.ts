@@ -171,6 +171,7 @@ export interface BatchState {
     status: 'pending' | 'in_progress' | 'partial' | 'completed' | 'error';
     tasks: TaskState[];
     merged_tasks?: string[];
+    commit_sha?: string;
 }
 export interface TaskState {
     id: string;
@@ -183,6 +184,7 @@ export interface TaskState {
     result_status?: 'success' | 'error' | 'timeout';
     depends_on?: string[];
     merged?: boolean;
+    commit_sha?: string;
 }
 export interface ReviewCycle {
     id: number;

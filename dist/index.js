@@ -39868,7 +39868,11 @@ var WorktreeManager = class {
         return { status: "conflict", conflictingFiles, mergeTargetPath };
       }
       git(mergeTargetPath, ["commit", "-m", message]);
-      return { status: "merged" };
+      const commitSha = git(mergeTargetPath, ["rev-parse", "HEAD"]).trim();
+      if (!commitSha) {
+        throw new Error("Failed to capture commit SHA after merge");
+      }
+      return { status: "merged", commitSha };
     });
   }
   collectConflictingFiles(targetPath) {
@@ -41526,7 +41530,6 @@ function registerDispatchTools(server, engine, batchManager, projectDir, metrics
 
 // src/tools/worktree-tools.ts
 init_zod();
-import { realpathSync as realpathSync4 } from "fs";
 
 // src/tools/post-merge.ts
 import { execSync } from "child_process";
@@ -41554,7 +41557,8 @@ function runPostMergeCommands(config2, projectDir, cwd) {
   return { commands: results };
 }
 
-// src/tools/worktree-tools.ts
+// src/tools/session-path.ts
+import { realpathSync as realpathSync4 } from "fs";
 async function resolveSessionWorkBranchPath(sessionManager, projectDir, sessionId) {
   if (!sessionId) return void 0;
   if (!projectDir) {
@@ -41572,6 +41576,8 @@ async function resolveSessionWorkBranchPath(sessionManager, projectDir, sessionI
   }
   return realpathSync4(workBranchPath);
 }
+
+// src/tools/worktree-tools.ts
 function registerWorktreeTools(server, worktreeManager, sessionManager, config2, projectDir) {
   server.registerTool(
     "invoke_create_worktree",
@@ -41628,7 +41634,14 @@ function registerWorktreeTools(server, worktreeManager, sessionManager, config2,
         }
         await worktreeManager.cleanup(task_id);
         return {
-          content: [{ type: "text", text: JSON.stringify({ task_id, status: "merged" }) }]
+          content: [{
+            type: "text",
+            text: JSON.stringify({
+              task_id,
+              status: "merged",
+              commit_sha: result.commitSha
+            })
+          }]
         };
       } catch (err) {
         return {
@@ -42512,13 +42525,15 @@ var TaskSchema2 = external_exports3.object({
   conflicting_files: external_exports3.array(external_exports3.string()).optional(),
   result_summary: external_exports3.string().optional(),
   result_status: external_exports3.enum(["success", "error", "timeout"]).optional(),
-  merged: external_exports3.boolean().optional()
+  merged: external_exports3.boolean().optional(),
+  commit_sha: external_exports3.string().optional()
 });
 var BatchSchema = external_exports3.object({
   id: external_exports3.number(),
   status: external_exports3.enum(["pending", "in_progress", "partial", "completed", "error"]),
   merged_tasks: external_exports3.array(external_exports3.string()).optional(),
-  tasks: external_exports3.array(TaskSchema2)
+  tasks: external_exports3.array(TaskSchema2),
+  commit_sha: external_exports3.string().optional()
 });
 var ReviewCycleSchema = external_exports3.object({
   id: external_exports3.number(),

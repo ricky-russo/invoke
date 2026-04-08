@@ -152,7 +152,10 @@ describe('registerWorktreeTools', () => {
   it('resolves session work_branch_path and passes it as mergeTargetPath', async () => {
     const worktreePath = await createSafeSessionWorktreePath('session-1')
     await writeSessionState('session-1', createState({ work_branch_path: worktreePath }))
-    vi.mocked(worktreeManager.merge).mockResolvedValue({ status: 'merged' })
+    vi.mocked(worktreeManager.merge).mockResolvedValue({
+      status: 'merged',
+      commitSha: '0123456789abcdef0123456789abcdef01234567',
+    })
 
     registerWorktreeTools(server, worktreeManager, sessionManager, TEST_CONFIG, projectDir)
 
@@ -165,14 +168,21 @@ describe('registerWorktreeTools', () => {
       mergeTargetPath: worktreePath,
     })
     expect(worktreeManager.cleanup).toHaveBeenCalledWith('task-1')
-    expect(parseResponseText<{ task_id: string; status: string }>(result)).toEqual({
-      task_id: 'task-1',
-      status: 'merged',
-    })
+    const parsed = parseResponseText<{
+      task_id: string
+      status: string
+      commit_sha: string
+    }>(result)
+    expect(parsed.task_id).toBe('task-1')
+    expect(parsed.status).toBe('merged')
+    expect(parsed.commit_sha).toMatch(/^[0-9a-f]{40}$/)
   })
 
   it('merges into the repo dir when session_id is omitted', async () => {
-    vi.mocked(worktreeManager.merge).mockResolvedValue({ status: 'merged' })
+    vi.mocked(worktreeManager.merge).mockResolvedValue({
+      status: 'merged',
+      commitSha: '0123456789abcdef0123456789abcdef01234567',
+    })
 
     registerWorktreeTools(server, worktreeManager, sessionManager, TEST_CONFIG, projectDir)
 
@@ -184,7 +194,10 @@ describe('registerWorktreeTools', () => {
 
   it('falls back to the repo dir for legacy sessions without work_branch_path', async () => {
     await writeSessionState('legacy-session', createState())
-    vi.mocked(worktreeManager.merge).mockResolvedValue({ status: 'merged' })
+    vi.mocked(worktreeManager.merge).mockResolvedValue({
+      status: 'merged',
+      commitSha: '0123456789abcdef0123456789abcdef01234567',
+    })
 
     registerWorktreeTools(server, worktreeManager, sessionManager, TEST_CONFIG, projectDir)
 

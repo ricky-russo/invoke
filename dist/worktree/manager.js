@@ -89,7 +89,11 @@ export class WorktreeManager {
                 return { status: 'conflict', conflictingFiles, mergeTargetPath };
             }
             git(mergeTargetPath, ['commit', '-m', message]);
-            return { status: 'merged' };
+            const commitSha = git(mergeTargetPath, ['rev-parse', 'HEAD']).trim();
+            if (!commitSha) {
+                throw new Error('Failed to capture commit SHA after merge');
+            }
+            return { status: 'merged', commitSha };
         });
     }
     collectConflictingFiles(targetPath) {

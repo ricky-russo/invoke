@@ -16,6 +16,7 @@ const TaskSchema = z.object({
   result_summary: z.string().optional(),
   result_status: z.enum(['success', 'error', 'timeout']).optional(),
   merged: z.boolean().optional(),
+  commit_sha: z.string().optional(),
 })
 
 const BatchSchema = z.object({
@@ -23,6 +24,7 @@ const BatchSchema = z.object({
   status: z.enum(['pending', 'in_progress', 'partial', 'completed', 'error']),
   merged_tasks: z.array(z.string()).optional(),
   tasks: z.array(TaskSchema),
+  commit_sha: z.string().optional(),
 })
 
 const ReviewCycleSchema = z.object({

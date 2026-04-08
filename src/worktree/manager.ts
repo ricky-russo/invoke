@@ -12,7 +12,7 @@ interface WorktreeInfo {
 }
 
 export type MergeResult =
-  | { status: 'merged' }
+  | { status: 'merged'; commitSha: string }
   | { status: 'conflict'; conflictingFiles: string[]; mergeTargetPath: string }
 
 const CONFLICT_STATUS_PREFIXES = ['UU', 'AA', 'DD', 'AU', 'UA', 'DU', 'UD']
@@ -128,7 +128,11 @@ export class WorktreeManager {
       }
 
       git(mergeTargetPath, ['commit', '-m', message])
-      return { status: 'merged' }
+      const commitSha = git(mergeTargetPath, ['rev-parse', 'HEAD']).trim()
+      if (!commitSha) {
+        throw new Error('Failed to capture commit SHA after merge')
+      }
+      return { status: 'merged', commitSha }
     })
   }
 
