@@ -106,6 +106,11 @@ describe('default reviewer prompts', () => {
     expect(content).toContain('**Line:**')
     expect(content).toContain('**Issue:**')
     expect(content).toContain('**Suggestion:**')
+    expect(content).toContain('## Scope')
+    expect(content).toContain('{{scope}}')
+    expect(content).toContain('## Prior Findings')
+    expect(content).toContain('{{prior_findings}}')
+    expect(content).toContain('**Out-of-Scope:**')
     expect(content).toContain(nothingFound)
 
     for (const antiPattern of antiPatterns) {
