@@ -142,6 +142,7 @@ Each `review_cycle_update` follows this schema:
       "line": 42,
       "issue": "SQL injection",
       "suggestion": "Use parameterized queries",
+      "original_task_id": "auth-middleware",
       "agreed_by": ["claude", "codex"]
     }
   ],
@@ -154,6 +155,15 @@ Each `review_cycle_update` follows this schema:
 ```
 
 `scope` is only set on final review cycles. `tier` is omitted in fallback mode. `agreed_by` is omitted when there is only one reviewer.
+
+**`original_task_id` attachment — REQUIRED when commit_style is per-task / per-batch / one-commit.** Step 6.5 needs to know which task commit each finding should fold into. The skill attaches this during triage:
+
+1. **When building the finding list** from reviewer output, look at `finding.file` and map it to the most recently merged task that touched that file. Walk `state.batches` in reverse order and find the first task whose worktree diff includes that path — use its `id` as `original_task_id`. For tasks merged in the current pipeline, this is deterministic: the file:task map is `relevant_files` keys from the build stage's `tasks.json`.
+2. **When `finding.file` matches multiple tasks** (cross-task finding), split the finding into one finding per originating task, each with its own `original_task_id`. The split preserves `issue` / `suggestion` / `severity` but narrows the scope to each task's portion of the fix.
+3. **When `finding.file` is genuinely cross-cutting** (e.g., a new file that doesn't exist in any task's `relevant_files`, or a cross-layer architectural finding), leave `original_task_id` unset. Step 6.5 will then store `None` for the fixup target, and step 7 will dispatch the finding as a normal `feat:` commit that remains visible after autosquash.
+4. **When `commit_style == 'custom'`**, skip attachment entirely — fixup folding does not apply.
+
+If the skill cannot determine `original_task_id` from `relevant_files` / diff overlap (e.g., because the task breakdown was lost or the finding file wasn't touched by any task), use `AskUserQuestion` to ask the user which task this finding belongs to. Present the list of merged task IDs from `state.batches` as options. This is the operator escape hatch when heuristics fall short.
 
 ### Deferred Findings as Bugs
 
@@ -264,37 +274,60 @@ If satisfied: proceed to completion.
 
 After ALL review cycles are finished and EVERY accepted finding has been merged, fold `fixup!` fix commits into their originating task commits (or collapse everything per the commit_style setting). Run this step exactly once, before transitioning state to `complete`.
 
-Read `commit_style` from config (same value as step 6.5 used):
+Read `commit_style` from config (same value as step 6.5 used). Also read `state.work_branch_path` — legacy sessions that predate per-session work branches have no `work_branch_path` and MUST be kept on the append-only path for every commit_style mode, because `invoke_collapse_commits` and `invoke_autosquash_session` both refuse to operate on legacy sessions (they'd either error out or return `not_supported`).
 
 ```
 fold_result = None  # for step 9 summary
 
-if commit_style == 'one-commit':
-  # Collapse the entire session branch (all tasks + all review fixes) into a single commit.
-  # Determine the base SHA the session branched from:
+if state.work_branch_path is not set:
+  # Legacy session — no session work branch, nothing to rewrite. Skip every
+  # commit_style branch uniformly and keep append-only history.
+  fold_result = 'Legacy session — commit folding skipped; history left as-is.'
+
+elif commit_style == 'one-commit':
+  # Collapse the entire session branch (all tasks + all review fixes) into a
+  # single commit. Build a concrete commit message from state — prefer the
+  # spec slug, falling back to the pipeline id. The spec slug comes from the
+  # spec filename: if state.spec is `specs/2026-04-06-fixup-folding-spec.md`,
+  # the slug is `fixup-folding` (strip date prefix and `-spec.md` suffix).
   base_sha = git merge-base <state.base_branch> HEAD   # on state.work_branch_path
+  slug = derive_spec_slug(state.spec) or state.pipeline_id
+  commit_message = 'feat: ' + slug
   result = invoke_collapse_commits({
     session_id: <pipeline_id>,
     base_sha: base_sha,
-    message: 'feat: ' + (spec_title_or_pipeline_id),
+    message: commit_message,
   })
-  fold_result = 'Collapsed pipeline into single commit ' + result.commit_sha
+  fold_result = 'Collapsed pipeline into single commit ' + result.commit_sha + ' (' + commit_message + ')'
 
 elif commit_style == 'custom':
   fold_result = 'commit_style=custom; leaving commits untouched.'
 
 else:
-  # per-task and per-batch: absorb fixup! commits into their target commits
+  # per-task and per-batch: absorb fixup! commits into their target commits.
+  # invoke_autosquash_session also returns `not_supported` for legacy sessions
+  # as a defensive fallback, but we already handled that above.
   result = invoke_autosquash_session({ session_id: <pipeline_id> })
   if result.status == 'ok':
     fold_result = 'Folded ' + result.fixups_absorbed + ' review fixes into ' + result.commits_after + ' task commits'
   elif result.status == 'not_supported':
+    # Defensive: shouldn't reach here because of the legacy check above.
     fold_result = 'Legacy session — autosquash skipped; review fix commits remain on work branch.'
   elif result.status == 'conflict_aborted':
-    fold_result = 'Autosquash aborted: ' + result.message + '. Review fix commits remain on work branch. Conflicting files: ' + result.conflicting_files.join(', ')
+    fold_result = 'Autosquash aborted (merge conflict during rebase): ' + result.message + '. Review fix commits remain on work branch. Conflicting files: ' + result.conflicting_files.join(', ')
+  elif result.status == 'error':
+    # Non-conflict failure: detached HEAD, bad ref, corrupted state, etc.
+    # Surface it explicitly so the user knows it is NOT a conflict fallback.
+    fold_result = 'Autosquash errored (non-conflict failure): ' + result.message + '. Review fix commits remain on work branch. Manual inspection required.'
 ```
 
-Print `fold_result` immediately so the user sees it during the run. Step 9's final summary also includes it so the user can reference it after the fact. `conflict_aborted` is a non-blocking warning — the pipeline continues to `complete` normally, and the user can inspect the work branch manually to resolve any residual fix commits.
+Helper `derive_spec_slug(spec_path)`:
+- Strip the `specs/` prefix and the `.md` suffix.
+- Strip the leading date prefix `YYYY-MM-DD-` if present.
+- Strip the trailing `-spec` suffix if present.
+- Return the remaining slug, or `None` if the spec path is empty or unusable.
+
+Print `fold_result` immediately so the user sees it during the run. Step 9's final summary also includes it so the user can reference it after the fact. `conflict_aborted` and `error` are both non-blocking warnings — the pipeline continues to `complete` normally, and the user can inspect the work branch manually to resolve any residual fix commits. The distinction matters for triage: `conflict_aborted` means a real merge conflict during the fixup-fold (expected fallback), while `error` means the rebase never got far enough to hit a conflict (detached HEAD, corrupt state, or some other git failure that warrants manual inspection).
 
 ### 9. Complete Pipeline
 
@@ -343,11 +376,25 @@ Example `fold_result` values:
 
 Get the metrics data from `invoke_get_metrics`: use `summary.total_dispatches`, `summary.total_prompt_chars`, `summary.total_duration_ms`, and `summary.by_stage`; convert `summary.total_duration_ms` to seconds for the final line; aggregate `entries` by `provider` for the provider line; print `0` for any missing stage before rendering the summary.
 
-### 10. Commit Strategy
+### 10. Commit Strategy (read-only summary)
 
-Present the commit strategy using `AskUserQuestion` as defined in the invoke-messaging standard (Commit Strategy pattern). Use `multiSelect: false` with options: Per batch (Recommended), One commit, Per task, Custom.
+**Do NOT prompt the user to choose a commit strategy here.** The commit strategy is controlled by `config.settings.commit_style` and was already enforced during build (per-batch collapse in invoke-build step g2) and review (fold or collapse in step 8.5). Re-prompting at the end of review would:
+- Conflict with the new `per-task` default set during this spec's work.
+- Invite the user to override a setting that has already been acted on — the build and review stages cannot retroactively reshape commits based on a post-review answer.
 
-Execute the chosen commit strategy. The session work branch is preserved at pipeline completion. It will only be removed when the user explicitly cleans up the session via invoke_cleanup_sessions, where they will be prompted to keep or delete the branch.
+Instead, print a one-line summary of what commit_style was in effect for this pipeline so the user can see how commits are grouped on the session work branch:
+
+```
+📋 Commit style: <commit_style> ([description])
+```
+
+Where `[description]` matches the mode:
+- `per-task`: one commit per build task; reviewer fixes folded via autosquash at end of review (default)
+- `per-batch`: one commit per build batch; reviewer fixes folded via autosquash at end of review
+- `one-commit`: single commit for the entire pipeline; collapse happened in step 8.5
+- `custom`: commit grouping left to the operator / skill extensions; no automatic folding
+
+If the user wants to CHANGE `commit_style`, they must do so in `config.settings.commit_style` and re-run the pipeline (or at minimum re-run from the build stage) — there is no in-flight override path. The session work branch is preserved at pipeline completion; it will only be removed when the user explicitly cleans up the session via invoke_cleanup_sessions, where they will be prompted to keep or delete the branch.
 
 ### PR Offer (R5)
 

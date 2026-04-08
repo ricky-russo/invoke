@@ -192,22 +192,50 @@ describe('isSafeWorkBranch', () => {
 })
 
 describe('resolveGitCommonDir memoization', () => {
-  it('caches successful resolutions per cwd', async () => {
-    // Create a fresh repo whose cwd has not been resolved before, then prove
-    // the cache is honoured by physically removing .git after the first call
-    // and confirming the second call still returns the originally-resolved path.
+  it('does NOT cache successful resolutions between calls without an explicit memo', async () => {
+    // Regression guard for the removed module-scoped cache (security finding:
+    // the old global cache was a "poisoned-on-first-read" hazard — if an
+    // attacker swapped the path after a benign first read, the cache kept
+    // approving the swapped path). Successive calls without a memo must now
+    // re-resolve every time so path changes are visible immediately.
     const freshRepo = trackCleanup(
-      await createGitRepo('invoke-trusted-helpers-memo-')
+      await createGitRepo('invoke-trusted-helpers-no-cache-')
     )
     const expected = realpathSync(path.join(freshRepo, '.git'))
 
     const first = resolveGitCommonDir(freshRepo)
     expect(first).toBe(expected)
 
-    // Tear down .git so a non-cached call would return null.
+    // Tear down .git. With the module-scoped cache removed, a second call
+    // must observe the teardown and return null.
     await rm(path.join(freshRepo, '.git'), { recursive: true, force: true })
 
     const second = resolveGitCommonDir(freshRepo)
+    expect(second).toBeNull()
+  })
+
+  it('honors an explicit per-call memo so one logical check only runs git once per cwd', async () => {
+    // The per-call memo scopes caching to a single invocation of
+    // `resolveSafeSessionWorkBranchPath` (or any other caller that opts in).
+    // Within that memo, repeated lookups for the same cwd reuse the resolved
+    // value — which is important because that function does two common-dir
+    // lookups (target + repo) that almost always hit overlapping cwds.
+    const freshRepo = trackCleanup(
+      await createGitRepo('invoke-trusted-helpers-memo-')
+    )
+    const expected = realpathSync(path.join(freshRepo, '.git'))
+
+    const memo = new Map<string, string>()
+    const first = resolveGitCommonDir(freshRepo, memo)
+    expect(first).toBe(expected)
+    expect(memo.get(freshRepo)).toBe(expected)
+
+    // Tear down .git and confirm the memo still returns the cached value
+    // (this is the whole point of the per-call memo — within one safety
+    // check we treat the filesystem as stable).
+    await rm(path.join(freshRepo, '.git'), { recursive: true, force: true })
+
+    const second = resolveGitCommonDir(freshRepo, memo)
     expect(second).toBe(expected)
   })
 })

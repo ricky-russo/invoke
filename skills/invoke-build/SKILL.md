@@ -252,7 +252,7 @@ When resuming, rely on this saved state instead of guessing from the filesystem.
 
 After all tasks in the batch are merged and state is updated (step g), check whether to collapse commits:
 
-If `commit_style == 'per-batch'`:
+If `commit_style == 'per-batch'` AND `state.work_branch_path` is set (non-legacy session):
 1. Determine the base SHA for this batch:
    - For batch 0: run `git merge-base <state.base_branch> HEAD` on the session work branch path
    - For batch N>0: use `state.batches[N-1].commit_sha`
@@ -267,6 +267,9 @@ If `commit_style == 'per-batch'`:
    }
    ```
 4. After this, every task in this batch has its commit_sha replaced with the batch's collapsed commit_sha. They no longer exist as standalone commits on the work branch, so any future fix tasks must target the batch commit.
+
+If `commit_style == 'per-batch'` AND `state.work_branch_path` is NOT set (legacy session):
+  Skip the collapse. `invoke_collapse_commits` requires a session work branch path and would return an error otherwise. Legacy sessions fall back to append-only behavior: tasks keep their per-task commits, nothing is rewritten, and the skill prints: `Legacy session — per-batch collapse skipped; commits remain per-task.`
 
 If `commit_style != 'per-batch'`:
   Skip this step. Tasks keep their per-task commit_sha.

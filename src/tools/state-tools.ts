@@ -42,13 +42,25 @@ const ReviewCycleSchema = z.object({
 })
 
 const WORK_BRANCH_PATTERN = /^(?!.*\.\.)[A-Za-z0-9][A-Za-z0-9._/-]{0,255}$/
+// Conservative git ref-name pattern for `base_branch`. This is not full
+// `git check-ref-format`, but it rules out the two classes of input that
+// would turn `state.base_branch` into an argv-injection sink when it flows
+// into `git merge-base <base_branch> HEAD` and similar commands:
+//   - leading `-` (would be parsed as a git option)
+//   - leading `.` (git rejects; included for safety)
+//   - whitespace / shell metacharacters
+// Separate checks in consumers still reject `..` and `@{` constructs.
+const BASE_BRANCH_PATTERN = /^(?![-.])[A-Za-z0-9_.][A-Za-z0-9._/-]{0,254}$/
 
 const SetStateInputSchema = z.object({
   session_id: z.string().regex(SESSION_ID_PATTERN, 'invalid session id format').optional(),
   pipeline_id: z.string().optional(),
   current_stage: z.enum(['scope', 'plan', 'orchestrate', 'build', 'review', 'complete']).optional(),
   work_branch: z.string().regex(WORK_BRANCH_PATTERN, 'invalid work_branch format').optional(),
-  base_branch: z.string().optional(),
+  base_branch: z.string()
+    .regex(BASE_BRANCH_PATTERN, 'base_branch must be a safe git ref name (no leading -, no whitespace, no shell metacharacters)')
+    .refine(v => !v.includes('..') && !v.includes('@{'), 'base_branch must not contain ".." or "@{" revspec constructs')
+    .optional(),
   work_branch_path: z.string()
     .refine(
       value => path.isAbsolute(value) && path.basename(value).startsWith('invoke-session-'),

@@ -128,7 +128,12 @@ describe('registerRebaseTools', () => {
     })
 
     expect(result.isError).toBe(true)
-    expect(result.content[0].text).toMatch(/unknown revision|bad object|ambiguous argument/i)
+    // Different git versions emit different phrases: "unknown revision",
+    // "bad object", "bad revision", or "ambiguous argument". All are valid
+    // signals that the SHA could not be resolved. The `^{commit}` peel used
+    // by the tool to force resolution to a commit object triggers the
+    // "bad revision" phrasing on some versions.
+    expect(result.content[0].text).toMatch(/unknown revision|bad (object|revision)|ambiguous argument/i)
   })
 
   it('collapses commits since the provided base SHA into a single commit', async () => {
