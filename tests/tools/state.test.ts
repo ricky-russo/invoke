@@ -6,8 +6,36 @@ import { mkdir, rm, readFile } from 'fs/promises'
 import { existsSync } from 'fs'
 import path from 'path'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
+import type { PipelineState } from '../../src/types.js'
 
 const TEST_DIR = path.join(import.meta.dirname, 'fixtures', 'state-test')
+const BUG013_PIPELINE_ID = 'pipeline-1775865600000'
+const BUG013_BRANCH_FIXTURE = {
+  work_branch: 'invoke/work/pipeline-1775865600000',
+  work_branch_path:
+    '/private/var/folders/c4/q0tszkjs27b424l4fgbkz4400000gn/T/invoke-session-pipeline-1775865600000-zLeqrR',
+  base_branch: 'main',
+} satisfies Partial<PipelineState>
+const BUG013_PERSIST_ONCE_FIXTURE = {
+  ...BUG013_BRANCH_FIXTURE,
+  spec: 'Scope spec',
+  plan: 'Execution plan',
+  tasks: 'Task breakdown',
+  strategy: 'tdd',
+  bug_ids: ['BUG-001', 'BUG-002'],
+} satisfies Partial<PipelineState>
+const BUG013_BUG_IDS = [
+  'BUG-001',
+  'BUG-002',
+  'BUG-003',
+  'BUG-004',
+  'BUG-005',
+  'BUG-006',
+  'BUG-007',
+  'BUG-008',
+  'BUG-009',
+  'BUG-010',
+]
 
 let stateManager: StateManager
 let sessionManager: SessionManager
@@ -56,6 +84,16 @@ function getTool(name: string): RegisteredTool {
 
 function parseResponseText(result: Awaited<ReturnType<RegisteredTool['handler']>>) {
   return JSON.parse(result.content[0].text) as Record<string, unknown>
+}
+
+async function initializeWithPersistOnceFields(
+  overrides: Partial<PipelineState> = {}
+): Promise<void> {
+  await stateManager.initialize(BUG013_PIPELINE_ID)
+  await stateManager.update({
+    ...BUG013_PERSIST_ONCE_FIXTURE,
+    ...overrides,
+  })
 }
 
 beforeEach(async () => {
@@ -379,6 +417,73 @@ describe('StateManager', () => {
           scope: 'final',
         },
       ],
+    })
+  })
+
+  it('preserves all persist-once fields when a composite partial only updates current_stage', async () => {
+    await initializeWithPersistOnceFields()
+
+    await stateManager.applyComposite({
+      partial: { current_stage: 'review' },
+    })
+
+    expect(await stateManager.get()).toMatchObject({
+      current_stage: 'review',
+      ...BUG013_PERSIST_ONCE_FIXTURE,
+    })
+  })
+
+  it('preserves work_branch when a composite partial carries work_branch as undefined', async () => {
+    await initializeWithPersistOnceFields()
+
+    await stateManager.applyComposite({
+      partial: { work_branch: undefined },
+    })
+
+    expect((await stateManager.get())?.work_branch).toBe(BUG013_BRANCH_FIXTURE.work_branch)
+  })
+
+  it('preserves work_branch when a composite partial carries work_branch as null', async () => {
+    await initializeWithPersistOnceFields()
+
+    await stateManager.applyComposite({
+      partial: { work_branch: null } as Partial<PipelineState>,
+    })
+
+    expect((await stateManager.get())?.work_branch).toBe(BUG013_BRANCH_FIXTURE.work_branch)
+  })
+
+  it('spreads an empty string persist-once value instead of preserving the previous spec', async () => {
+    await initializeWithPersistOnceFields()
+
+    await stateManager.applyComposite({
+      partial: { spec: '' },
+    })
+
+    expect((await stateManager.get())?.spec).toBe('')
+  })
+
+  it('preserves persisted branch fields when a later composite update adds only bug_ids', async () => {
+    await stateManager.initialize(BUG013_PIPELINE_ID)
+    await stateManager.update({
+      ...BUG013_BRANCH_FIXTURE,
+      spec: 'Scope spec',
+      plan: 'Execution plan',
+      tasks: 'Task breakdown',
+      strategy: 'tdd',
+    })
+
+    await stateManager.applyComposite({
+      partial: { bug_ids: BUG013_BUG_IDS },
+    })
+
+    expect(await stateManager.get()).toMatchObject({
+      ...BUG013_BRANCH_FIXTURE,
+      spec: 'Scope spec',
+      plan: 'Execution plan',
+      tasks: 'Task breakdown',
+      strategy: 'tdd',
+      bug_ids: BUG013_BUG_IDS,
     })
   })
 

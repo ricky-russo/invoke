@@ -11,9 +11,35 @@ import { loadConfig } from '../../src/config.js'
 import { SessionManager } from '../../src/session/manager.js'
 import { StateManager } from '../../src/tools/state.js'
 import { registerStateTools } from '../../src/tools/state-tools.js'
-import type { InvokeConfig } from '../../src/types.js'
+import type { InvokeConfig, PipelineState } from '../../src/types.js'
 
 const TEST_DIR = path.join(import.meta.dirname, 'fixtures', 'state-tools-test')
+const BUG013_PIPELINE_ID = 'pipeline-1775865600000'
+const BUG013_BRANCH_FIXTURE = {
+  work_branch: 'invoke/work/pipeline-1775865600000',
+  work_branch_path:
+    '/private/var/folders/c4/q0tszkjs27b424l4fgbkz4400000gn/T/invoke-session-pipeline-1775865600000-zLeqrR',
+  base_branch: 'main',
+} satisfies Partial<PipelineState>
+const BUG013_INITIAL_PERSIST_ONCE_FIXTURE = {
+  ...BUG013_BRANCH_FIXTURE,
+  spec: 'Scope spec',
+  plan: 'Execution plan',
+  tasks: 'Task breakdown',
+  strategy: 'tdd',
+} satisfies Partial<PipelineState>
+const BUG013_BUG_IDS = [
+  'BUG-001',
+  'BUG-002',
+  'BUG-003',
+  'BUG-004',
+  'BUG-005',
+  'BUG-006',
+  'BUG-007',
+  'BUG-008',
+  'BUG-009',
+  'BUG-010',
+]
 
 const testConfig: InvokeConfig = {
   providers: {
@@ -1025,6 +1051,29 @@ describe('registerStateTools', () => {
     } finally {
       warnSpy.mockRestore()
     }
+  })
+
+  it('preserves persisted branch fields when invoke_set_state later updates only bug_ids', async () => {
+    const sessionId = 'session-bug013'
+    const sessionDir = await sessionManager.create(sessionId)
+    const sessionStateManager = new StateManager(TEST_DIR, sessionDir)
+    await sessionStateManager.initialize(BUG013_PIPELINE_ID)
+    await sessionStateManager.update(BUG013_INITIAL_PERSIST_ONCE_FIXTURE)
+
+    const result = await getTool('invoke_set_state').handler({
+      session_id: sessionId,
+      bug_ids: BUG013_BUG_IDS,
+    })
+
+    expect(result.isError).toBeUndefined()
+    expect(parseResponseText(result)).toMatchObject({
+      ...BUG013_INITIAL_PERSIST_ONCE_FIXTURE,
+      bug_ids: BUG013_BUG_IDS,
+    })
+    expect(await new StateManager(TEST_DIR, sessionDir).get()).toMatchObject({
+      ...BUG013_INITIAL_PERSIST_ONCE_FIXTURE,
+      bug_ids: BUG013_BUG_IDS,
+    })
   })
 
   it('round-trips valid bug_ids and rejects invalid bug_ids in invoke_set_state', async () => {
