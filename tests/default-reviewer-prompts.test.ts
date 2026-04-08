@@ -112,10 +112,10 @@ describe('default reviewer prompts', () => {
     expect(content).toContain('{{prior_findings}}')
     expect(content).toContain('**Out-of-Scope:**')
     // Anti-prompt-injection sentinel wrappers around untrusted template content
-    expect(content).toContain('<<<SCOPE_DATA_START>>>')
-    expect(content).toContain('<<<SCOPE_DATA_END>>>')
-    expect(content).toContain('<<<PRIOR_FINDINGS_DATA_START>>>')
-    expect(content).toContain('<<<PRIOR_FINDINGS_DATA_END>>>')
+    expect(content).toContain('{{scope_delim_start}}')
+    expect(content).toContain('{{scope_delim_end}}')
+    expect(content).toContain('{{prior_findings_delim_start}}')
+    expect(content).toContain('{{prior_findings_delim_end}}')
     expect(content).toContain('untrusted data')
     expect(content).toContain(nothingFound)
 
