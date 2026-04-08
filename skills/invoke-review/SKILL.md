@@ -64,17 +64,17 @@ Run `git rev-parse HEAD` in the session worktree. Store the result as `currentSh
 
 **3.3 Detect Cycle and Compute Prior Findings**
 
-Call `invoke_get_review_cycle_count` with `session_id: <pipeline_id>`.
+Call `invoke_get_review_cycle_count` with `session_id: <pipeline_id>` to get an overall count, but **do not use that count alone to decide cycle 1 vs cycle ≥ 2**. Instead, look up the most recent prior `ReviewCycle` whose `batch_id` matches the current dispatch `batch_id` AND whose `scope` matches the current review `scope` AND (in tiered mode) whose `tier` matches the current `tier`. Only an exact match on all three keys triggers the cycle ≥ 2 path. A non-empty `state.review_cycles` from earlier or unrelated batches does NOT.
 
-- **Cycle 1:** Set `priorFindings = '(first review cycle — no prior findings)'`. Use the full `git diff main...HEAD` (or `git diff $(git merge-base HEAD main)...HEAD`) as the diff.
+- **No matching prior cycle (treat as cycle 1):** Set `priorFindings = '(first review cycle — no prior findings)'`. Use the full `git diff main...HEAD` (or `git diff $(git merge-base HEAD main)...HEAD`) as the diff.
 
-- **Cycle ≥ 2:** Look up the most recent prior `ReviewCycle` of the same scope/tier and read its `reviewed_sha`.
-  - If `reviewed_sha` is present: compute `git diff <reviewed_sha>...HEAD` as the delta diff. Build `priorFindings` as a numbered checklist of that cycle's `triaged.accepted` findings, **excluding any with `out_of_scope === true`**:
+- **Matching prior cycle exists (cycle ≥ 2):** Read its `reviewed_sha`.
+  - If `reviewed_sha` is present AND `git rev-parse --verify <reviewed_sha>^{commit}` succeeds AND `git diff <reviewed_sha>...HEAD` succeeds: use the delta diff as the diff. Build `priorFindings` as a numbered checklist of that cycle's `triaged.accepted` findings, **excluding any with `out_of_scope === true`**:
     ```
     1. [HIGH] src/auth/token.ts:42 — SQL injection
        Fix: Use parameterized queries
     ```
-  - If `reviewed_sha` is absent: emit `⚠️ No prior review SHA — falling back to full diff`, use `git diff main...HEAD` as the diff, and set `priorFindings = '(prior cycle had no reviewed_sha — full diff being reviewed)'`.
+  - **If `reviewed_sha` is absent OR present but invalid** (rev-parse fails, diff fails for any reason): emit `⚠️ No prior review SHA — falling back to full diff`, use `git diff main...HEAD` as the diff, and set `priorFindings = '(prior cycle had no usable reviewed_sha — full diff being reviewed)'`.
 
 Both `specContext` and `priorFindings` **MUST** always be set to a non-empty string before dispatching — never `undefined`.
 

@@ -365,6 +365,40 @@ describe('registerStateTools', () => {
     expect(parsed.success).toBe(false)
   })
 
+  it('rejects review_cycle_update with reviewed_sha containing shell-injection or git-flag payloads', () => {
+    const setStateTool = getTool('invoke_set_state')
+    const malicious = ['--upload-pack=evil', '; rm -rf ~', 'abc123g', 'ABC1234', 'abc 1234', '']
+    for (const reviewed_sha of malicious) {
+      const parsed = setStateTool.config.inputSchema.safeParse({
+        session_id: 'session-1',
+        review_cycle_update: {
+          id: 1,
+          reviewers: ['reviewer-a'],
+          findings: [],
+          reviewed_sha,
+        },
+      })
+      expect(parsed.success, `expected schema to reject reviewed_sha=${JSON.stringify(reviewed_sha)}`).toBe(false)
+    }
+  })
+
+  it('accepts review_cycle_update with valid hex SHA reviewed_sha (7-40 lowercase hex chars)', () => {
+    const setStateTool = getTool('invoke_set_state')
+    const valid = ['abc1234', '0000000', 'abc1234567890abcdef1234567890abcdef12345']
+    for (const reviewed_sha of valid) {
+      const parsed = setStateTool.config.inputSchema.safeParse({
+        session_id: 'session-1',
+        review_cycle_update: {
+          id: 1,
+          reviewers: ['reviewer-a'],
+          findings: [],
+          reviewed_sha,
+        },
+      })
+      expect(parsed.success, `expected schema to accept reviewed_sha=${JSON.stringify(reviewed_sha)}`).toBe(true)
+    }
+  })
+
   it('accepts and persists conflicting_files on a task in invoke_set_state batch_update', async () => {
     const setStateTool = getTool('invoke_set_state')
     const input = {
