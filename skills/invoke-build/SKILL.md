@@ -29,6 +29,8 @@ Present resumed batch status in task buckets so the user can see what is already
 
 ### 2. Work Branch (per-session integration worktree)
 
+Read `config.settings.commit_style` via `invoke_get_config`. Default to `per-task` if unset. This value gates whether a per-batch collapse runs after each batch's final merge (see step g2).
+
 If `state.work_branch` is set (new sessions initialized via `invoke_session_init_worktree` in invoke-scope), all merges in this build stage will go into the session integration worktree at `state.work_branch_path`. The `invoke_merge_worktree` tool automatically routes there when given `session_id`.
 
 If `state.work_branch` is NOT set (legacy sessions from before per-session-branches), merges fall through to the user's repoDir HEAD branch — the legacy behavior. R8 of the spec preserves this for backwards compatibility.
@@ -153,7 +155,7 @@ Never merge two tasks back-to-back without running `invoke_run_post_merge` and w
 #### f.1 Conflict Response and Redispatch (R4 + C5 budget)
 
 The `invoke_merge_worktree` tool returns one of two shapes:
-- Success: `{ task_id, status: 'merged' }`
+- Success: `{ task_id, status: 'merged', commit_sha: '<sha>' }`
 - Conflict: `{ task_id, status: 'conflict', conflicting_files: [...], merge_target_path: '...' }`
 
 **WARNING:** Do NOT prompt the user for manual conflict resolution. The R4 + C5 redispatch loop handles conflicts automatically via the auto-redispatch budget; manual prompts are only valid AFTER the budget is exhausted (step 6 below).
@@ -229,7 +231,14 @@ If the response is `status: 'conflict'`:
 #### g. Update State
 
 Keep the batch state current throughout the batch using `invoke_set_state` with `session_id: <pipeline_id>` and `batch_update: { id: <batch-id>, status: <status>, tasks: [...] }`:
-- After each successful merge, update that task with `TaskState.merged: true`.
+- After each successful merge, capture `commit_sha` from the merge response and update that task with `merged: true` and `commit_sha`:
+  ```
+  batch_update: {
+    id: <batch-id>,
+    status: 'in_progress',
+    tasks: [{ id: <task-id>, status: 'completed', merged: true, commit_sha: <sha from merge response> }]
+  }
+  ```
 - Use batch status `in_progress` while work is still actively running.
 - Use batch status `partial` when some tasks are already merged or skipped but the batch still has remaining unmerged work or unresolved failures.
 - Use batch status `completed` only when every successful task is merged and every failed task has been retried successfully or explicitly skipped.
@@ -238,6 +247,29 @@ Keep the batch state current throughout the batch using `invoke_set_state` with 
 > **Guidance:** Use `batch_update` for all incremental batch and task progress writes. Reserve full `batches: [...]` array writes for clearing state (e.g., invoke-resume redo paths).
 
 When resuming, rely on this saved state instead of guessing from the filesystem. Tasks already marked `merged: true` are done; tasks marked `completed` but not merged should be offered for merge; only unmerged incomplete tasks should be re-dispatched.
+
+#### g2. Per-batch collapse (if commit_style = per-batch)
+
+After all tasks in the batch are merged and state is updated (step g), check whether to collapse commits:
+
+If `commit_style == 'per-batch'`:
+1. Determine the base SHA for this batch:
+   - For batch 0: run `git merge-base <state.base_branch> HEAD` on the session work branch path
+   - For batch N>0: use `state.batches[N-1].commit_sha`
+2. Call `invoke_collapse_commits({ session_id: <pipeline_id>, base_sha, message: 'feat: batch-<N+1>' })`
+3. Persist the returned commit_sha on the batch via `invoke_set_state`:
+   ```
+   batch_update: {
+     id: <batch-id>,
+     status: 'completed',
+     commit_sha: <collapsed sha>,
+     tasks: [<each task with its commit_sha updated to the collapsed sha>]
+   }
+   ```
+4. After this, every task in this batch has its commit_sha replaced with the batch's collapsed commit_sha. They no longer exist as standalone commits on the work branch, so any future fix tasks must target the batch commit.
+
+If `commit_style != 'per-batch'`:
+  Skip this step. Tasks keep their per-task commit_sha.
 
 #### h. Inter-Batch Review (optional)
 

@@ -154,7 +154,7 @@ strategies:
 settings:
   default_strategy: tdd
   agent_timeout: 300
-  commit_style: per-batch
+  commit_style: per-task  # per-task is the default: reviewer fixes fold into per-task commits via end-of-review autosquash
   work_branch_prefix: invoke/work
   # Global default for subroles with multiple providers (parallel/fallback/single):
   default_provider_mode: parallel
