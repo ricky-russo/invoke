@@ -39182,6 +39182,10 @@ var DispatchEngine = class {
     return result;
   }
   mergeResults(results, request) {
+    const providerCounts = {};
+    for (const result of results) {
+      providerCounts[result.provider] = result.output.findings?.length ?? 0;
+    }
     const hasFindings = results.some((r) => r.output.findings && r.output.findings.length > 0);
     if (hasFindings) {
       const providerFindings = results.filter((r) => r.output.findings).map((r) => ({
@@ -39199,7 +39203,8 @@ var DispatchEngine = class {
           summary: `Merged results from ${results.length} providers (${merged.length} findings)`,
           findings: merged,
           raw: results.map((r) => `--- ${r.provider} ---
-${r.output.raw}`).join("\n\n")
+${r.output.raw}`).join("\n\n"),
+          provider_counts: providerCounts
         },
         duration: Math.max(...results.map((r) => r.duration))
       };
@@ -39213,7 +39218,8 @@ ${r.output.raw}`).join("\n\n")
       output: {
         summary: `Combined results from ${results.length} providers`,
         raw: results.map((r) => `--- ${r.provider} ---
-${r.output.raw}`).join("\n\n")
+${r.output.raw}`).join("\n\n"),
+        provider_counts: providerCounts
       },
       duration: Math.max(...results.map((r) => r.duration))
     };
@@ -39305,6 +39311,402 @@ function buildExecutionLayers(tasks) {
   return layers;
 }
 
+// src/tools/session-path.ts
+import { execFileSync as execFileSync3 } from "node:child_process";
+
+// src/worktree/trusted-session-helpers.ts
+import { execFileSync as execFileSync2 } from "child_process";
+import { realpathSync } from "fs";
+import os from "os";
+import path4 from "path";
+var INVOKE_SESSION_BASENAME_PREFIX = "invoke-session-";
+function getTmpdirRealpath() {
+  try {
+    return realpathSync(os.tmpdir());
+  } catch {
+    return os.tmpdir();
+  }
+}
+function resolveGitCommonDir(cwd, memo) {
+  if (memo) {
+    const cached2 = memo.get(cwd);
+    if (cached2 !== void 0) return cached2;
+  }
+  try {
+    const output = execFileSync2("git", ["rev-parse", "--git-common-dir"], {
+      cwd,
+      stdio: "pipe"
+    }).toString().trim();
+    const resolved = realpathSync(path4.resolve(cwd, output));
+    if (memo) memo.set(cwd, resolved);
+    return resolved;
+  } catch {
+    return null;
+  }
+}
+function isSafeWorkBranch(workBranch, sessionId, workBranchPrefix) {
+  if (!workBranch) return false;
+  return workBranch === `${workBranchPrefix}/${sessionId}`;
+}
+function isSafeSessionWorkBranchPath(workBranchPath, repoDir) {
+  return resolveSafeSessionWorkBranchPath(workBranchPath, repoDir) !== null;
+}
+function resolveSafeSessionWorkBranchPath(workBranchPath, repoDir) {
+  if (!workBranchPath || !path4.isAbsolute(workBranchPath)) return null;
+  let canonicalTarget;
+  try {
+    canonicalTarget = realpathSync(workBranchPath);
+  } catch {
+    return null;
+  }
+  const canonicalTmp = getTmpdirRealpath();
+  if (canonicalTarget !== canonicalTmp && !canonicalTarget.startsWith(canonicalTmp + path4.sep)) {
+    return null;
+  }
+  if (!path4.basename(canonicalTarget).startsWith(INVOKE_SESSION_BASENAME_PREFIX)) {
+    return null;
+  }
+  const memo = /* @__PURE__ */ new Map();
+  const targetCommonDir = resolveGitCommonDir(canonicalTarget, memo);
+  const repoCommonDir = resolveGitCommonDir(repoDir, memo);
+  if (!targetCommonDir || !repoCommonDir) return null;
+  if (targetCommonDir !== repoCommonDir) return null;
+  return canonicalTarget;
+}
+
+// src/tools/state.ts
+import { mkdir, readFile as readFile3, writeFile, rename } from "fs/promises";
+import { existsSync } from "fs";
+import path5 from "path";
+
+// src/tools/reviewed-sha.ts
+var REVIEWED_SHA_PATTERN = /^[0-9a-f]{7,40}$/;
+function sanitizeReviewedSha(value) {
+  return typeof value === "string" && REVIEWED_SHA_PATTERN.test(value) ? value : void 0;
+}
+
+// src/tools/state.ts
+var StateManager = class _StateManager {
+  static PERSIST_ONCE_KEYS = [
+    "work_branch",
+    "work_branch_path",
+    "base_branch",
+    "spec",
+    "plan",
+    "tasks",
+    "strategy",
+    "bug_ids"
+  ];
+  statePath;
+  tmpPath;
+  storageDir;
+  dirEnsured = false;
+  writeQueue = Promise.resolve();
+  cachedState = null;
+  constructor(projectDir, sessionDir) {
+    this.storageDir = sessionDir ?? path5.join(projectDir, ".invoke");
+    this.statePath = path5.join(this.storageDir, "state.json");
+    this.tmpPath = path5.join(this.storageDir, "state.json.tmp");
+    this.cachedState = null;
+  }
+  async get() {
+    if (this.cachedState !== null) {
+      return this.cachedState;
+    }
+    if (!existsSync(this.statePath)) {
+      return null;
+    }
+    const content = await readFile3(this.statePath, "utf-8");
+    const parsed = JSON.parse(content);
+    if (parsed?.review_cycles) {
+      for (const rc of parsed.review_cycles) {
+        if (rc.reviewed_sha !== void 0) {
+          rc.reviewed_sha = sanitizeReviewedSha(rc.reviewed_sha);
+        }
+      }
+    }
+    this.cachedState = parsed;
+    return parsed;
+  }
+  async initialize(pipelineId) {
+    return this.enqueueWrite(async () => {
+      const now = (/* @__PURE__ */ new Date()).toISOString();
+      const state = {
+        pipeline_id: pipelineId,
+        started: now,
+        last_updated: now,
+        current_stage: "scope",
+        batches: [],
+        review_cycles: []
+      };
+      await this.writeAtomic(state);
+      return state;
+    });
+  }
+  async update(updates) {
+    return this.applyComposite({ partial: updates });
+  }
+  async addBatch(batch) {
+    return this.enqueueWrite(async () => {
+      this.cachedState = null;
+      const current = await this.get();
+      if (!current) {
+        throw new Error("No active pipeline. Call initialize() first.");
+      }
+      current.batches.push(batch);
+      current.last_updated = (/* @__PURE__ */ new Date()).toISOString();
+      await this.writeAtomic(current);
+      return current;
+    });
+  }
+  /**
+   * Apply a composite state update inside a single atomic write.
+   *
+   * Ordering (load-bearing):
+   *   1. batchUpdate (upsert by id)
+   *   2. reviewCycleUpdate (upsert by id)
+   *   3. partial spread (top-level field replacement)
+   *
+   * The partial spread is applied last so callers can use
+   * `partial.batches` or `partial.review_cycles` to fully replace the
+   * upsert results. Invoke-resume redo paths rely on this contract,
+   * including clearing batches with `partial.batches: []` (BUG-001).
+   *
+   * Trade-off: if a caller passes both `batch_update` and
+   * `partial.batches`, the array replacement silently clobbers the
+   * upserted result. This is intentional per the BUG-001 spec; the
+   * cycle-1 mutex rejection was a regression that was reverted in
+   * cycle 2 R1. See state-tools.ts for the soft warning that logs when
+   * callers send both forms together.
+   */
+  async applyComposite(updates) {
+    return this.enqueueWrite(async () => {
+      this.cachedState = null;
+      const current = await this.get();
+      if (!current) {
+        throw new Error("No active pipeline. Call initialize() first.");
+      }
+      let next = { ...current };
+      if (updates.batchUpdate) {
+        this.applyBatchUpsert(next, updates.batchUpdate);
+      }
+      if (updates.reviewCycleUpdate) {
+        this.applyReviewCycleUpsert(next, updates.reviewCycleUpdate);
+      }
+      if (updates.partial) {
+        const safePartial = this.filterPersistOncePartial(updates.partial);
+        next = { ...next, ...safePartial };
+      }
+      next.last_updated = (/* @__PURE__ */ new Date()).toISOString();
+      await this.writeAtomic(next);
+      return next;
+    });
+  }
+  async updateBatch(batchIndex, updates) {
+    return this.enqueueWrite(async () => {
+      this.cachedState = null;
+      const current = await this.get();
+      if (!current) {
+        throw new Error("No active pipeline. Call initialize() first.");
+      }
+      if (batchIndex >= current.batches.length) {
+        throw new Error(
+          `Batch index ${batchIndex} out of range (${current.batches.length} batches)`
+        );
+      }
+      current.batches[batchIndex] = { ...current.batches[batchIndex], ...updates };
+      current.last_updated = (/* @__PURE__ */ new Date()).toISOString();
+      await this.writeAtomic(current);
+      return current;
+    });
+  }
+  async updateTask(batchIndex, taskId, updates) {
+    return this.enqueueWrite(async () => {
+      this.cachedState = null;
+      const current = await this.get();
+      if (!current) {
+        throw new Error("No active pipeline. Call initialize() first.");
+      }
+      if (batchIndex >= current.batches.length) {
+        throw new Error(
+          `Batch index ${batchIndex} out of range (${current.batches.length} batches)`
+        );
+      }
+      const task = current.batches[batchIndex].tasks.find((t) => t.id === taskId);
+      if (!task) {
+        throw new Error(`Task '${taskId}' not found in batch ${batchIndex}`);
+      }
+      Object.assign(task, updates);
+      current.last_updated = (/* @__PURE__ */ new Date()).toISOString();
+      await this.writeAtomic(current);
+      return current;
+    });
+  }
+  async getReviewCycleCount(batchId) {
+    const state = await this.get();
+    if (!state) return 0;
+    if (batchId !== void 0) {
+      return state.review_cycles.filter((rc) => rc.batch_id === batchId).length;
+    }
+    return state.review_cycles.length;
+  }
+  async reset() {
+    await this.enqueueWrite(async () => {
+      if (existsSync(this.statePath)) {
+        const { unlink: unlink2 } = await import("fs/promises");
+        await unlink2(this.statePath);
+      }
+      this.cachedState = null;
+    });
+  }
+  enqueueWrite(operation) {
+    const queuedOperation = this.writeQueue.then(operation);
+    this.writeQueue = queuedOperation.then(
+      () => void 0,
+      () => void 0
+    );
+    return queuedOperation;
+  }
+  async writeAtomic(state) {
+    if (!this.dirEnsured) {
+      await mkdir(this.storageDir, { recursive: true });
+      this.dirEnsured = true;
+    }
+    const content = JSON.stringify(state, null, 2) + "\n";
+    await writeFile(this.tmpPath, content);
+    await rename(this.tmpPath, this.statePath);
+    this.cachedState = state;
+  }
+  filterPersistOncePartial(partial2) {
+    const filtered = { ...partial2 };
+    for (const key of _StateManager.PERSIST_ONCE_KEYS) {
+      if (filtered[key] === void 0 || filtered[key] === null) {
+        delete filtered[key];
+      }
+    }
+    return filtered;
+  }
+  applyBatchUpsert(state, batch) {
+    const batches = [...state.batches];
+    const existingIndex = batches.findIndex((existingBatch) => existingBatch.id === batch.id);
+    if (existingIndex >= 0) {
+      const existing = batches[existingIndex];
+      const mergedTasks = this.mergeTasksById(existing.tasks, batch.tasks);
+      batches[existingIndex] = { ...existing, ...batch, tasks: mergedTasks };
+    } else {
+      batches.push(batch);
+    }
+    state.batches = batches;
+  }
+  /**
+   * Merge incoming task entries into an existing tasks array by task id.
+   *
+   * Semantics (load-bearing for invoke-build's conflict redispatch loop):
+   *   - Tasks present in `updates` are merged on top of the existing entry
+   *     by id. Existing fields are preserved unless overridden by `updates`.
+   *   - Tasks present only in `existing` are preserved unchanged.
+   *   - Tasks present only in `updates` are appended.
+   *
+   * This lets callers send only the changed task entries in
+   * `batch_update.tasks` without dropping sibling task state. The skill
+   * relies on this so the conflict redispatch path can update a single
+   * task without re-reading the full tasks array first.
+   */
+  mergeTasksById(existing, updates) {
+    if (!updates || updates.length === 0) {
+      return [...existing];
+    }
+    const merged = [...existing];
+    for (const update of updates) {
+      const idx = merged.findIndex((task) => task.id === update.id);
+      if (idx >= 0) {
+        merged[idx] = { ...merged[idx], ...update };
+      } else {
+        merged.push(update);
+      }
+    }
+    return merged;
+  }
+  applyReviewCycleUpsert(state, cycle) {
+    const reviewCycles = [...state.review_cycles];
+    const existingIndex = reviewCycles.findIndex((existingCycle) => existingCycle.id === cycle.id);
+    if (existingIndex >= 0) {
+      reviewCycles[existingIndex] = {
+        ...reviewCycles[existingIndex],
+        ...cycle
+      };
+    } else {
+      reviewCycles.push(cycle);
+    }
+    state.review_cycles = reviewCycles;
+  }
+};
+
+// src/tools/session-path.ts
+var MissingSessionWorkBranchPath = class extends Error {
+  constructor(sessionId) {
+    super(
+      `Session '${sessionId}' was initialized but state.work_branch_path is missing \u2014 state may be corrupted. Reattach via invoke_session_reattach_worktree to restore the path.`
+    );
+    this.name = "MissingSessionWorkBranchPath";
+  }
+};
+function resolvePersistedSessionWorkBranchPath({
+  sessionId,
+  projectDir,
+  workBranch,
+  workBranchPath
+}) {
+  const canonicalPath = resolveSafeSessionWorkBranchPath(workBranchPath, projectDir);
+  if (canonicalPath === null) {
+    throw new Error(
+      `Refusing to use unsafe session work branch path for session '${sessionId}'`
+    );
+  }
+  const workBranchPrefix = workBranch ? workBranch.split("/").slice(0, -1).join("/") : "invoke/work";
+  if (!isSafeWorkBranch(workBranch, sessionId, workBranchPrefix)) {
+    throw new Error(
+      `Refusing to use session '${sessionId}': state.work_branch '${workBranch ?? "<unset>"}' does not match the expected session branch name`
+    );
+  }
+  let currentBranch;
+  try {
+    currentBranch = execFileSync3("git", ["symbolic-ref", "--short", "HEAD"], {
+      cwd: canonicalPath,
+      stdio: "pipe"
+    }).toString().trim();
+  } catch (err) {
+    throw new Error(
+      `Refusing to use session '${sessionId}': could not read HEAD at '${canonicalPath}' (${err instanceof Error ? err.message : String(err)})`
+    );
+  }
+  if (currentBranch !== workBranch) {
+    throw new Error(
+      `Refusing to use session '${sessionId}': worktree at '${canonicalPath}' is checked out on '${currentBranch}', expected '${workBranch}'`
+    );
+  }
+  return canonicalPath;
+}
+async function resolveSessionWorkBranchPath(sessionManager, projectDir, sessionId) {
+  if (!sessionId) return void 0;
+  if (!projectDir) {
+    throw new Error("Project directory is required when session_id is provided");
+  }
+  const sessionDir = sessionManager.resolve(sessionId);
+  const stateManager = new StateManager(projectDir, sessionDir);
+  const state = await stateManager.get();
+  if (state === null) return void 0;
+  if (state.work_branch_path === void 0) {
+    throw new MissingSessionWorkBranchPath(sessionId);
+  }
+  return resolvePersistedSessionWorkBranchPath({
+    sessionId,
+    projectDir,
+    workBranch: state.work_branch,
+    workBranchPath: state.work_branch_path
+  });
+}
+
 // src/dispatch/batch-manager.ts
 var persistedBatchStatusMap = {
   running: "in_progress",
@@ -39319,6 +39721,7 @@ var BatchManager = class {
     this.worktreeManager = worktreeManager;
     this.defaultStateManager = defaultStateManager;
     this.terminalRetentionMs = options.terminalRetentionMs ?? DEFAULT_TERMINAL_RETENTION_MS;
+    this.repoDir = options.repoDir;
   }
   engine;
   worktreeManager;
@@ -39328,6 +39731,7 @@ var BatchManager = class {
   evictionTimers = /* @__PURE__ */ new Map();
   isShutdown = false;
   terminalRetentionMs;
+  repoDir;
   async dispatchBatch(request, options = {}) {
     const batchId = randomUUID().slice(0, 8);
     const stateManager = options.stateManager ?? this.defaultStateManager;
@@ -39596,9 +40000,32 @@ var BatchManager = class {
     const record2 = this.batches.get(batchId);
     const maxParallel = request.maxParallel ?? 0;
     let sessionWorkBranch;
-    if (request.createWorktrees && request.sessionId && stateManager) {
+    let resolvedReviewerWorkDir;
+    if (request.sessionId && stateManager) {
       const state = await stateManager.get();
-      sessionWorkBranch = state?.work_branch;
+      if (request.createWorktrees) {
+        sessionWorkBranch = state?.work_branch;
+      } else if (state?.work_branch_path && this.repoDir) {
+        try {
+          resolvedReviewerWorkDir = resolvePersistedSessionWorkBranchPath({
+            sessionId: request.sessionId,
+            projectDir: this.repoDir,
+            workBranch: state.work_branch,
+            workBranchPath: state.work_branch_path
+          });
+        } catch (err) {
+          console.warn(
+            `[invoke] BatchManager: rejected unsafe work_branch_path for sessionId=${request.sessionId}: ${err instanceof Error ? err.message : String(err)}`
+          );
+          resolvedReviewerWorkDir = void 0;
+        }
+      }
+    }
+    if (request.createWorktrees && !sessionWorkBranch) {
+      const sessionIdText = request.sessionId ?? "<no session_id>";
+      console.warn(
+        `[invoke] BatchManager: createWorktrees=true but state.work_branch is unset for sessionId=${sessionIdText}. Builder worktrees will branch from main. This will produce incorrect diffs \u2014 ensure invoke_session_init_worktree ran.`
+      );
     }
     const scheduledTasks = request.tasks.map((task, index) => ({
       ...task,
@@ -39640,7 +40067,7 @@ var BatchManager = class {
       }
       const agentStatus = record2.status.agents[task.index];
       try {
-        let workDir;
+        let workDir = request.createWorktrees ? void 0 : resolvedReviewerWorkDir;
         if (request.createWorktrees) {
           agentStatus.status = "dispatched";
           await this.persistTaskStatus(stateManager, batchIndex, task.taskId, "dispatched");
@@ -39723,13 +40150,13 @@ function cloneAgentResult(result) {
 }
 
 // src/worktree/manager.ts
-import { execFileSync as execFileSync3 } from "child_process";
-import { existsSync } from "fs";
-import path5 from "path";
+import { execFileSync as execFileSync4 } from "child_process";
+import { existsSync as existsSync2 } from "fs";
+import path6 from "path";
 import os2 from "os";
 
 // src/worktree/repo-lock.ts
-import { realpathSync } from "fs";
+import { realpathSync as realpathSync2 } from "fs";
 var repoLocks = /* @__PURE__ */ new Map();
 var mergeTargetLocks = /* @__PURE__ */ new Map();
 var taskLocks = /* @__PURE__ */ new Map();
@@ -39762,76 +40189,16 @@ async function withTaskLock(taskId, fn) {
 }
 function canonicalize(targetPath) {
   try {
-    return realpathSync(targetPath);
+    return realpathSync2(targetPath);
   } catch {
     return targetPath;
   }
 }
 
-// src/worktree/trusted-session-helpers.ts
-import { execFileSync as execFileSync2 } from "child_process";
-import { realpathSync as realpathSync2 } from "fs";
-import os from "os";
-import path4 from "path";
-var INVOKE_SESSION_BASENAME_PREFIX = "invoke-session-";
-function getTmpdirRealpath() {
-  try {
-    return realpathSync2(os.tmpdir());
-  } catch {
-    return os.tmpdir();
-  }
-}
-function resolveGitCommonDir(cwd, memo) {
-  if (memo) {
-    const cached2 = memo.get(cwd);
-    if (cached2 !== void 0) return cached2;
-  }
-  try {
-    const output = execFileSync2("git", ["rev-parse", "--git-common-dir"], {
-      cwd,
-      stdio: "pipe"
-    }).toString().trim();
-    const resolved = realpathSync2(path4.resolve(cwd, output));
-    if (memo) memo.set(cwd, resolved);
-    return resolved;
-  } catch {
-    return null;
-  }
-}
-function isSafeWorkBranch(workBranch, sessionId, workBranchPrefix) {
-  if (!workBranch) return false;
-  return workBranch === `${workBranchPrefix}/${sessionId}`;
-}
-function isSafeSessionWorkBranchPath(workBranchPath, repoDir) {
-  return resolveSafeSessionWorkBranchPath(workBranchPath, repoDir) !== null;
-}
-function resolveSafeSessionWorkBranchPath(workBranchPath, repoDir) {
-  if (!workBranchPath || !path4.isAbsolute(workBranchPath)) return null;
-  let canonicalTarget;
-  try {
-    canonicalTarget = realpathSync2(workBranchPath);
-  } catch {
-    return null;
-  }
-  const canonicalTmp = getTmpdirRealpath();
-  if (canonicalTarget !== canonicalTmp && !canonicalTarget.startsWith(canonicalTmp + path4.sep)) {
-    return null;
-  }
-  if (!path4.basename(canonicalTarget).startsWith(INVOKE_SESSION_BASENAME_PREFIX)) {
-    return null;
-  }
-  const memo = /* @__PURE__ */ new Map();
-  const targetCommonDir = resolveGitCommonDir(canonicalTarget, memo);
-  const repoCommonDir = resolveGitCommonDir(repoDir, memo);
-  if (!targetCommonDir || !repoCommonDir) return null;
-  if (targetCommonDir !== repoCommonDir) return null;
-  return canonicalTarget;
-}
-
 // src/worktree/manager.ts
 var CONFLICT_STATUS_PREFIXES = ["UU", "AA", "DD", "AU", "UA", "DU", "UD"];
 function git(cwd, args) {
-  return execFileSync3("git", args, { cwd, stdio: "pipe" }).toString();
+  return execFileSync4("git", args, { cwd, stdio: "pipe" }).toString();
 }
 function tryGit(cwd, args) {
   try {
@@ -39848,7 +40215,7 @@ var WorktreeManager = class {
   worktrees = /* @__PURE__ */ new Map();
   async create(taskId, baseBranch) {
     const branch = `invoke-wt-${taskId}`;
-    const worktreePath = path5.join(os2.tmpdir(), `invoke-worktree-${taskId}-${Date.now()}`);
+    const worktreePath = path6.join(os2.tmpdir(), `invoke-worktree-${taskId}-${Date.now()}`);
     await withRepoLock(this.repoDir, async () => {
       const args = ["worktree", "add", worktreePath, "-b", branch];
       if (baseBranch) {
@@ -39930,7 +40297,7 @@ var WorktreeManager = class {
   async cleanupLocked(taskId) {
     const info = this.worktrees.get(taskId);
     if (!info) return;
-    if (existsSync(info.worktreePath)) {
+    if (existsSync2(info.worktreePath)) {
       await withRepoLock(this.repoDir, async () => {
         git(this.repoDir, ["worktree", "remove", info.worktreePath, "--force"]);
       });
@@ -39975,10 +40342,10 @@ var WorktreeManager = class {
 
 // src/worktree/session-worktree.ts
 init_branch_prefix();
-import { execFileSync as execFileSync4 } from "child_process";
-import { existsSync as existsSync2, lstatSync, mkdtempSync, realpathSync as realpathSync3 } from "fs";
+import { execFileSync as execFileSync5 } from "child_process";
+import { existsSync as existsSync3, lstatSync, mkdtempSync, realpathSync as realpathSync3 } from "fs";
 import os3 from "os";
-import path6 from "path";
+import path7 from "path";
 
 // src/worktree/porcelain.ts
 function parsePorcelainWorktrees(porcelainOutput) {
@@ -40029,16 +40396,16 @@ function validateSessionIdForRead(sessionId) {
 
 // src/worktree/session-worktree.ts
 function isWithinPathRoot(targetPath, rootPath) {
-  return targetPath === rootPath || targetPath.startsWith(rootPath + path6.sep);
+  return targetPath === rootPath || targetPath.startsWith(rootPath + path7.sep);
 }
 function toKnownPath(worktreePath) {
-  return existsSync2(worktreePath) ? realpathSync3(worktreePath) : worktreePath;
+  return existsSync3(worktreePath) ? realpathSync3(worktreePath) : worktreePath;
 }
 var SessionWorktreeManager = class {
   constructor(repoDir) {
     this.repoDir = repoDir;
     this.repoPath = toKnownPath(repoDir);
-    this.tmpdirPath = path6.resolve(os3.tmpdir());
+    this.tmpdirPath = path7.resolve(os3.tmpdir());
     this.realTmpdirPath = this.resolveTmpdirPath();
   }
   repoDir;
@@ -40103,13 +40470,13 @@ var SessionWorktreeManager = class {
       if (toKnownPath(existing2.worktreePath) !== toKnownPath(recordedPath)) {
         return null;
       }
-      if (!existsSync2(existing2.worktreePath)) {
+      if (!existsSync3(existing2.worktreePath)) {
         return null;
       }
       return existing2;
     }
     const existing = await this.resolve(sessionId, workBranch);
-    if (existing && existsSync2(existing.worktreePath)) {
+    if (existing && existsSync3(existing.worktreePath)) {
       return existing;
     }
     if (!this.branchExists(workBranch)) {
@@ -40117,13 +40484,13 @@ var SessionWorktreeManager = class {
     }
     return withRepoLock(this.repoDir, async () => {
       const lockedExisting = await this.resolve(sessionId, workBranch);
-      if (lockedExisting && existsSync2(lockedExisting.worktreePath)) {
+      if (lockedExisting && existsSync3(lockedExisting.worktreePath)) {
         return lockedExisting;
       }
       if (!this.branchExists(workBranch)) {
         return null;
       }
-      execFileSync4("git", ["worktree", "prune"], {
+      execFileSync5("git", ["worktree", "prune"], {
         cwd: this.repoDir,
         stdio: "pipe"
       });
@@ -40143,7 +40510,7 @@ var SessionWorktreeManager = class {
     const existing = await this.resolve(sessionId, workBranch);
     if (existing) {
       await withRepoLock(this.repoDir, async () => {
-        execFileSync4(
+        execFileSync5(
           "git",
           ["worktree", "remove", "--force", existing.worktreePath],
           { cwd: this.repoDir, stdio: "pipe" }
@@ -40152,7 +40519,7 @@ var SessionWorktreeManager = class {
     }
     if (deleteBranch) {
       try {
-        execFileSync4(
+        execFileSync5(
           "git",
           ["branch", "-D", workBranch],
           { cwd: this.repoDir, stdio: "pipe" }
@@ -40177,7 +40544,7 @@ var SessionWorktreeManager = class {
       }
       const workBranch = entry.branch;
       const matchingPrefix = this.matchingPrefix(workBranch);
-      const isSessionPath = path6.basename(entry.worktreePath).startsWith(INVOKE_SESSION_BASENAME_PREFIX);
+      const isSessionPath = path7.basename(entry.worktreePath).startsWith(INVOKE_SESSION_BASENAME_PREFIX);
       if (!isSessionPath && !matchingPrefix) {
         continue;
       }
@@ -40196,7 +40563,7 @@ var SessionWorktreeManager = class {
   }
   listPorcelainWorktrees() {
     try {
-      const output = execFileSync4("git", ["worktree", "list", "--porcelain"], {
+      const output = execFileSync5("git", ["worktree", "list", "--porcelain"], {
         cwd: this.repoDir,
         stdio: "pipe"
       }).toString();
@@ -40207,7 +40574,7 @@ var SessionWorktreeManager = class {
   }
   branchExists(workBranch) {
     try {
-      execFileSync4(
+      execFileSync5(
         "git",
         ["show-ref", "--verify", "--quiet", `refs/heads/${workBranch}`],
         { cwd: this.repoDir, stdio: "pipe" }
@@ -40218,10 +40585,10 @@ var SessionWorktreeManager = class {
     }
   }
   freshWorktreePath(sessionId) {
-    return mkdtempSync(path6.join(os3.tmpdir(), `${INVOKE_SESSION_BASENAME_PREFIX}${sessionId}-`));
+    return mkdtempSync(path7.join(os3.tmpdir(), `${INVOKE_SESSION_BASENAME_PREFIX}${sessionId}-`));
   }
   assertUnderTmpdir(worktreePath) {
-    if (existsSync2(worktreePath)) {
+    if (existsSync3(worktreePath)) {
       const stat = lstatSync(worktreePath);
       if (stat.isSymbolicLink()) {
         throw new Error(`Session worktree path cannot be a symlink: ${worktreePath}`);
@@ -40232,7 +40599,7 @@ var SessionWorktreeManager = class {
       }
       throw new Error(`Session worktree path escapes tmpdir: ${realWorktreePath}`);
     }
-    const resolved = path6.resolve(worktreePath);
+    const resolved = path7.resolve(worktreePath);
     if (isWithinPathRoot(resolved, this.tmpdirPath) || isWithinPathRoot(resolved, this.realTmpdirPath)) {
       return;
     }
@@ -40247,7 +40614,7 @@ var SessionWorktreeManager = class {
   }
   addWorktree(worktreePath, addArgs) {
     this.assertUnderTmpdir(worktreePath);
-    execFileSync4(
+    execFileSync5(
       "git",
       ["worktree", "add", worktreePath, ...addArgs],
       { cwd: this.repoDir, stdio: "pipe" }
@@ -40256,7 +40623,7 @@ var SessionWorktreeManager = class {
       return this.realpathUnderTmpdir(worktreePath);
     } catch (error48) {
       try {
-        execFileSync4(
+        execFileSync5(
           "git",
           ["worktree", "remove", "--force", worktreePath],
           { cwd: this.repoDir, stdio: "pipe" }
@@ -40274,7 +40641,7 @@ var SessionWorktreeManager = class {
     throw new Error(`Session worktree path escapes tmpdir: ${resolvedWorktreePath}`);
   }
   safeRealpathUnderTmpdir(worktreePath) {
-    if (!existsSync2(worktreePath)) {
+    if (!existsSync3(worktreePath)) {
       return null;
     }
     try {
@@ -40306,7 +40673,7 @@ var SessionWorktreeManager = class {
     return match;
   }
   sessionIdFromPath(worktreePath) {
-    const match = path6.basename(worktreePath).match(
+    const match = path7.basename(worktreePath).match(
       new RegExp(`^${INVOKE_SESSION_BASENAME_PREFIX}(.+?)-[A-Za-z0-9]{6,}$`)
     );
     return match?.[1] ?? null;
@@ -40321,17 +40688,17 @@ var SessionWorktreeManager = class {
 };
 
 // src/metrics/manager.ts
-import { existsSync as existsSync3 } from "fs";
-import { mkdir, readFile as readFile3, rename, writeFile } from "fs/promises";
-import path7 from "path";
+import { existsSync as existsSync4 } from "fs";
+import { mkdir as mkdir2, readFile as readFile4, rename as rename2, writeFile as writeFile2 } from "fs/promises";
+import path8 from "path";
 var COST_PRECISION = 1e9;
 var FLUSH_DEBOUNCE_MS = 100;
 var MetricsManager = class {
   constructor(projectDir, sessionDir) {
     this.projectDir = projectDir;
-    const metricsDir = sessionDir ?? path7.join(projectDir, ".invoke");
-    this.metricsPath = path7.join(metricsDir, "metrics.json");
-    this.tmpPath = path7.join(metricsDir, "metrics.json.tmp");
+    const metricsDir = sessionDir ?? path8.join(projectDir, ".invoke");
+    this.metricsPath = path8.join(metricsDir, "metrics.json");
+    this.tmpPath = path8.join(metricsDir, "metrics.json.tmp");
     this.beforeExitHandler = () => {
       void this.flushPendingWrites();
     };
@@ -40454,8 +40821,8 @@ var MetricsManager = class {
     await this.loadPromise;
   }
   async loadFromDisk() {
-    if (existsSync3(this.metricsPath)) {
-      const content = await readFile3(this.metricsPath, "utf-8");
+    if (existsSync4(this.metricsPath)) {
+      const content = await readFile4(this.metricsPath, "utf-8");
       const parsed = JSON.parse(content);
       this.metrics = [...parsed, ...this.metrics];
     }
@@ -40464,12 +40831,12 @@ var MetricsManager = class {
   }
   async writeAtomic(metrics) {
     if (!this.dirEnsured) {
-      await mkdir(path7.dirname(this.metricsPath), { recursive: true });
+      await mkdir2(path8.dirname(this.metricsPath), { recursive: true });
       this.dirEnsured = true;
     }
     const content = JSON.stringify(metrics, null, 2) + "\n";
-    await writeFile(this.tmpPath, content);
-    await rename(this.tmpPath, this.metricsPath);
+    await writeFile2(this.tmpPath, content);
+    await rename2(this.tmpPath, this.metricsPath);
   }
   logWriteError(error48) {
     console.error(
@@ -40542,33 +40909,33 @@ function createEmptySummary() {
 }
 
 // src/session/manager.ts
-import { existsSync as existsSync4 } from "fs";
-import { mkdir as mkdir2, readFile as readFile4, readdir as readdir2, rename as rename2, rm } from "fs/promises";
-import path8 from "path";
+import { existsSync as existsSync5 } from "fs";
+import { mkdir as mkdir3, readFile as readFile5, readdir as readdir2, rename as rename3, rm } from "fs/promises";
+import path9 from "path";
 var MS_PER_DAY = 24 * 60 * 60 * 1e3;
 var SessionManager = class {
   invokeDir;
   sessionsDir;
   constructor(projectDir) {
-    this.invokeDir = path8.resolve(projectDir, ".invoke");
-    this.sessionsDir = path8.join(this.invokeDir, "sessions");
+    this.invokeDir = path9.resolve(projectDir, ".invoke");
+    this.sessionsDir = path9.join(this.invokeDir, "sessions");
   }
   async create(sessionId) {
     validateSessionId(sessionId);
     const sessionDir = this.getSessionDir(sessionId);
-    await mkdir2(sessionDir, { recursive: true });
+    await mkdir3(sessionDir, { recursive: true });
     return sessionDir;
   }
   resolve(sessionId) {
     validateSessionIdForRead(sessionId);
     const sessionDir = this.getSessionDir(sessionId);
-    if (!existsSync4(sessionDir)) {
+    if (!existsSync5(sessionDir)) {
       throw new Error(`Session '${sessionId}' does not exist`);
     }
     return sessionDir;
   }
   async list(staleDays = 7) {
-    if (!existsSync4(this.sessionsDir)) {
+    if (!existsSync5(this.sessionsDir)) {
       return [];
     }
     const entries = await readdir2(this.sessionsDir, { withFileTypes: true });
@@ -40584,10 +40951,10 @@ var SessionManager = class {
   }
   async migrate() {
     const legacyStatePath = this.getLegacyStatePath();
-    if (!existsSync4(legacyStatePath)) {
+    if (!existsSync5(legacyStatePath)) {
       return { migrated: false };
     }
-    const state = JSON.parse(await readFile4(legacyStatePath, "utf-8"));
+    const state = JSON.parse(await readFile5(legacyStatePath, "utf-8"));
     const sessionId = state.pipeline_id;
     try {
       validateSessionIdForRead(sessionId);
@@ -40595,9 +40962,9 @@ var SessionManager = class {
       return { migrated: false };
     }
     const sessionDir = this.getSessionDir(sessionId);
-    await mkdir2(sessionDir, { recursive: true });
+    await mkdir3(sessionDir, { recursive: true });
     try {
-      await rename2(legacyStatePath, this.getStatePath(sessionId));
+      await rename3(legacyStatePath, this.getStatePath(sessionId));
     } catch (error48) {
       if (this.isMissingFileError(error48)) {
         return { migrated: false };
@@ -40605,9 +40972,9 @@ var SessionManager = class {
       throw error48;
     }
     const legacyMetricsPath = this.getLegacyMetricsPath();
-    if (existsSync4(legacyMetricsPath)) {
+    if (existsSync5(legacyMetricsPath)) {
       try {
-        await rename2(legacyMetricsPath, path8.join(sessionDir, "metrics.json"));
+        await rename3(legacyMetricsPath, path9.join(sessionDir, "metrics.json"));
       } catch (error48) {
         if (!this.isMissingFileError(error48)) {
           throw error48;
@@ -40622,27 +40989,27 @@ var SessionManager = class {
   }
   exists(sessionId) {
     validateSessionIdForRead(sessionId);
-    return existsSync4(this.getSessionDir(sessionId));
+    return existsSync5(this.getSessionDir(sessionId));
   }
   getSessionDir(sessionId) {
-    return path8.join(this.sessionsDir, sessionId);
+    return path9.join(this.sessionsDir, sessionId);
   }
   getStatePath(sessionId) {
-    return path8.join(this.getSessionDir(sessionId), "state.json");
+    return path9.join(this.getSessionDir(sessionId), "state.json");
   }
   getLegacyStatePath() {
-    return path8.join(this.invokeDir, "state.json");
+    return path9.join(this.invokeDir, "state.json");
   }
   getLegacyMetricsPath() {
-    return path8.join(this.invokeDir, "metrics.json");
+    return path9.join(this.invokeDir, "metrics.json");
   }
   async readState(sessionId) {
-    const content = await readFile4(this.getStatePath(sessionId), "utf-8");
+    const content = await readFile5(this.getStatePath(sessionId), "utf-8");
     return JSON.parse(content);
   }
   async readSessionInfo(sessionId, staleDays = 7) {
     const statePath = this.getStatePath(sessionId);
-    if (!existsSync4(statePath)) {
+    if (!existsSync5(statePath)) {
       return null;
     }
     const state = await this.readState(sessionId);
@@ -40666,8 +41033,8 @@ var SessionManager = class {
 // src/bugs/manager.ts
 init_zod();
 var import_yaml2 = __toESM(require_dist2(), 1);
-import { lstat, mkdir as mkdir3, readFile as readFile5, rename as rename3, writeFile as writeFile2 } from "fs/promises";
-import path9 from "path";
+import { lstat, mkdir as mkdir4, readFile as readFile6, rename as rename4, writeFile as writeFile3 } from "fs/promises";
+import path10 from "path";
 
 // src/session/lock.ts
 var import_proper_lockfile = __toESM(require_proper_lockfile(), 1);
@@ -40719,10 +41086,10 @@ var BugNotFoundError = class extends Error {
 var BugManager = class {
   bugsPath;
   constructor(projectDir) {
-    this.bugsPath = path9.join(projectDir, ".invoke", "bugs.yaml");
+    this.bugsPath = path10.join(projectDir, ".invoke", "bugs.yaml");
   }
   async report(input) {
-    await mkdir3(path9.dirname(this.bugsPath), { recursive: true });
+    await mkdir4(path10.dirname(this.bugsPath), { recursive: true });
     return withLock(this.bugsPath, async () => {
       const bugsFile = await this.readBugsFile();
       const now = (/* @__PURE__ */ new Date()).toISOString();
@@ -40760,7 +41127,7 @@ var BugManager = class {
     });
   }
   async update(id, changes) {
-    await mkdir3(path9.dirname(this.bugsPath), { recursive: true });
+    await mkdir4(path10.dirname(this.bugsPath), { recursive: true });
     return withLock(this.bugsPath, async () => {
       const bugsFile = await this.readBugsFile();
       const bug = bugsFile.bugs.find((entry) => entry.id === id);
@@ -40810,7 +41177,7 @@ var BugManager = class {
   async readBugsFile() {
     await this.assertBugsPathIsNotSymlink();
     try {
-      const content = await readFile5(this.bugsPath, "utf-8");
+      const content = await readFile6(this.bugsPath, "utf-8");
       const parsed = (0, import_yaml2.parse)(content);
       const cloneSafeParsed = JSON.parse(JSON.stringify(parsed ?? { bugs: [] }));
       return this.parseBugsFile(cloneSafeParsed);
@@ -40826,8 +41193,8 @@ var BugManager = class {
     const validated = this.parseBugsFile(bugsFile);
     const serialized = (0, import_yaml2.stringify)(validated);
     const tmpPath = `${this.bugsPath}.tmp`;
-    await writeFile2(tmpPath, serialized);
-    await rename3(tmpPath, this.bugsPath);
+    await writeFile3(tmpPath, serialized);
+    await rename4(tmpPath, this.bugsPath);
   }
   isMissingFileError(error48) {
     return error48 instanceof Error && "code" in error48 && error48.code === "ENOENT";
@@ -40854,270 +41221,6 @@ var BugManager = class {
       }
       throw error48;
     }
-  }
-};
-
-// src/tools/state.ts
-import { mkdir as mkdir4, readFile as readFile6, writeFile as writeFile3, rename as rename4 } from "fs/promises";
-import { existsSync as existsSync5 } from "fs";
-import path10 from "path";
-
-// src/tools/reviewed-sha.ts
-var REVIEWED_SHA_PATTERN = /^[0-9a-f]{7,40}$/;
-function sanitizeReviewedSha(value) {
-  return typeof value === "string" && REVIEWED_SHA_PATTERN.test(value) ? value : void 0;
-}
-
-// src/tools/state.ts
-var StateManager = class _StateManager {
-  static PERSIST_ONCE_KEYS = [
-    "work_branch",
-    "work_branch_path",
-    "base_branch",
-    "spec",
-    "plan",
-    "tasks",
-    "strategy",
-    "bug_ids"
-  ];
-  statePath;
-  tmpPath;
-  storageDir;
-  dirEnsured = false;
-  writeQueue = Promise.resolve();
-  cachedState = null;
-  constructor(projectDir, sessionDir) {
-    this.storageDir = sessionDir ?? path10.join(projectDir, ".invoke");
-    this.statePath = path10.join(this.storageDir, "state.json");
-    this.tmpPath = path10.join(this.storageDir, "state.json.tmp");
-    this.cachedState = null;
-  }
-  async get() {
-    if (this.cachedState !== null) {
-      return this.cachedState;
-    }
-    if (!existsSync5(this.statePath)) {
-      return null;
-    }
-    const content = await readFile6(this.statePath, "utf-8");
-    const parsed = JSON.parse(content);
-    if (parsed?.review_cycles) {
-      for (const rc of parsed.review_cycles) {
-        if (rc.reviewed_sha !== void 0) {
-          rc.reviewed_sha = sanitizeReviewedSha(rc.reviewed_sha);
-        }
-      }
-    }
-    this.cachedState = parsed;
-    return parsed;
-  }
-  async initialize(pipelineId) {
-    return this.enqueueWrite(async () => {
-      const now = (/* @__PURE__ */ new Date()).toISOString();
-      const state = {
-        pipeline_id: pipelineId,
-        started: now,
-        last_updated: now,
-        current_stage: "scope",
-        batches: [],
-        review_cycles: []
-      };
-      await this.writeAtomic(state);
-      return state;
-    });
-  }
-  async update(updates) {
-    return this.applyComposite({ partial: updates });
-  }
-  async addBatch(batch) {
-    return this.enqueueWrite(async () => {
-      const current = await this.get();
-      if (!current) {
-        throw new Error("No active pipeline. Call initialize() first.");
-      }
-      current.batches.push(batch);
-      current.last_updated = (/* @__PURE__ */ new Date()).toISOString();
-      await this.writeAtomic(current);
-      return current;
-    });
-  }
-  /**
-   * Apply a composite state update inside a single atomic write.
-   *
-   * Ordering (load-bearing):
-   *   1. batchUpdate (upsert by id)
-   *   2. reviewCycleUpdate (upsert by id)
-   *   3. partial spread (top-level field replacement)
-   *
-   * The partial spread is applied last so callers can use
-   * `partial.batches` or `partial.review_cycles` to fully replace the
-   * upsert results. Invoke-resume redo paths rely on this contract,
-   * including clearing batches with `partial.batches: []` (BUG-001).
-   *
-   * Trade-off: if a caller passes both `batch_update` and
-   * `partial.batches`, the array replacement silently clobbers the
-   * upserted result. This is intentional per the BUG-001 spec; the
-   * cycle-1 mutex rejection was a regression that was reverted in
-   * cycle 2 R1. See state-tools.ts for the soft warning that logs when
-   * callers send both forms together.
-   */
-  async applyComposite(updates) {
-    return this.enqueueWrite(async () => {
-      const current = await this.get();
-      if (!current) {
-        throw new Error("No active pipeline. Call initialize() first.");
-      }
-      let next = { ...current };
-      if (updates.batchUpdate) {
-        this.applyBatchUpsert(next, updates.batchUpdate);
-      }
-      if (updates.reviewCycleUpdate) {
-        this.applyReviewCycleUpsert(next, updates.reviewCycleUpdate);
-      }
-      if (updates.partial) {
-        const safePartial = this.filterPersistOncePartial(updates.partial);
-        next = { ...next, ...safePartial };
-      }
-      next.last_updated = (/* @__PURE__ */ new Date()).toISOString();
-      await this.writeAtomic(next);
-      return next;
-    });
-  }
-  async updateBatch(batchIndex, updates) {
-    return this.enqueueWrite(async () => {
-      const current = await this.get();
-      if (!current) {
-        throw new Error("No active pipeline. Call initialize() first.");
-      }
-      if (batchIndex >= current.batches.length) {
-        throw new Error(
-          `Batch index ${batchIndex} out of range (${current.batches.length} batches)`
-        );
-      }
-      current.batches[batchIndex] = { ...current.batches[batchIndex], ...updates };
-      current.last_updated = (/* @__PURE__ */ new Date()).toISOString();
-      await this.writeAtomic(current);
-      return current;
-    });
-  }
-  async updateTask(batchIndex, taskId, updates) {
-    return this.enqueueWrite(async () => {
-      const current = await this.get();
-      if (!current) {
-        throw new Error("No active pipeline. Call initialize() first.");
-      }
-      if (batchIndex >= current.batches.length) {
-        throw new Error(
-          `Batch index ${batchIndex} out of range (${current.batches.length} batches)`
-        );
-      }
-      const task = current.batches[batchIndex].tasks.find((t) => t.id === taskId);
-      if (!task) {
-        throw new Error(`Task '${taskId}' not found in batch ${batchIndex}`);
-      }
-      Object.assign(task, updates);
-      current.last_updated = (/* @__PURE__ */ new Date()).toISOString();
-      await this.writeAtomic(current);
-      return current;
-    });
-  }
-  async getReviewCycleCount(batchId) {
-    const state = await this.get();
-    if (!state) return 0;
-    if (batchId !== void 0) {
-      return state.review_cycles.filter((rc) => rc.batch_id === batchId).length;
-    }
-    return state.review_cycles.length;
-  }
-  async reset() {
-    await this.enqueueWrite(async () => {
-      if (existsSync5(this.statePath)) {
-        const { unlink: unlink2 } = await import("fs/promises");
-        await unlink2(this.statePath);
-      }
-      this.cachedState = null;
-    });
-  }
-  enqueueWrite(operation) {
-    const queuedOperation = this.writeQueue.then(operation);
-    this.writeQueue = queuedOperation.then(
-      () => void 0,
-      () => void 0
-    );
-    return queuedOperation;
-  }
-  async writeAtomic(state) {
-    if (!this.dirEnsured) {
-      await mkdir4(this.storageDir, { recursive: true });
-      this.dirEnsured = true;
-    }
-    const content = JSON.stringify(state, null, 2) + "\n";
-    await writeFile3(this.tmpPath, content);
-    await rename4(this.tmpPath, this.statePath);
-    this.cachedState = state;
-  }
-  filterPersistOncePartial(partial2) {
-    const filtered = { ...partial2 };
-    for (const key of _StateManager.PERSIST_ONCE_KEYS) {
-      if (filtered[key] === void 0 || filtered[key] === null) {
-        delete filtered[key];
-      }
-    }
-    return filtered;
-  }
-  applyBatchUpsert(state, batch) {
-    const batches = [...state.batches];
-    const existingIndex = batches.findIndex((existingBatch) => existingBatch.id === batch.id);
-    if (existingIndex >= 0) {
-      const existing = batches[existingIndex];
-      const mergedTasks = this.mergeTasksById(existing.tasks, batch.tasks);
-      batches[existingIndex] = { ...existing, ...batch, tasks: mergedTasks };
-    } else {
-      batches.push(batch);
-    }
-    state.batches = batches;
-  }
-  /**
-   * Merge incoming task entries into an existing tasks array by task id.
-   *
-   * Semantics (load-bearing for invoke-build's conflict redispatch loop):
-   *   - Tasks present in `updates` are merged on top of the existing entry
-   *     by id. Existing fields are preserved unless overridden by `updates`.
-   *   - Tasks present only in `existing` are preserved unchanged.
-   *   - Tasks present only in `updates` are appended.
-   *
-   * This lets callers send only the changed task entries in
-   * `batch_update.tasks` without dropping sibling task state. The skill
-   * relies on this so the conflict redispatch path can update a single
-   * task without re-reading the full tasks array first.
-   */
-  mergeTasksById(existing, updates) {
-    if (!updates || updates.length === 0) {
-      return [...existing];
-    }
-    const merged = [...existing];
-    for (const update of updates) {
-      const idx = merged.findIndex((task) => task.id === update.id);
-      if (idx >= 0) {
-        merged[idx] = { ...merged[idx], ...update };
-      } else {
-        merged.push(update);
-      }
-    }
-    return merged;
-  }
-  applyReviewCycleUpsert(state, cycle) {
-    const reviewCycles = [...state.review_cycles];
-    const existingIndex = reviewCycles.findIndex((existingCycle) => existingCycle.id === cycle.id);
-    if (existingIndex >= 0) {
-      reviewCycles[existingIndex] = {
-        ...reviewCycles[existingIndex],
-        ...cycle
-      };
-    } else {
-      reviewCycles.push(cycle);
-    }
-    state.review_cycles = reviewCycles;
   }
 };
 
@@ -41634,60 +41737,6 @@ function runPostMergeCommands(config2, projectDir, cwd) {
   return { commands: results };
 }
 
-// src/tools/session-path.ts
-import { execFileSync as execFileSync5 } from "node:child_process";
-var MissingSessionWorkBranchPath = class extends Error {
-  constructor(sessionId) {
-    super(
-      `Session '${sessionId}' was initialized but state.work_branch_path is missing \u2014 state may be corrupted. Reattach via invoke_session_reattach_worktree to restore the path.`
-    );
-    this.name = "MissingSessionWorkBranchPath";
-  }
-};
-async function resolveSessionWorkBranchPath(sessionManager, projectDir, sessionId) {
-  if (!sessionId) return void 0;
-  if (!projectDir) {
-    throw new Error("Project directory is required when session_id is provided");
-  }
-  const sessionDir = sessionManager.resolve(sessionId);
-  const stateManager = new StateManager(projectDir, sessionDir);
-  const state = await stateManager.get();
-  if (state === null) return void 0;
-  if (state.work_branch_path === void 0) {
-    throw new MissingSessionWorkBranchPath(sessionId);
-  }
-  const workBranchPath = state.work_branch_path;
-  const canonicalPath = resolveSafeSessionWorkBranchPath(workBranchPath, projectDir);
-  if (canonicalPath === null) {
-    throw new Error(
-      `Refusing to use unsafe session work branch path for session '${sessionId}'`
-    );
-  }
-  const workBranchPrefix = state?.work_branch ? state.work_branch.split("/").slice(0, -1).join("/") : "invoke/work";
-  if (!isSafeWorkBranch(state?.work_branch, sessionId, workBranchPrefix)) {
-    throw new Error(
-      `Refusing to use session '${sessionId}': state.work_branch '${state?.work_branch ?? "<unset>"}' does not match the expected session branch name`
-    );
-  }
-  let currentBranch;
-  try {
-    currentBranch = execFileSync5("git", ["symbolic-ref", "--short", "HEAD"], {
-      cwd: canonicalPath,
-      stdio: "pipe"
-    }).toString().trim();
-  } catch (err) {
-    throw new Error(
-      `Refusing to use session '${sessionId}': could not read HEAD at '${canonicalPath}' (${err instanceof Error ? err.message : String(err)})`
-    );
-  }
-  if (currentBranch !== state.work_branch) {
-    throw new Error(
-      `Refusing to use session '${sessionId}': worktree at '${canonicalPath}' is checked out on '${currentBranch}', expected '${state.work_branch}'`
-    );
-  }
-  return canonicalPath;
-}
-
 // src/tools/worktree-tools.ts
 function registerWorktreeTools(server, worktreeManager, sessionManager, config2, projectDir) {
   server.registerTool(
@@ -41731,6 +41780,7 @@ function registerWorktreeTools(server, worktreeManager, sessionManager, config2,
         };
         const result = await worktreeManager.merge(task_id, Object.keys(options).length > 0 ? options : void 0);
         if (result.status === "conflict") {
+          await worktreeManager.cleanup(task_id);
           return {
             content: [{
               type: "text",
@@ -43883,7 +43933,9 @@ async function main() {
       projectDir,
       onDispatchComplete: (metric) => metricsManager.record(metric)
     });
-    const batchManager = new BatchManager(engine, worktreeManager, stateManager);
+    const batchManager = new BatchManager(engine, worktreeManager, stateManager, {
+      repoDir: projectDir
+    });
     registerDispatchTools(server, engine, batchManager, projectDir, metricsManager, sessionManager);
   }
   const transport = new StdioServerTransport();

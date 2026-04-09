@@ -122,7 +122,9 @@ async function main() {
       projectDir,
       onDispatchComplete: (metric) => metricsManager.record(metric),
     })
-    const batchManager = new BatchManager(engine, worktreeManager, stateManager)
+    const batchManager = new BatchManager(engine, worktreeManager, stateManager, {
+      repoDir: projectDir,
+    })
     registerDispatchTools(server, engine, batchManager, projectDir, metricsManager, sessionManager)
   }
 

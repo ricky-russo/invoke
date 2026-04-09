@@ -4,6 +4,7 @@ import type { StateManager } from '../tools/state.js';
 import type { BatchRequest, BatchStatus, AgentStatus, AgentResult } from '../types.js';
 interface BatchManagerOptions {
     terminalRetentionMs?: number;
+    repoDir?: string;
 }
 type DispatchBatchOptions = {
     stateManager?: StateManager;
@@ -25,6 +26,7 @@ export declare class BatchManager {
     private evictionTimers;
     private isShutdown;
     private readonly terminalRetentionMs;
+    private readonly repoDir?;
     constructor(engine: DispatchEngine, worktreeManager: WorktreeManager, defaultStateManager?: StateManager | undefined, options?: BatchManagerOptions);
     dispatchBatch(request: BatchRequest, options?: DispatchBatchOptions): Promise<string>;
     private getPersistedBatchIndex;

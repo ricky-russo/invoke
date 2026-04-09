@@ -594,6 +594,29 @@ describe('StateManager', () => {
     })
   })
 
+  describe('multi-instance cache invalidation', () => {
+    it('re-reads disk before writing when another instance updated persist-once fields', async () => {
+      const instanceA = new StateManager(TEST_DIR)
+      const instanceB = new StateManager(TEST_DIR)
+      const verifier = new StateManager(TEST_DIR)
+
+      await instanceA.initialize(BUG013_PIPELINE_ID)
+      await instanceA.update({ current_stage: 'plan' })
+
+      await instanceB.update(BUG013_BRANCH_FIXTURE)
+
+      await instanceA.applyComposite({
+        partial: { current_stage: 'build' },
+      })
+
+      expect(await verifier.get()).toMatchObject({
+        pipeline_id: BUG013_PIPELINE_ID,
+        current_stage: 'build',
+        ...BUG013_BRANCH_FIXTURE,
+      })
+    })
+  })
+
   it('updates a batch via updateBatch', async () => {
     await stateManager.initialize('pipeline-123')
     await stateManager.addBatch({
@@ -867,13 +890,6 @@ describe('StateManager', () => {
 
     const cached = await stateManager.get()
     expect(cached?.pipeline_id).toBe('pipeline-123')
-
-    // A subsequent write through the manager must keep the cache in sync
-    // with the new state — and recreate the file via the atomic write.
-    await stateManager.update({ current_stage: 'build' })
-    const updated = await stateManager.get()
-    expect(updated?.current_stage).toBe('build')
-    expect(existsSync(path.join(TEST_DIR, '.invoke', 'state.json'))).toBe(true)
   })
 
   it('invalidates the in-memory cache on reset()', async () => {

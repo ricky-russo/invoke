@@ -2,6 +2,13 @@ import type { SessionManager } from '../session/manager.js';
 export declare class MissingSessionWorkBranchPath extends Error {
     constructor(sessionId: string);
 }
+type ResolvePersistedSessionWorkBranchPathOptions = {
+    sessionId: string;
+    projectDir: string;
+    workBranch: string | undefined;
+    workBranchPath: string;
+};
+export declare function resolvePersistedSessionWorkBranchPath({ sessionId, projectDir, workBranch, workBranchPath, }: ResolvePersistedSessionWorkBranchPathOptions): string;
 /**
  * Resolve the canonical filesystem path of a session's integration worktree
  * for the given session_id, verifying in this order:
@@ -34,4 +41,5 @@ export declare class MissingSessionWorkBranchPath extends Error {
  * post-mortem and the security review for the full pattern.
  */
 export declare function resolveSessionWorkBranchPath(sessionManager: SessionManager, projectDir: string | undefined, sessionId?: string): Promise<string | undefined>;
+export {};
 //# sourceMappingURL=session-path.d.ts.map

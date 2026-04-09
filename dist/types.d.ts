@@ -75,6 +75,7 @@ export interface AgentResult {
         findings?: Finding[];
         changes?: FileChange[];
         raw?: string;
+        provider_counts?: Record<string, number>;
     };
     duration: number;
 }

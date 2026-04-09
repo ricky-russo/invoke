@@ -1,10 +1,21 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { BatchManager } from '../../src/dispatch/batch-manager.js'
 import * as dagScheduler from '../../src/dispatch/dag-scheduler.js'
+import * as sessionPath from '../../src/tools/session-path.js'
 import type { DispatchEngine } from '../../src/dispatch/engine.js'
 import type { WorktreeManager } from '../../src/worktree/manager.js'
 import type { AgentResult, PipelineState } from '../../src/types.js'
 import type { StateManager } from '../../src/tools/state.js'
+
+vi.mock('../../src/tools/session-path.js', async () => {
+  const actual = await vi.importActual<typeof import('../../src/tools/session-path.js')>(
+    '../../src/tools/session-path.js'
+  )
+  return {
+    ...actual,
+    resolvePersistedSessionWorkBranchPath: vi.fn(),
+  }
+})
 
 const mockResult: AgentResult = {
   role: 'builder',
@@ -903,6 +914,10 @@ describe('BatchManager with state persistence', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     vi.mocked(mockEngine.dispatch).mockResolvedValue(mockResult)
+    vi.mocked(sessionPath.resolvePersistedSessionWorkBranchPath).mockReset()
+    vi.mocked(sessionPath.resolvePersistedSessionWorkBranchPath).mockImplementation(
+      ({ workBranchPath }) => workBranchPath
+    )
     persistedState = {
       pipeline_id: 'test-pipeline',
       started: new Date().toISOString(),
@@ -967,7 +982,9 @@ describe('BatchManager with state persistence', () => {
       updateTask,
       updateBatch,
     } as unknown as StateManager
-    statefulManager = new BatchManager(mockEngine, mockWorktreeManager, stateManager)
+    statefulManager = new BatchManager(mockEngine, mockWorktreeManager, stateManager, {
+      repoDir: '/repo/project',
+    })
   })
 
   afterEach(() => {
@@ -1027,6 +1044,148 @@ describe('BatchManager with state persistence', () => {
     expect(mockWorktreeManager.create).toHaveBeenNthCalledWith(1, 'task-2', 'invoke/work/session-A')
     expect(mockWorktreeManager.create).toHaveBeenNthCalledWith(2, 'task-3', 'invoke/work/session-A')
     expect((stateManager.get as any)).toHaveBeenCalledTimes(2)
+  })
+
+  it('resolves reviewer workDir from state.work_branch_path when createWorktrees=false', async () => {
+    persistedState = {
+      ...persistedState,
+      work_branch: 'invoke/work/session-A',
+      work_branch_path: '/tmp/invoke-session-session-A-xyz',
+    }
+
+    await statefulManager.dispatchBatch({
+      tasks: [
+        { taskId: 'task-2', role: 'reviewer', subrole: 'default', taskContext: {} },
+      ],
+      createWorktrees: false,
+      sessionId: 'session-A',
+    })
+
+    await vi.waitFor(() => {
+      expect(mockEngine.dispatch).toHaveBeenCalledWith(expect.objectContaining({
+        role: 'reviewer',
+        subrole: 'default',
+        workDir: '/tmp/invoke-session-session-A-xyz',
+        sessionId: 'session-A',
+      }))
+    }, { timeout: 3000 })
+
+    expect(sessionPath.resolvePersistedSessionWorkBranchPath).toHaveBeenCalledWith({
+      sessionId: 'session-A',
+      projectDir: '/repo/project',
+      workBranch: 'invoke/work/session-A',
+      workBranchPath: '/tmp/invoke-session-session-A-xyz',
+    })
+    expect((stateManager.get as any)).toHaveBeenCalledTimes(2)
+  })
+
+  it('leaves reviewer workDir undefined when state.work_branch_path is missing', async () => {
+    persistedState = {
+      ...persistedState,
+      work_branch_path: undefined,
+    }
+
+    await statefulManager.dispatchBatch({
+      tasks: [
+        { taskId: 'task-2', role: 'reviewer', subrole: 'default', taskContext: {} },
+      ],
+      createWorktrees: false,
+      sessionId: 'session-A',
+    })
+
+    await vi.waitFor(() => {
+      expect(mockEngine.dispatch).toHaveBeenCalledWith(expect.objectContaining({
+        role: 'reviewer',
+        subrole: 'default',
+        workDir: undefined,
+        sessionId: 'session-A',
+      }))
+    }, { timeout: 3000 })
+
+    expect((stateManager.get as any)).toHaveBeenCalledTimes(2)
+  })
+
+  it('warns when createWorktrees=true but state.work_branch is missing', async () => {
+    persistedState = {
+      ...persistedState,
+      work_branch: undefined,
+    }
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    await statefulManager.dispatchBatch({
+      tasks: [
+        { taskId: 'task-2', role: 'builder', subrole: 'default', taskContext: {} },
+      ],
+      createWorktrees: true,
+      sessionId: 'session-A',
+    })
+
+    await vi.waitFor(() => {
+      expect(warnSpy).toHaveBeenCalledWith(
+        '[invoke] BatchManager: createWorktrees=true but state.work_branch is unset ' +
+        'for sessionId=session-A. Builder worktrees will branch from main. ' +
+        'This will produce incorrect diffs — ensure invoke_session_init_worktree ran.'
+      )
+    }, { timeout: 3000 })
+  })
+
+  it('warns when createWorktrees=true and sessionId is undefined', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    await statefulManager.dispatchBatch({
+      tasks: [
+        { taskId: 'task-2', role: 'builder', subrole: 'default', taskContext: {} },
+      ],
+      createWorktrees: true,
+    })
+
+    await vi.waitFor(() => {
+      expect(warnSpy).toHaveBeenCalledWith(
+        '[invoke] BatchManager: createWorktrees=true but state.work_branch is unset ' +
+        'for sessionId=<no session_id>. Builder worktrees will branch from main. ' +
+        'This will produce incorrect diffs — ensure invoke_session_init_worktree ran.'
+      )
+    }, { timeout: 3000 })
+  })
+
+  it('rejects unsafe reviewer workDir from state.work_branch_path when createWorktrees=false', async () => {
+    persistedState = {
+      ...persistedState,
+      work_branch: 'invoke/work/session-A',
+      work_branch_path: '/Users/attacker/invoke-session-session-B-hijacked',
+    }
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    vi.mocked(sessionPath.resolvePersistedSessionWorkBranchPath).mockImplementationOnce(() => {
+      throw new Error('Refusing to use unsafe session work branch path for session \'session-A\'')
+    })
+
+    await statefulManager.dispatchBatch({
+      tasks: [
+        { taskId: 'task-2', role: 'reviewer', subrole: 'default', taskContext: {} },
+      ],
+      createWorktrees: false,
+      sessionId: 'session-A',
+    })
+
+    await vi.waitFor(() => {
+      expect(mockEngine.dispatch).toHaveBeenCalledWith(expect.objectContaining({
+        role: 'reviewer',
+        subrole: 'default',
+        workDir: undefined,
+        sessionId: 'session-A',
+      }))
+    }, { timeout: 3000 })
+
+    expect(sessionPath.resolvePersistedSessionWorkBranchPath).toHaveBeenCalledWith({
+      sessionId: 'session-A',
+      projectDir: '/repo/project',
+      workBranch: 'invoke/work/session-A',
+      workBranchPath: '/Users/attacker/invoke-session-session-B-hijacked',
+    })
+    expect(warnSpy).toHaveBeenCalledWith(
+      "[invoke] BatchManager: rejected unsafe work_branch_path for sessionId=session-A: " +
+      "Refusing to use unsafe session work branch path for session 'session-A'"
+    )
   })
 
   it('derives batch index from persisted state instead of an instance counter', async () => {

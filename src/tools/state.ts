@@ -72,6 +72,7 @@ export class StateManager {
 
   async addBatch(batch: BatchState): Promise<PipelineState> {
     return this.enqueueWrite(async () => {
+      this.cachedState = null
       const current = await this.get()
       if (!current) {
         throw new Error('No active pipeline. Call initialize() first.')
@@ -109,6 +110,7 @@ export class StateManager {
     partial?: Partial<PipelineState>
   }): Promise<PipelineState> {
     return this.enqueueWrite(async () => {
+      this.cachedState = null
       const current = await this.get()
       if (!current) {
         throw new Error('No active pipeline. Call initialize() first.')
@@ -135,6 +137,7 @@ export class StateManager {
 
   async updateBatch(batchIndex: number, updates: Partial<BatchState>): Promise<PipelineState> {
     return this.enqueueWrite(async () => {
+      this.cachedState = null
       const current = await this.get()
       if (!current) {
         throw new Error('No active pipeline. Call initialize() first.')
@@ -157,6 +160,7 @@ export class StateManager {
     updates: Partial<TaskState>
   ): Promise<PipelineState> {
     return this.enqueueWrite(async () => {
+      this.cachedState = null
       const current = await this.get()
       if (!current) {
         throw new Error('No active pipeline. Call initialize() first.')
