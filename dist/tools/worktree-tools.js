@@ -37,6 +37,7 @@ export function registerWorktreeTools(server, worktreeManager, sessionManager, c
             };
             const result = await worktreeManager.merge(task_id, Object.keys(options).length > 0 ? options : undefined);
             if (result.status === 'conflict') {
+                await worktreeManager.cleanup(task_id);
                 return {
                     content: [{
                             type: 'text',

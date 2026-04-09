@@ -273,7 +273,7 @@ describe('registerWorktreeTools', () => {
     expect(postMergeMocks.runPostMergeCommands).not.toHaveBeenCalled()
   })
 
-  it('returns a structured conflict response without cleanup', async () => {
+  it('cleans up the task worktree on conflict so the task_id can be reused', async () => {
     vi.mocked(worktreeManager.merge).mockResolvedValue({
       status: 'conflict',
       conflictingFiles: ['shared.ts'],
@@ -284,7 +284,7 @@ describe('registerWorktreeTools', () => {
 
     const result = await getTool('invoke_merge_worktree').handler({ task_id: 'task-conflict' })
 
-    expect(worktreeManager.cleanup).not.toHaveBeenCalled()
+    expect(worktreeManager.cleanup).toHaveBeenCalledWith('task-conflict')
     expect(result.isError).toBeUndefined()
     expect(
       parseResponseText<{
@@ -298,6 +298,39 @@ describe('registerWorktreeTools', () => {
       status: 'conflict',
       conflicting_files: ['shared.ts'],
       merge_target_path: '/tmp/session-worktree',
+    })
+  })
+
+  it('allows creating a worktree with the same task_id after conflict cleanup', async () => {
+    vi.mocked(worktreeManager.merge).mockResolvedValue({
+      status: 'conflict',
+      conflictingFiles: ['shared.ts'],
+      mergeTargetPath: '/tmp/session-worktree',
+    })
+    vi.mocked(worktreeManager.create).mockImplementation(async taskId => {
+      const cleanupCalled = vi.mocked(worktreeManager.cleanup).mock.calls.some(([cleanedTaskId]) => cleanedTaskId === taskId)
+      if (!cleanupCalled) {
+        throw new Error(`fatal: A branch named invoke-wt-${taskId} already exists`)
+      }
+
+      return {
+        taskId,
+        worktreePath: `/tmp/invoke-worktree-${taskId}`,
+        branch: `invoke-wt-${taskId}`,
+      }
+    })
+
+    registerWorktreeTools(server, worktreeManager, sessionManager, TEST_CONFIG, projectDir)
+
+    const mergeResult = await getTool('invoke_merge_worktree').handler({ task_id: 'task-conflict' })
+    expect(parseResponseText<{ status: string }>(mergeResult).status).toBe('conflict')
+
+    const createResult = await getTool('invoke_create_worktree').handler({ task_id: 'task-conflict' })
+
+    expect(createResult.isError).toBeUndefined()
+    expect(parseResponseText<{ taskId: string; branch: string; worktreePath: string }>(createResult)).toMatchObject({
+      taskId: 'task-conflict',
+      branch: 'invoke-wt-task-conflict',
     })
   })
 

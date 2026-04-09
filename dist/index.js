@@ -41750,6 +41750,7 @@ function registerWorktreeTools(server, worktreeManager, sessionManager, config2,
         };
         const result = await worktreeManager.merge(task_id, Object.keys(options).length > 0 ? options : void 0);
         if (result.status === "conflict") {
+          await worktreeManager.cleanup(task_id);
           return {
             content: [{
               type: "text",
