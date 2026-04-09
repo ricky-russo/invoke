@@ -397,6 +397,69 @@ describe('DispatchEngine', () => {
     expect(result.output.findings).toHaveLength(2)
   })
 
+  it('populates provider_counts on multi-provider merged results when all providers return zero findings', async () => {
+    queueSpawnBehaviors(
+      { stdout: 'Claude review', exitCode: 0, closeDelayMs: 5 },
+      { stdout: 'Codex review', exitCode: 0 }
+    )
+
+    const reviewerParsers = new Map<string, Parser>([
+      [
+        'claude',
+        {
+          name: 'claude',
+          parse: vi.fn((rawOutput: string, exitCode: number, context: ParseContext): AgentResult => ({
+            role: context.role,
+            subrole: context.subrole,
+            provider: context.provider,
+            model: context.model,
+            status: exitCode === 0 ? 'success' : 'error',
+            output: {
+              summary: 'claude done',
+              findings: [],
+              raw: rawOutput,
+            },
+            duration: context.duration,
+          })),
+        },
+      ],
+      [
+        'codex',
+        {
+          name: 'codex',
+          parse: vi.fn((rawOutput: string, exitCode: number, context: ParseContext): AgentResult => ({
+            role: context.role,
+            subrole: context.subrole,
+            provider: context.provider,
+            model: context.model,
+            status: exitCode === 0 ? 'success' : 'error',
+            output: {
+              summary: 'codex done',
+              findings: [],
+              raw: rawOutput,
+            },
+            duration: context.duration,
+          })),
+        },
+      ],
+    ])
+    const config = makeConfig({
+      role: 'reviewer',
+      subrole: 'security',
+      prompt: '.invoke/roles/reviewer/security.md',
+      providers: [CLAUDE_ENTRY, CODEX_ENTRY],
+    })
+    const { engine } = createEngine(config, { parsers: reviewerParsers })
+
+    const result = await engine.dispatch({
+      role: 'reviewer',
+      subrole: 'security',
+      taskContext: { task_description: 'Review auth' },
+    })
+
+    expect(result.output.provider_counts).toEqual({ claude: 0, codex: 0 })
+  })
+
   it('omits provider_counts on single-provider dispatch', async () => {
     queueSpawnBehaviors({ stdout: 'Claude review', exitCode: 0 })
 

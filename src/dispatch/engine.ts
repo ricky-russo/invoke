@@ -219,6 +219,11 @@ export class DispatchEngine {
   }
 
   private mergeResults(results: AgentResult[], request: DispatchRequest): AgentResult {
+    const providerCounts: Record<string, number> = {}
+    for (const result of results) {
+      providerCounts[result.provider] = result.output.findings?.length ?? 0
+    }
+
     const hasFindings = results.some(r => r.output.findings && r.output.findings.length > 0)
 
     if (hasFindings) {
@@ -228,11 +233,6 @@ export class DispatchEngine {
           provider: r.provider,
           findings: r.output.findings!,
         }))
-
-      const providerCounts: Record<string, number> = {}
-      for (const result of results) {
-        providerCounts[result.provider] = result.output.findings?.length ?? 0
-      }
 
       const merged = mergeFindings(providerFindings)
 
@@ -262,6 +262,7 @@ export class DispatchEngine {
       output: {
         summary: `Combined results from ${results.length} providers`,
         raw: results.map(r => `--- ${r.provider} ---\n${r.output.raw}`).join('\n\n'),
+        provider_counts: providerCounts,
       },
       duration: Math.max(...results.map(r => r.duration)),
     }
