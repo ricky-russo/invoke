@@ -229,6 +229,11 @@ export class DispatchEngine {
           findings: r.output.findings!,
         }))
 
+      const providerCounts: Record<string, number> = {}
+      for (const result of results) {
+        providerCounts[result.provider] = result.output.findings?.length ?? 0
+      }
+
       const merged = mergeFindings(providerFindings)
 
       return {
@@ -241,6 +246,7 @@ export class DispatchEngine {
           summary: `Merged results from ${results.length} providers (${merged.length} findings)`,
           findings: merged,
           raw: results.map(r => `--- ${r.provider} ---\n${r.output.raw}`).join('\n\n'),
+          provider_counts: providerCounts,
         },
         duration: Math.max(...results.map(r => r.duration)),
       }
