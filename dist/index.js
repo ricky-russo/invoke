@@ -40946,6 +40946,7 @@ var StateManager = class _StateManager {
   }
   async addBatch(batch) {
     return this.enqueueWrite(async () => {
+      this.cachedState = null;
       const current = await this.get();
       if (!current) {
         throw new Error("No active pipeline. Call initialize() first.");
@@ -40978,6 +40979,7 @@ var StateManager = class _StateManager {
    */
   async applyComposite(updates) {
     return this.enqueueWrite(async () => {
+      this.cachedState = null;
       const current = await this.get();
       if (!current) {
         throw new Error("No active pipeline. Call initialize() first.");
@@ -41000,6 +41002,7 @@ var StateManager = class _StateManager {
   }
   async updateBatch(batchIndex, updates) {
     return this.enqueueWrite(async () => {
+      this.cachedState = null;
       const current = await this.get();
       if (!current) {
         throw new Error("No active pipeline. Call initialize() first.");
@@ -41017,6 +41020,7 @@ var StateManager = class _StateManager {
   }
   async updateTask(batchIndex, taskId, updates) {
     return this.enqueueWrite(async () => {
+      this.cachedState = null;
       const current = await this.get();
       if (!current) {
         throw new Error("No active pipeline. Call initialize() first.");
