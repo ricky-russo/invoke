@@ -38,6 +38,6 @@ If you write implementation code before a failing test exists, you are violating
 - Never write implementation code without a failing test first.
 - Each test should verify one specific behavior.
 - Run the full test suite after each green-refactor cycle to catch regressions.
-- Commit after each passing cycle.
+- Do not run `git commit`. Stage work if convenient (`git add`); invoke will commit on your behalf after each cycle completes.
 - If you're unsure how to test something, write the test for the interface you wish existed, then implement to match.
 - Do not mock dependencies unless they are external services or slow I/O. Prefer real implementations.

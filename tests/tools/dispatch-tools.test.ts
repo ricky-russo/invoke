@@ -15,7 +15,7 @@ vi.mock('../../src/config.js', () => ({
 import { loadConfig } from '../../src/config.js'
 import { StateManager } from '../../src/tools/state.js'
 import { registerDispatchTools } from '../../src/tools/dispatch-tools.js'
-import type { AgentResult, InvokeConfig } from '../../src/types.js'
+import type { AgentResult, InvokeConfig, PipelineState } from '../../src/types.js'
 
 type ToolResponse = {
   content: Array<{ type: string; text: string }>
@@ -650,6 +650,270 @@ describe('registerDispatchTools', () => {
     } finally {
       getStateSpy.mockRestore()
     }
+  })
+
+  it('formats the most recent review cycle for builder re-dispatch', async () => {
+    const sessionDir = await mkdtemp(path.join(os.tmpdir(), 'dispatch-tools-prior-findings-'))
+    const sessionManager = {
+      exists: vi.fn().mockReturnValue(true),
+      resolve: vi.fn().mockReturnValue(sessionDir),
+    } as unknown as SessionManager
+    const state: PipelineState = {
+      pipeline_id: 'pipeline-1',
+      started: '2026-04-01T00:00:00.000Z',
+      last_updated: '2026-04-01T00:00:00.000Z',
+      current_stage: 'review',
+      batches: [],
+      review_cycles: [
+        {
+          id: 1,
+          reviewers: ['reviewer-a'],
+          findings: [],
+          triaged: {
+            accepted: [
+              {
+                issue: 'Older finding',
+                severity: 'low',
+                file: 'src/older.ts',
+                line: 1,
+                suggestion: 'Old fix',
+              },
+            ],
+            dismissed: [],
+          },
+        },
+        {
+          id: 2,
+          reviewers: ['reviewer-b'],
+          findings: [],
+          triaged: {
+            accepted: [
+              {
+                issue: 'Keep this accepted finding',
+                severity: 'high',
+                file: 'src/current.ts',
+                line: 12,
+                suggestion: 'Apply the fix before re-dispatching the builder',
+              },
+            ],
+            dismissed: [
+              {
+                issue: 'Ignore dismissed finding',
+                severity: 'medium',
+                file: 'src/ignored.ts',
+                line: 7,
+                suggestion: 'Should not appear',
+              },
+            ],
+            deferred: [
+              {
+                issue: 'Ignore deferred finding',
+                severity: 'low',
+                file: 'src/deferred.ts',
+                line: 8,
+                suggestion: 'Should not appear',
+              },
+            ],
+          },
+        },
+      ],
+    }
+
+    await writeFile(path.join(sessionDir, 'state.json'), JSON.stringify(state, null, 2))
+
+    try {
+      const { tools } = createTestContext({ sessionManager })
+      const tool = tools.get('invoke_get_prior_findings_for_builder')
+
+      expect(tool).toBeDefined()
+      expect(tool!.config.inputSchema.parse({ session_id: 'session-1' })).toEqual({
+        session_id: 'session-1',
+      })
+
+      const response = await tool!.handler({ session_id: 'session-1' })
+
+      expect(response.isError).toBeUndefined()
+      expect(response.content[0].text).toBe(
+        '1. [HIGH] src/current.ts:12 — Keep this accepted finding\n' +
+        '   Fix: Apply the fix before re-dispatching the builder'
+      )
+    } finally {
+      await rm(sessionDir, { recursive: true, force: true })
+    }
+  })
+
+  it('uses the most recent cycle matching batch_id when provided', async () => {
+    const sessionDir = await mkdtemp(path.join(os.tmpdir(), 'dispatch-tools-prior-findings-batch-'))
+    const sessionManager = {
+      exists: vi.fn().mockReturnValue(true),
+      resolve: vi.fn().mockReturnValue(sessionDir),
+    } as unknown as SessionManager
+    const state: PipelineState = {
+      pipeline_id: 'pipeline-1',
+      started: '2026-04-01T00:00:00.000Z',
+      last_updated: '2026-04-01T00:00:00.000Z',
+      current_stage: 'review',
+      batches: [],
+      review_cycles: [
+        {
+          id: 1,
+          batch_id: 7,
+          reviewers: ['reviewer-a'],
+          findings: [],
+          triaged: {
+            accepted: [
+              {
+                issue: 'Old batch finding',
+                severity: 'medium',
+                file: 'src/old-batch.ts',
+                line: 2,
+                suggestion: 'Old batch fix',
+              },
+            ],
+            dismissed: [],
+          },
+        },
+        {
+          id: 2,
+          batch_id: 4,
+          reviewers: ['reviewer-b'],
+          findings: [],
+          triaged: {
+            accepted: [
+              {
+                issue: 'Different batch finding',
+                severity: 'high',
+                file: 'src/other-batch.ts',
+                line: 5,
+                suggestion: 'Other batch fix',
+              },
+            ],
+            dismissed: [],
+          },
+        },
+        {
+          id: 3,
+          batch_id: 7,
+          reviewers: ['reviewer-c'],
+          findings: [],
+          triaged: {
+            accepted: [
+              {
+                issue: 'Newest batch-specific finding',
+                severity: 'critical',
+                file: 'src/new-batch.ts',
+                line: 9,
+                suggestion: 'Use the newest matching batch cycle',
+              },
+            ],
+            dismissed: [],
+          },
+        },
+      ],
+    }
+
+    await writeFile(path.join(sessionDir, 'state.json'), JSON.stringify(state, null, 2))
+
+    try {
+      const { tools } = createTestContext({ sessionManager })
+      const response = await tools.get('invoke_get_prior_findings_for_builder')!.handler({
+        session_id: 'session-1',
+        batch_id: 7,
+      })
+
+      expect(response.isError).toBeUndefined()
+      expect(response.content[0].text).toBe(
+        '1. [CRITICAL] src/new-batch.ts:9 — Newest batch-specific finding\n' +
+        '   Fix: Use the newest matching batch cycle'
+      )
+    } finally {
+      await rm(sessionDir, { recursive: true, force: true })
+    }
+  })
+
+  it('returns an empty string when there is no matching review cycle for the requested batch', async () => {
+    const sessionDir = await mkdtemp(path.join(os.tmpdir(), 'dispatch-tools-prior-findings-empty-'))
+    const sessionManager = {
+      exists: vi.fn().mockReturnValue(true),
+      resolve: vi.fn().mockReturnValue(sessionDir),
+    } as unknown as SessionManager
+    const state: PipelineState = {
+      pipeline_id: 'pipeline-1',
+      started: '2026-04-01T00:00:00.000Z',
+      last_updated: '2026-04-01T00:00:00.000Z',
+      current_stage: 'review',
+      batches: [],
+      review_cycles: [
+        {
+          id: 1,
+          batch_id: 3,
+          reviewers: ['reviewer-a'],
+          findings: [],
+          triaged: {
+            accepted: [
+              {
+                issue: 'Only batch 3 finding',
+                severity: 'low',
+                file: 'src/batch-3.ts',
+                line: 4,
+                suggestion: 'Fix batch 3',
+              },
+            ],
+            dismissed: [],
+          },
+        },
+      ],
+    }
+
+    await writeFile(path.join(sessionDir, 'state.json'), JSON.stringify(state, null, 2))
+
+    try {
+      const { tools } = createTestContext({ sessionManager })
+      const response = await tools.get('invoke_get_prior_findings_for_builder')!.handler({
+        session_id: 'session-1',
+        batch_id: 99,
+      })
+
+      expect(response.isError).toBeUndefined()
+      expect(response.content[0].text).toBe('')
+    } finally {
+      await rm(sessionDir, { recursive: true, force: true })
+    }
+  })
+
+  it('returns an error when the prior-findings tool is called with a session_id that does not exist', async () => {
+    const sessionDir = await mkdtemp(path.join(os.tmpdir(), 'dispatch-tools-prior-findings-missing-'))
+    const sessionManager = {
+      exists: vi.fn().mockReturnValue(false),
+      resolve: vi.fn(),
+      create: vi.fn().mockResolvedValue(sessionDir),
+    } as unknown as SessionManager
+
+    try {
+      const { tools } = createTestContext({ sessionManager })
+      const response = await tools.get('invoke_get_prior_findings_for_builder')!.handler({
+        session_id: 'missing-session',
+      })
+
+      expect(response.isError).toBe(true)
+      expect(response.content[0].text).toBe('Session not found: missing-session')
+      expect(sessionManager.create).not.toHaveBeenCalled()
+      expect(sessionManager.resolve).not.toHaveBeenCalled()
+    } finally {
+      await rm(sessionDir, { recursive: true, force: true })
+    }
+  })
+
+  it('returns a tool error when session-scoped dispatch support is unavailable', async () => {
+    const { tools } = createTestContext()
+    const response = await tools.get('invoke_get_prior_findings_for_builder')!.handler({
+      session_id: 'session-1',
+    })
+
+    expect(response.isError).toBe(true)
+    expect(response.content[0].text).toBe(
+      'Assembly error: Session manager is required for session-scoped dispatch'
+    )
   })
 
   it('caches session-scoped state managers by session directory', async () => {

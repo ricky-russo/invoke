@@ -304,10 +304,13 @@ Before dispatching fix tasks, resolve the commit each fix should fold into. This
 
 Out-of-scope findings were never added to `triaged.accepted`, so the dispatch loop below automatically excludes them.
 
+Before dispatching fix tasks, call `invoke_get_prior_findings_for_builder({ session_id: <pipeline_id>, batch_id: orchestrationBatchId })` and store the returned string (from `result.content[0].text`) as `priorFindingsForFix`. This string is the same checklist the builder will see, minus any findings marked `out_of_scope: true`. If `orchestrationBatchId` is undefined (the empty-batches case), call without `batch_id`.
+
 Bundle accepted findings as fix tasks. For each finding, create a task:
 - `task_description`: the finding details + suggestion
 - `acceptance_criteria`: the specific fix expected
 - `relevant_files`: the file(s) mentioned in the finding
+- `prior_findings`: `priorFindingsForFix` (the builder template wraps `{{prior_findings}}` in the same anti-injection sentinels reviewers use; out-of-scope findings are already filtered out by the tool)
 
 Dispatch fix tasks using `invoke_dispatch_batch` with `create_worktrees: true`.
 

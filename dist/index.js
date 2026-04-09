@@ -41366,6 +41366,51 @@ function registerConfigTools(server, projectDir) {
 
 // src/tools/dispatch-tools.ts
 init_zod();
+
+// src/dispatch/prior-findings.ts
+var MAX_ENTRIES = 20;
+var MAX_CHARS = 4e3;
+function formatPriorFindingsForBuilder(cycle) {
+  const accepted = cycle?.triaged?.accepted;
+  if (!accepted || accepted.length === 0) {
+    return "";
+  }
+  const inScope = accepted.filter((finding) => finding.out_of_scope !== true);
+  if (inScope.length === 0) {
+    return "";
+  }
+  const lines = [];
+  const cap = Math.min(inScope.length, MAX_ENTRIES);
+  let charTotal = 0;
+  let truncatedAt = cap;
+  for (let i = 0; i < cap; i++) {
+    const block = formatFinding(i + 1, inScope[i]);
+    const blockSeparatorLen = lines.length > 0 ? 1 : 0;
+    const remainingAfterCurrent = inScope.length - (i + 1);
+    const overflowLen = remainingAfterCurrent > 0 ? formatOverflowMarker(remainingAfterCurrent).length + 1 : 0;
+    if (charTotal + blockSeparatorLen + block.length + overflowLen > MAX_CHARS) {
+      truncatedAt = i;
+      break;
+    }
+    lines.push(block);
+    charTotal += blockSeparatorLen + block.length;
+  }
+  if (truncatedAt < inScope.length) {
+    lines.push(formatOverflowMarker(inScope.length - truncatedAt));
+  }
+  return lines.join("\n");
+}
+function formatFinding(index, finding) {
+  const severity = finding.severity.toUpperCase();
+  const location = finding.line !== void 0 ? `${finding.file}:${finding.line}` : finding.file;
+  return `${index}. [${severity}] ${location} \u2014 ${finding.issue}
+   Fix: ${finding.suggestion}`;
+}
+function formatOverflowMarker(remaining) {
+  return `(${remaining} more prior findings truncated \u2014 review the delta diff for full context)`;
+}
+
+// src/tools/dispatch-tools.ts
 init_config();
 
 // src/tools/session-metrics.ts
@@ -41610,6 +41655,38 @@ function registerDispatchTools(server, engine, batchManager, projectDir, metrics
         return errorResponse4(
           `Dispatch error: ${err instanceof Error ? err.message : String(err)}`
         );
+      }
+    }
+  );
+  server.registerTool(
+    "invoke_get_prior_findings_for_builder",
+    {
+      description: "Format the most recent review cycle's accepted findings as a builder-facing checklist. Returns empty string on R1 or when no accepted findings remain after out-of-scope filtering.",
+      inputSchema: external_exports3.object({
+        session_id: external_exports3.string(),
+        batch_id: external_exports3.number().optional().describe(
+          "Optional \u2014 when set, only returns findings from cycles with this batch_id. Use for inter-batch review fix dispatches."
+        )
+      })
+    },
+    async ({ session_id, batch_id }) => {
+      try {
+        if (!sessionManager) {
+          throw new Error("Session manager is required for session-scoped dispatch");
+        }
+        if (!sessionManager.exists(session_id)) {
+          return errorResponse4(`Session not found: ${session_id}`);
+        }
+        const sessionDir = sessionManager.resolve(session_id);
+        const state = await getScopedStateManager(sessionDir).get();
+        const cycles = state?.review_cycles ?? [];
+        const cycle = batch_id !== void 0 ? [...cycles].reverse().find((candidate) => candidate.batch_id === batch_id) : cycles[cycles.length - 1];
+        const formatted = formatPriorFindingsForBuilder(cycle);
+        return {
+          content: [{ type: "text", text: formatted }]
+        };
+      } catch (err) {
+        return errorResponse4(`Assembly error: ${err instanceof Error ? err.message : String(err)}`);
       }
     }
   );

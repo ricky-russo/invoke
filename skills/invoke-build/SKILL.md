@@ -74,6 +74,8 @@ For a new batch, call `invoke_dispatch_batch` with:
 - `create_worktrees: true`
 - `session_id: <pipeline_id>` — **REQUIRED.** Without `session_id`, builder worktrees branch from `main` instead of the session work branch, producing incorrect diffs. The server emits a warning when this happens but does not block dispatch (see BUG-015).
 
+Always include `prior_findings: ''` (empty string) in each initial builder task's `task_context`. This substitutes to empty on R1, and the builder's `## Handling Prior Review Findings` section falls through silently when there are no prior findings. This prevents the composer from leaving an unresolved `{{prior_findings}}` literal in the rendered prompt.
+
 The response includes the **resolved provider/model/effort** for each task (read from the current pipeline.yaml). Use this info for your dispatch message — do NOT guess the provider before the tool returns. Display the dispatch summary AFTER receiving the response.
 
 After dispatching, note that `invoke_get_metrics` can be called with `session_id: <pipeline_id>` at any time to inspect current pipeline usage and dispatch limits.
@@ -298,6 +300,8 @@ If the user selects reviewers, present the available reviewers from `invoke_get_
 If step a resulted in "Skip further review", skip this prompt for the current batch and continue to the next batch after validation.
 
 **For accepted findings that need fixing: ALWAYS dispatch builder agents via `invoke_dispatch_batch` with worktrees.** Do NOT fix code directly in the session — that bypasses the pipeline (no worktrees, no state tracking, no validation). Bundle accepted findings as fix tasks, dispatch builders, merge, validate — same flow as a regular build batch. Structure fix tasks the same way as invoke-review step 7 defines them: each fix task gets the finding details, the file and line reference, and the suggested fix as `task_context`. Set the builder subrole based on the nature of the fix (e.g., `docs` for documentation fixes, `default` for code fixes).
+
+When dispatching builder fix agents for accepted findings, first call `invoke_get_prior_findings_for_builder({ session_id: <pipeline_id>, batch_id: <current batch id> })` and pass the result (from `result.content[0].text`) as `task_context.prior_findings` on every fix task, matching the pattern in `invoke-review` step 7. This gives the builder the same out-of-scope-filtered checklist the reviewer produced.
 
 When you record an inter-batch review cycle, first call `invoke_get_review_cycle_count` with `session_id: <pipeline_id>` and the batch ID to obtain the current count, then use `count + 1` as the new monotonic `id`. Call `invoke_set_state` with `session_id: <pipeline_id>` and `review_cycle_update: { id: <next-id>, batch_id: <current batch id>, scope: 'batch', tier: <tier if applicable>, reviewers: [...], findings: [...], triaged: { accepted: [...], deferred: [...], dismissed: [...] } }`. This is especially important when accepted findings trigger fix dispatches, so later review-cycle checks stay tied to the correct batch.
 
