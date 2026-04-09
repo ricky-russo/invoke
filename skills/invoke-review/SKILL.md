@@ -84,7 +84,7 @@ Only an exact match on all three keys triggers the cycle ≥ 2 path. A non-empty
        Fix: Use parameterized queries
     ```
     **Cap the checklist at 20 entries OR 4000 characters, whichever comes first.** If the prior cycle's accepted-and-in-scope findings exceed either limit, truncate and append a single overflow line: `(N more prior findings truncated — review the delta diff for full context)`. Prefer to filter the checklist to findings relevant to the current reviewer's specialty when reviewer-relevance metadata is available; otherwise use the natural order from `triaged.accepted`.
-  - If the tool returns any other status (`invalid_reviewed_sha`, `commit_not_found`, `diff_error`, `not_supported`): emit ⚠️ `No prior review SHA (tool returned <status>) — falling back to full diff`, use `git diff main...HEAD` as the diff, and set `priorFindings = '(prior cycle had no usable reviewed_sha — full diff being reviewed)'`.
+  - If the tool returns any other status (`invalid_reviewed_sha`, `commit_not_found`, `diff_error`, `resolve_error`, `not_supported`): emit ⚠️ `No prior review SHA (tool returned <status>) — falling back to full diff`, use `git diff main...HEAD` as the diff, and set `priorFindings = '(prior cycle had no usable reviewed_sha — full diff being reviewed)'`.
 
 Both `specContext` and `priorFindings` **MUST** always be set to a non-empty string before dispatching — never `undefined`.
 

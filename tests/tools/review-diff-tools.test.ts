@@ -18,6 +18,7 @@ type ReviewDiffResult =
   | { status: 'invalid_reviewed_sha'; message: string }
   | { status: 'commit_not_found'; message: string }
   | { status: 'diff_error'; message: string }
+  | { status: 'resolve_error'; message: string }
   | { status: 'not_supported'; message: string }
 
 type RegisteredTool = {
@@ -55,11 +56,13 @@ describe('registerReviewDiffTools', () => {
   beforeEach(() => {
     vi.resetModules()
     vi.doUnmock('node:child_process')
+    vi.doUnmock('../../src/tools/session-path.js')
     tempDirs = []
   })
 
   afterEach(async () => {
     vi.doUnmock('node:child_process')
+    vi.doUnmock('../../src/tools/session-path.js')
     vi.restoreAllMocks()
     await Promise.all(
       tempDirs.reverse().map(dir => rm(dir, { recursive: true, force: true }))
@@ -69,7 +72,12 @@ describe('registerReviewDiffTools', () => {
   async function registerTool(
     projectDir: string,
     sessionManager: SessionManager,
-    execFileSyncImpl?: typeof childProcess.execFileSync
+    execFileSyncImpl?: typeof childProcess.execFileSync,
+    sessionPathResolverStub?: (
+      sm: SessionManager,
+      pd: string | undefined,
+      sid?: string
+    ) => Promise<string | undefined>
   ): Promise<{ execFileSyncMock: ReturnType<typeof vi.fn>; tool: RegisteredTool }> {
     const registeredTools = new Map<string, RegisteredTool>()
     const registerTool = vi.fn((name: string, config: RegisteredTool['config'], handler: RegisteredTool['handler']) => {
@@ -83,6 +91,16 @@ describe('registerReviewDiffTools', () => {
       ...actualChildProcess,
       execFileSync: execFileSyncMock,
     }))
+
+    if (sessionPathResolverStub) {
+      const actualSessionPath = await vi.importActual<typeof import('../../src/tools/session-path.js')>(
+        '../../src/tools/session-path.js'
+      )
+      vi.doMock('../../src/tools/session-path.js', () => ({
+        ...actualSessionPath,
+        resolveSessionWorkBranchPath: sessionPathResolverStub,
+      }))
+    }
 
     const { registerReviewDiffTools } = await import('../../src/tools/review-diff-tools.js')
 
@@ -124,7 +142,12 @@ describe('registerReviewDiffTools', () => {
       .mockReturnValueOnce(Buffer.from('abc1234\n'))
       .mockReturnValueOnce(Buffer.from('diff --git a/file.txt b/file.txt\n'))
 
-    const { execFileSyncMock, tool } = await registerTool(projectDir, sessionManager, execImpl)
+    const { execFileSyncMock, tool } = await registerTool(
+      projectDir,
+      sessionManager,
+      execImpl,
+      async () => worktreePath
+    )
     const result = await tool.handler({
       session_id: 'session-review-diff',
       reviewed_sha: 'abc1234',
@@ -158,7 +181,12 @@ describe('registerReviewDiffTools', () => {
       work_branch_path: worktreePath,
       base_branch: 'main',
     })
-    const { execFileSyncMock, tool } = await registerTool(projectDir, sessionManager)
+    const { execFileSyncMock, tool } = await registerTool(
+      projectDir,
+      sessionManager,
+      undefined,
+      async () => worktreePath
+    )
 
     const result = await tool.handler({
       session_id: 'session-bad-sha-1',
@@ -181,7 +209,12 @@ describe('registerReviewDiffTools', () => {
       work_branch_path: worktreePath,
       base_branch: 'main',
     })
-    const { execFileSyncMock, tool } = await registerTool(projectDir, sessionManager)
+    const { execFileSyncMock, tool } = await registerTool(
+      projectDir,
+      sessionManager,
+      undefined,
+      async () => worktreePath
+    )
 
     const result = await tool.handler({
       session_id: 'session-bad-sha-2',
@@ -230,10 +263,11 @@ describe('registerReviewDiffTools', () => {
     expect(parsed.diff).toContain('+line two')
   })
 
-  it('returns not_supported when the session state has no worktree path', async () => {
+  it('returns not_supported when the session has no state yet (true legacy)', async () => {
     const projectDir = await mkdtemp(path.join(os.tmpdir(), 'invoke-review-diff-unit-'))
     tempDirs.push(projectDir)
-    const sessionManager = await createSessionState(projectDir, 'session-legacy')
+    const sessionManager = new SessionManager(projectDir)
+    await sessionManager.create('session-legacy')
     const { execFileSyncMock, tool } = await registerTool(projectDir, sessionManager)
 
     const result = await tool.handler({
@@ -245,6 +279,25 @@ describe('registerReviewDiffTools', () => {
       status: 'not_supported',
       message: 'Session has no worktree; review-diff tool requires a per-session worktree',
     })
+    expect(execFileSyncMock).not.toHaveBeenCalled()
+  })
+
+  it('returns resolve_error when the session state is initialized but work_branch_path is missing', async () => {
+    const projectDir = await mkdtemp(path.join(os.tmpdir(), 'invoke-review-diff-unit-'))
+    tempDirs.push(projectDir)
+    const sessionManager = await createSessionState(projectDir, 'session-corrupt')
+    const { execFileSyncMock, tool } = await registerTool(projectDir, sessionManager)
+
+    const result = await tool.handler({
+      session_id: 'session-corrupt',
+      reviewed_sha: 'abc1234',
+    })
+
+    const parsed = parseResponse(result)
+    expect(parsed.status).toBe('resolve_error')
+    if (parsed.status === 'resolve_error') {
+      expect(parsed.message).toContain('session-corrupt')
+    }
     expect(execFileSyncMock).not.toHaveBeenCalled()
   })
 })

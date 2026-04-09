@@ -1,7 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import { z } from 'zod';
 import { sanitizeReviewedSha } from './reviewed-sha.js';
-import { StateManager } from './state.js';
+import { resolveSessionWorkBranchPath } from './session-path.js';
 const ReviewDiffInputSchema = z.object({
     session_id: z.string(),
     reviewed_sha: z.string(),
@@ -27,22 +27,21 @@ function formatExecError(error) {
     }
     return error instanceof Error ? error.message : String(error);
 }
-async function resolveWorktreePath(sessionManager, projectDir, sessionId) {
-    try {
-        const sessionDir = sessionManager.resolve(sessionId);
-        const state = await new StateManager(projectDir, sessionDir).get();
-        return state?.work_branch_path;
-    }
-    catch {
-        return undefined;
-    }
-}
 export function registerReviewDiffTools(server, sessionManager, projectDir) {
     server.registerTool('invoke_compute_review_diff', {
         description: 'Compute the diff between a reviewed commit SHA and the current session HEAD.',
         inputSchema: ReviewDiffInputSchema,
     }, async ({ session_id, reviewed_sha }) => {
-        const worktreePath = await resolveWorktreePath(sessionManager, projectDir, session_id);
+        let worktreePath;
+        try {
+            worktreePath = await resolveSessionWorkBranchPath(sessionManager, projectDir, session_id);
+        }
+        catch (error) {
+            return ok({
+                status: 'resolve_error',
+                message: error instanceof Error ? error.message : String(error),
+            });
+        }
         if (!worktreePath) {
             return ok({
                 status: 'not_supported',

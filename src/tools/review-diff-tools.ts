@@ -3,13 +3,14 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
 import type { SessionManager } from '../session/manager.js'
 import { sanitizeReviewedSha } from './reviewed-sha.js'
-import { StateManager } from './state.js'
+import { resolveSessionWorkBranchPath } from './session-path.js'
 
 export type ReviewDiffResult =
   | { status: 'ok'; reviewed_sha: string; diff: string }
   | { status: 'invalid_reviewed_sha'; message: string }
   | { status: 'commit_not_found'; message: string }
   | { status: 'diff_error'; message: string }
+  | { status: 'resolve_error'; message: string }
   | { status: 'not_supported'; message: string }
 
 const ReviewDiffInputSchema = z.object({
@@ -41,20 +42,6 @@ function formatExecError(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
 
-async function resolveWorktreePath(
-  sessionManager: SessionManager,
-  projectDir: string,
-  sessionId: string
-): Promise<string | undefined> {
-  try {
-    const sessionDir = sessionManager.resolve(sessionId)
-    const state = await new StateManager(projectDir, sessionDir).get()
-    return state?.work_branch_path
-  } catch {
-    return undefined
-  }
-}
-
 export function registerReviewDiffTools(
   server: McpServer,
   sessionManager: SessionManager,
@@ -67,7 +54,15 @@ export function registerReviewDiffTools(
       inputSchema: ReviewDiffInputSchema,
     },
     async ({ session_id, reviewed_sha }) => {
-      const worktreePath = await resolveWorktreePath(sessionManager, projectDir, session_id)
+      let worktreePath: string | undefined
+      try {
+        worktreePath = await resolveSessionWorkBranchPath(sessionManager, projectDir, session_id)
+      } catch (error) {
+        return ok({
+          status: 'resolve_error',
+          message: error instanceof Error ? error.message : String(error),
+        })
+      }
       if (!worktreePath) {
         return ok({
           status: 'not_supported',

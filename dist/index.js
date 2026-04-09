@@ -43665,14 +43665,6 @@ function registerRebaseTools(server, sessionManager, projectDir) {
 // src/tools/review-diff-tools.ts
 init_zod();
 import { execFileSync as execFileSync9 } from "node:child_process";
-
-// src/tools/reviewed-sha.ts
-var REVIEWED_SHA_PATTERN = /^[0-9a-f]{7,40}$/;
-function sanitizeReviewedSha(value) {
-  return typeof value === "string" && REVIEWED_SHA_PATTERN.test(value) ? value : void 0;
-}
-
-// src/tools/review-diff-tools.ts
 var ReviewDiffInputSchema = external_exports3.object({
   session_id: external_exports3.string(),
   reviewed_sha: external_exports3.string()
@@ -43697,15 +43689,6 @@ function formatExecError2(error48) {
   }
   return error48 instanceof Error ? error48.message : String(error48);
 }
-async function resolveWorktreePath(sessionManager, projectDir, sessionId) {
-  try {
-    const sessionDir = sessionManager.resolve(sessionId);
-    const state = await new StateManager(projectDir, sessionDir).get();
-    return state?.work_branch_path;
-  } catch {
-    return void 0;
-  }
-}
 function registerReviewDiffTools(server, sessionManager, projectDir) {
   server.registerTool(
     "invoke_compute_review_diff",
@@ -43714,7 +43697,15 @@ function registerReviewDiffTools(server, sessionManager, projectDir) {
       inputSchema: ReviewDiffInputSchema
     },
     async ({ session_id, reviewed_sha }) => {
-      const worktreePath = await resolveWorktreePath(sessionManager, projectDir, session_id);
+      let worktreePath;
+      try {
+        worktreePath = await resolveSessionWorkBranchPath(sessionManager, projectDir, session_id);
+      } catch (error48) {
+        return ok3({
+          status: "resolve_error",
+          message: error48 instanceof Error ? error48.message : String(error48)
+        });
+      }
       if (!worktreePath) {
         return ok3({
           status: "not_supported",
