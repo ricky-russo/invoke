@@ -328,9 +328,20 @@ export class BatchManager {
         const record = this.batches.get(batchId);
         const maxParallel = request.maxParallel ?? 0; // 0 = unlimited
         let sessionWorkBranch;
-        if (request.createWorktrees && request.sessionId && stateManager) {
+        let resolvedReviewerWorkDir;
+        if (request.sessionId && stateManager) {
             const state = await stateManager.get();
-            sessionWorkBranch = state?.work_branch;
+            if (request.createWorktrees) {
+                sessionWorkBranch = state?.work_branch;
+                if (!sessionWorkBranch) {
+                    console.warn(`[invoke] BatchManager: createWorktrees=true but state.work_branch is unset ` +
+                        `for sessionId=${request.sessionId}. Builder worktrees will branch from main. ` +
+                        `This will produce incorrect diffs — ensure invoke_session_init_worktree ran.`);
+                }
+            }
+            else if (state?.work_branch_path) {
+                resolvedReviewerWorkDir = state.work_branch_path;
+            }
         }
         const scheduledTasks = request.tasks.map((task, index) => ({
             ...task,
@@ -373,7 +384,7 @@ export class BatchManager {
             }
             const agentStatus = record.status.agents[task.index];
             try {
-                let workDir;
+                let workDir = request.createWorktrees ? undefined : resolvedReviewerWorkDir;
                 if (request.createWorktrees) {
                     agentStatus.status = 'dispatched';
                     await this.persistTaskStatus(stateManager, batchIndex, task.taskId, 'dispatched');

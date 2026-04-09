@@ -1029,6 +1029,78 @@ describe('BatchManager with state persistence', () => {
     expect((stateManager.get as any)).toHaveBeenCalledTimes(2)
   })
 
+  it('resolves reviewer workDir from state.work_branch_path when createWorktrees=false', async () => {
+    persistedState = {
+      ...persistedState,
+      work_branch_path: '/tmp/invoke-session-session-A-xyz',
+    }
+
+    await statefulManager.dispatchBatch({
+      tasks: [
+        { taskId: 'task-2', role: 'reviewer', subrole: 'default', taskContext: {} },
+      ],
+      createWorktrees: false,
+      sessionId: 'session-A',
+    })
+
+    await vi.waitFor(() => {
+      expect(mockEngine.dispatch).toHaveBeenCalledWith(expect.objectContaining({
+        role: 'reviewer',
+        subrole: 'default',
+        workDir: '/tmp/invoke-session-session-A-xyz',
+        sessionId: 'session-A',
+      }))
+    }, { timeout: 3000 })
+
+    expect((stateManager.get as any)).toHaveBeenCalledTimes(2)
+  })
+
+  it('leaves reviewer workDir undefined when state.work_branch_path is missing', async () => {
+    persistedState = {
+      ...persistedState,
+      work_branch_path: undefined,
+    }
+
+    await statefulManager.dispatchBatch({
+      tasks: [
+        { taskId: 'task-2', role: 'reviewer', subrole: 'default', taskContext: {} },
+      ],
+      createWorktrees: false,
+      sessionId: 'session-A',
+    })
+
+    await vi.waitFor(() => {
+      expect(mockEngine.dispatch).toHaveBeenCalledWith(expect.objectContaining({
+        role: 'reviewer',
+        subrole: 'default',
+        workDir: undefined,
+        sessionId: 'session-A',
+      }))
+    }, { timeout: 3000 })
+
+    expect((stateManager.get as any)).toHaveBeenCalledTimes(2)
+  })
+
+  it('warns when createWorktrees=true but state.work_branch is missing', async () => {
+    persistedState = {
+      ...persistedState,
+      work_branch: undefined,
+    }
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    await statefulManager.dispatchBatch({
+      tasks: [
+        { taskId: 'task-2', role: 'builder', subrole: 'default', taskContext: {} },
+      ],
+      createWorktrees: true,
+      sessionId: 'session-A',
+    })
+
+    await vi.waitFor(() => {
+      expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('state.work_branch is unset'))
+    }, { timeout: 3000 })
+  })
+
   it('derives batch index from persisted state instead of an instance counter', async () => {
     const batchId = await statefulManager.dispatchBatch({
       tasks: [
