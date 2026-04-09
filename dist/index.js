@@ -25910,8 +25910,8 @@ var require_resolve_flow_scalar = __commonJS({
     };
     function parseCharCode(source, offset, length, onError) {
       const cc = source.substr(offset, length);
-      const ok3 = cc.length === length && /^[0-9a-fA-F]+$/.test(cc);
-      const code = ok3 ? parseInt(cc, 16) : NaN;
+      const ok4 = cc.length === length && /^[0-9a-fA-F]+$/.test(cc);
+      const code = ok4 ? parseInt(cc, 16) : NaN;
       if (isNaN(code)) {
         const raw = source.substr(offset - 2, length + 2);
         onError(offset - 2, "BAD_DQ_ESCAPE", `Invalid escape sequence ${raw}`);
@@ -40861,6 +40861,14 @@ var BugManager = class {
 import { mkdir as mkdir4, readFile as readFile6, writeFile as writeFile3, rename as rename4 } from "fs/promises";
 import { existsSync as existsSync5 } from "fs";
 import path10 from "path";
+
+// src/tools/reviewed-sha.ts
+var REVIEWED_SHA_PATTERN = /^[0-9a-f]{7,40}$/;
+function sanitizeReviewedSha(value) {
+  return typeof value === "string" && REVIEWED_SHA_PATTERN.test(value) ? value : void 0;
+}
+
+// src/tools/state.ts
 var StateManager = class _StateManager {
   static PERSIST_ONCE_KEYS = [
     "work_branch",
@@ -40893,6 +40901,13 @@ var StateManager = class _StateManager {
     }
     const content = await readFile6(this.statePath, "utf-8");
     const parsed = JSON.parse(content);
+    if (parsed?.review_cycles) {
+      for (const rc of parsed.review_cycles) {
+        if (rc.reviewed_sha !== void 0) {
+          rc.reviewed_sha = sanitizeReviewedSha(rc.reviewed_sha);
+        }
+      }
+    }
     this.cachedState = parsed;
     return parsed;
   }
@@ -42639,7 +42654,7 @@ var ReviewCycleSchema = external_exports3.object({
   batch_id: external_exports3.number().optional(),
   scope: external_exports3.enum(["batch", "final"]).optional(),
   tier: external_exports3.string().optional(),
-  reviewed_sha: external_exports3.string().regex(/^[0-9a-f]{7,40}$/, "reviewed_sha must be a 7-40 char lowercase hex SHA").optional(),
+  reviewed_sha: external_exports3.string().regex(REVIEWED_SHA_PATTERN, "reviewed_sha must be a 7-40 char lowercase hex SHA").optional(),
   triaged: external_exports3.object({
     accepted: external_exports3.array(external_exports3.any()),
     dismissed: external_exports3.array(external_exports3.any()),
@@ -43647,6 +43662,107 @@ function registerRebaseTools(server, sessionManager, projectDir) {
   );
 }
 
+// src/tools/review-diff-tools.ts
+init_zod();
+import { execFileSync as execFileSync9 } from "node:child_process";
+var MAX_DIFF_BUFFER_BYTES = 50 * 1024 * 1024;
+var DIFF_SIZE_WARN_BYTES = 48 * 1024 * 1024;
+var ReviewDiffInputSchema = external_exports3.object({
+  session_id: external_exports3.string(),
+  reviewed_sha: external_exports3.string()
+});
+var NOT_SUPPORTED_MESSAGE = "Session has no worktree; review-diff tool requires a per-session worktree";
+function ok3(result) {
+  return {
+    content: [{ type: "text", text: JSON.stringify(result) }]
+  };
+}
+function formatExecError2(error48) {
+  if (typeof error48 === "object" && error48 !== null && "stderr" in error48) {
+    const stderr = error48.stderr;
+    if (Buffer.isBuffer(stderr)) {
+      const message = stderr.toString().trim();
+      if (message) {
+        return message;
+      }
+    } else if (typeof stderr === "string" && stderr.trim()) {
+      return stderr.trim();
+    }
+  }
+  return error48 instanceof Error ? error48.message : String(error48);
+}
+function registerReviewDiffTools(server, sessionManager, projectDir) {
+  server.registerTool(
+    "invoke_compute_review_diff",
+    {
+      description: "Compute the diff between a reviewed commit SHA and the current session HEAD.",
+      inputSchema: ReviewDiffInputSchema
+    },
+    async ({ session_id, reviewed_sha }) => {
+      let worktreePath;
+      try {
+        worktreePath = await resolveSessionWorkBranchPath(sessionManager, projectDir, session_id);
+      } catch (error48) {
+        return ok3({
+          status: "resolve_error",
+          message: error48 instanceof Error ? error48.message : String(error48)
+        });
+      }
+      if (!worktreePath) {
+        return ok3({
+          status: "not_supported",
+          message: NOT_SUPPORTED_MESSAGE
+        });
+      }
+      const sanitizedReviewedSha = sanitizeReviewedSha(reviewed_sha);
+      if (sanitizedReviewedSha === void 0) {
+        return ok3({
+          status: "invalid_reviewed_sha",
+          message: "reviewed_sha failed hex validation"
+        });
+      }
+      try {
+        execFileSync9("git", ["rev-parse", "--verify", `${sanitizedReviewedSha}^{commit}`], {
+          cwd: worktreePath,
+          stdio: "pipe",
+          timeout: 1e4,
+          maxBuffer: MAX_DIFF_BUFFER_BYTES
+        });
+      } catch (error48) {
+        return ok3({
+          status: "commit_not_found",
+          message: formatExecError2(error48)
+        });
+      }
+      let diffBuffer;
+      try {
+        diffBuffer = execFileSync9("git", ["diff", `${sanitizedReviewedSha}...HEAD`], {
+          cwd: worktreePath,
+          stdio: "pipe",
+          timeout: 3e4,
+          maxBuffer: MAX_DIFF_BUFFER_BYTES
+        });
+      } catch (error48) {
+        return ok3({
+          status: "diff_error",
+          message: formatExecError2(error48)
+        });
+      }
+      if (diffBuffer.length > DIFF_SIZE_WARN_BYTES) {
+        return ok3({
+          status: "diff_too_large",
+          message: `Review diff is ${diffBuffer.length} bytes (threshold ${DIFF_SIZE_WARN_BYTES}); reviewer will fall back to full diff`
+        });
+      }
+      return ok3({
+        status: "ok",
+        reviewed_sha: sanitizedReviewedSha,
+        diff: diffBuffer.toString()
+      });
+    }
+  );
+}
+
 // src/defaults-checker.ts
 import { readdir as readdir5 } from "fs/promises";
 import { existsSync as existsSync8 } from "fs";
@@ -43755,6 +43871,7 @@ async function main() {
   registerMetricsTools(server, metricsManager, projectDir, sessionManager);
   registerBugTools(server, bugManager);
   registerRebaseTools(server, sessionManager, projectDir);
+  registerReviewDiffTools(server, sessionManager, projectDir);
   registerPrTools(server, sessionManager, projectDir);
   registerSessionInitTools(server, sessionWorktreeManager, sessionManager, () => config2, projectDir);
   if (config2) {

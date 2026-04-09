@@ -142,6 +142,7 @@ describe.sequential('index bootstrap smoke', () => {
       'invoke_cleanup_worktrees',
       'invoke_collapse_commits',
       'invoke_compare_sessions',
+      'invoke_compute_review_diff',
       'invoke_create_worktree',
       'invoke_delete_artifact',
       'invoke_dispatch',

@@ -19,6 +19,10 @@ All `invoke_get_state`, `invoke_set_state`, and `invoke_get_metrics` calls in th
 
 Call `invoke_get_state` with `session_id: <pipeline_id>` to verify we're at the review stage.
 
+Derive `orchestrationBatchId = state.batches.at(-1)?.id` (numeric — the ID of the last completed build batch in `state.batches[]`). This value is stable across all cycles of this review pass.
+
+If `state.batches` is empty, emit ⚠️ `No orchestration batch — treating every cycle as cycle-1 (full diff)`, skip cycle-2 detection entirely, and omit `batch_id` on all saved ReviewCycles in this pass. In this case, set `orchestrationBatchId = undefined`.
+
 ### 2. Show Current Usage And Cost Summary
 
 Call `invoke_get_metrics` with `session_id: <pipeline_id>` and no stage filter before selecting reviewers or tiers. Display the current pipeline usage and cost summary so the user can see both dispatch headroom and token spend before review starts. Use `summary` and `limits` to show the current totals, including:
@@ -64,18 +68,25 @@ Run `git rev-parse HEAD` in the session worktree. Store the result as `currentSh
 
 **3.3 Detect Cycle and Compute Prior Findings**
 
-Call `invoke_get_review_cycle_count` with `session_id: <pipeline_id>` to get an overall count, but **do not use that count alone to decide cycle 1 vs cycle ≥ 2**. Instead, look up the most recent prior `ReviewCycle` whose `batch_id` matches the current dispatch `batch_id` AND whose `scope` matches the current review `scope` AND (in tiered mode) whose `tier` matches the current `tier`. Only an exact match on all three keys triggers the cycle ≥ 2 path. A non-empty `state.review_cycles` from earlier or unrelated batches does NOT.
+Call `invoke_get_review_cycle_count` with `session_id: <pipeline_id>` to get an overall count, but **do not use that count alone to decide cycle 1 vs cycle ≥ 2**. Instead, reverse-scan `state.review_cycles` for the most recent entry where:
+- `rc.batch_id === orchestrationBatchId`
+- `rc.scope === currentScope`
+- (in tiered mode) `rc.tier === currentTier`
+
+Only an exact match on all three keys triggers the cycle ≥ 2 path. A non-empty `state.review_cycles` from earlier or unrelated batches does NOT. If `orchestrationBatchId` is undefined (empty-batches case), skip this lookup entirely and treat every cycle as cycle-1.
 
 - **No matching prior cycle (treat as cycle 1):** Set `priorFindings = '(first review cycle — no prior findings)'`. Use the full `git diff main...HEAD` (or `git diff $(git merge-base HEAD main)...HEAD`) as the diff.
 
 - **Matching prior cycle exists (cycle ≥ 2):** Read its `reviewed_sha`.
-  - If `reviewed_sha` is present AND `git rev-parse --verify <reviewed_sha>^{commit}` succeeds AND `git diff <reviewed_sha>...HEAD` succeeds: use the delta diff as the diff. Build `priorFindings` as a numbered checklist of that cycle's `triaged.accepted` findings, **excluding any with `out_of_scope === true`**:
-    ```
-    1. [HIGH] src/auth/token.ts:42 — SQL injection
-       Fix: Use parameterized queries
-    ```
-    **Cap the checklist at 20 entries OR 4000 characters, whichever comes first.** If the prior cycle's accepted-and-in-scope findings exceed either limit, truncate and append a single overflow line: `(N more prior findings truncated — review the delta diff for full context)`. Prefer to filter the checklist to findings relevant to the current reviewer's specialty when reviewer-relevance metadata is available; otherwise use the natural order from `triaged.accepted`.
-  - **If `reviewed_sha` is absent OR present but invalid** (rev-parse fails, diff fails for any reason): emit `⚠️ No prior review SHA — falling back to full diff`, use `git diff main...HEAD` as the diff, and set `priorFindings = '(prior cycle had no usable reviewed_sha — full diff being reviewed)'`.
+  - **If `reviewed_sha` is undefined or missing** (legacy ReviewCycles may not carry one): emit ⚠️ `Prior cycle has no reviewed_sha — falling back to full diff`, skip the tool call entirely, use the full `git diff main...HEAD` as the diff, and set `priorFindings = '(prior cycle has no reviewed_sha — full diff being reviewed)'`.
+  - **If `reviewed_sha` is defined:** Call `invoke_compute_review_diff({ session_id: <pipeline_id>, reviewed_sha: <prior cycle reviewed_sha> })`.
+    - If the tool returns `{ status: 'ok', reviewed_sha, diff }`: use `result.diff` as the delta diff for this cycle. Build `priorFindings` as a numbered checklist of that cycle's `triaged.accepted` findings, **excluding any with `out_of_scope === true`**:
+      ```
+      1. [HIGH] src/auth/token.ts:42 — SQL injection
+         Fix: Use parameterized queries
+      ```
+      **Cap the checklist at 20 entries OR 4000 characters, whichever comes first.** If the prior cycle's accepted-and-in-scope findings exceed either limit, truncate and append a single overflow line: `(N more prior findings truncated — review the delta diff for full context)`. Prefer to filter the checklist to findings relevant to the current reviewer's specialty when reviewer-relevance metadata is available; otherwise use the natural order from `triaged.accepted`.
+    - If the tool returns any other status (`invalid_reviewed_sha`, `commit_not_found`, `diff_error`, `diff_too_large`, `resolve_error`, `not_supported`): emit ⚠️ `No prior review SHA (tool returned <status>) — falling back to full diff`, use `git diff main...HEAD` as the diff, and set `priorFindings = '(prior cycle had no usable reviewed_sha — full diff being reviewed)'`.
 
 Both `specContext` and `priorFindings` **MUST** always be set to a non-empty string before dispatching — never `undefined`.
 
@@ -186,7 +197,7 @@ AskUserQuestion({
 })
 ```
 
-After triage, record the review cycle using `invoke_set_state` with `session_id: <pipeline_id>` and `review_cycle_update`. First call `invoke_get_review_cycle_count` with `session_id: <pipeline_id>` to read the current count; use `count + 1` as the new monotonic `id`. Save the reviewers, findings, and triage result (`accepted` / `deferred` / `dismissed`). For tiered review cycles, include `tier: "<tier name>"`. In fallback mode, leave `tier` unset. For final review cycles in this stage, include `scope: 'final'`. Always include `reviewed_sha: currentSha` (the SHA captured in pre-dispatch step 3.2) on every cycle.
+After triage, record the review cycle using `invoke_set_state` with `session_id: <pipeline_id>` and `review_cycle_update`. First call `invoke_get_review_cycle_count` with `session_id: <pipeline_id>` to read the current count; use `count + 1` as the new monotonic `id`. Save the reviewers, findings, and triage result (`accepted` / `deferred` / `dismissed`). For tiered review cycles, include `tier: "<tier name>"`. In fallback mode, leave `tier` unset. For final review cycles in this stage, include `scope: 'final'`. Always include `reviewed_sha: currentSha` (the SHA captured in pre-dispatch step 3.2) on every cycle. Set `batch_id: orchestrationBatchId` (the numeric value derived in step 1). If `orchestrationBatchId` is undefined (empty-batches case), omit `batch_id` entirely from the saved ReviewCycle.
 
 Each `review_cycle_update` follows this schema:
 
@@ -195,7 +206,7 @@ Each `review_cycle_update` follows this schema:
   "id": 1,
   "reviewers": ["<subrole>"],
   "scope": "final",
-  "batch_id": "<batch-id>",
+  "batch_id": orchestrationBatchId,
   "reviewed_sha": "<git sha at time of dispatch>",
   "tier": "critical",
   "findings": [

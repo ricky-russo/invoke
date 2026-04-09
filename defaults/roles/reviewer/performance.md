@@ -68,7 +68,7 @@ If you find issues, report each one using this exact format:
 **In-scope:** the finding concerns code paths, files, or behaviors the spec intended to change, or a regression introduced by those changes.
 **Out-of-scope:** the finding is a real defect, but lives in code the spec never intended to touch and is not a regression caused by the diff under review.
 
-Flagging a finding as out-of-scope does NOT dismiss it — it routes the finding to a tracked followup bug instead of the current build loop. Be honest: if you find a real issue, flag it; the scope marker decides only where it goes, not whether it's reported.
+**You MUST emit `**Out-of-Scope:**` in every finding — never omit it.** Set `yes` when the defect lives in code the spec never intended to touch and is not a regression caused by the diff. Set `no` otherwise. If you identify scope drift in your analysis but forget to set `yes`, the finding will be silently treated as in-scope and routed to the current build loop incorrectly.
 
 ## FEW-SHOT EXAMPLE
 

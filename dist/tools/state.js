@@ -1,6 +1,7 @@
 import { mkdir, readFile, writeFile, rename } from 'fs/promises';
 import { existsSync } from 'fs';
 import path from 'path';
+import { sanitizeReviewedSha } from './reviewed-sha.js';
 export class StateManager {
     static PERSIST_ONCE_KEYS = [
         'work_branch',
@@ -33,6 +34,13 @@ export class StateManager {
         }
         const content = await readFile(this.statePath, 'utf-8');
         const parsed = JSON.parse(content);
+        if (parsed?.review_cycles) {
+            for (const rc of parsed.review_cycles) {
+                if (rc.reviewed_sha !== undefined) {
+                    rc.reviewed_sha = sanitizeReviewedSha(rc.reviewed_sha);
+                }
+            }
+        }
         this.cachedState = parsed;
         return parsed;
     }
