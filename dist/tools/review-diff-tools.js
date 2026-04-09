@@ -2,6 +2,8 @@ import { execFileSync } from 'node:child_process';
 import { z } from 'zod';
 import { sanitizeReviewedSha } from './reviewed-sha.js';
 import { resolveSessionWorkBranchPath } from './session-path.js';
+const MAX_DIFF_BUFFER_BYTES = 50 * 1024 * 1024;
+const DIFF_SIZE_WARN_BYTES = 48 * 1024 * 1024;
 const ReviewDiffInputSchema = z.object({
     session_id: z.string(),
     reviewed_sha: z.string(),
@@ -60,6 +62,7 @@ export function registerReviewDiffTools(server, sessionManager, projectDir) {
                 cwd: worktreePath,
                 stdio: 'pipe',
                 timeout: 10000,
+                maxBuffer: MAX_DIFF_BUFFER_BYTES,
             });
         }
         catch (error) {
@@ -68,16 +71,13 @@ export function registerReviewDiffTools(server, sessionManager, projectDir) {
                 message: formatExecError(error),
             });
         }
+        let diffBuffer;
         try {
-            const diff = execFileSync('git', ['diff', `${sanitizedReviewedSha}...HEAD`], {
+            diffBuffer = execFileSync('git', ['diff', `${sanitizedReviewedSha}...HEAD`], {
                 cwd: worktreePath,
                 stdio: 'pipe',
                 timeout: 30000,
-            }).toString();
-            return ok({
-                status: 'ok',
-                reviewed_sha: sanitizedReviewedSha,
-                diff,
+                maxBuffer: MAX_DIFF_BUFFER_BYTES,
             });
         }
         catch (error) {
@@ -86,6 +86,17 @@ export function registerReviewDiffTools(server, sessionManager, projectDir) {
                 message: formatExecError(error),
             });
         }
+        if (diffBuffer.length > DIFF_SIZE_WARN_BYTES) {
+            return ok({
+                status: 'diff_too_large',
+                message: `Review diff is ${diffBuffer.length} bytes (threshold ${DIFF_SIZE_WARN_BYTES}); reviewer will fall back to full diff`,
+            });
+        }
+        return ok({
+            status: 'ok',
+            reviewed_sha: sanitizedReviewedSha,
+            diff: diffBuffer.toString(),
+        });
     });
 }
 //# sourceMappingURL=review-diff-tools.js.map

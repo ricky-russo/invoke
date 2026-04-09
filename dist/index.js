@@ -43665,6 +43665,8 @@ function registerRebaseTools(server, sessionManager, projectDir) {
 // src/tools/review-diff-tools.ts
 init_zod();
 import { execFileSync as execFileSync9 } from "node:child_process";
+var MAX_DIFF_BUFFER_BYTES = 50 * 1024 * 1024;
+var DIFF_SIZE_WARN_BYTES = 48 * 1024 * 1024;
 var ReviewDiffInputSchema = external_exports3.object({
   session_id: external_exports3.string(),
   reviewed_sha: external_exports3.string()
@@ -43723,7 +43725,8 @@ function registerReviewDiffTools(server, sessionManager, projectDir) {
         execFileSync9("git", ["rev-parse", "--verify", `${sanitizedReviewedSha}^{commit}`], {
           cwd: worktreePath,
           stdio: "pipe",
-          timeout: 1e4
+          timeout: 1e4,
+          maxBuffer: MAX_DIFF_BUFFER_BYTES
         });
       } catch (error48) {
         return ok3({
@@ -43731,16 +43734,13 @@ function registerReviewDiffTools(server, sessionManager, projectDir) {
           message: formatExecError2(error48)
         });
       }
+      let diffBuffer;
       try {
-        const diff = execFileSync9("git", ["diff", `${sanitizedReviewedSha}...HEAD`], {
+        diffBuffer = execFileSync9("git", ["diff", `${sanitizedReviewedSha}...HEAD`], {
           cwd: worktreePath,
           stdio: "pipe",
-          timeout: 3e4
-        }).toString();
-        return ok3({
-          status: "ok",
-          reviewed_sha: sanitizedReviewedSha,
-          diff
+          timeout: 3e4,
+          maxBuffer: MAX_DIFF_BUFFER_BYTES
         });
       } catch (error48) {
         return ok3({
@@ -43748,6 +43748,17 @@ function registerReviewDiffTools(server, sessionManager, projectDir) {
           message: formatExecError2(error48)
         });
       }
+      if (diffBuffer.length > DIFF_SIZE_WARN_BYTES) {
+        return ok3({
+          status: "diff_too_large",
+          message: `Review diff is ${diffBuffer.length} bytes (threshold ${DIFF_SIZE_WARN_BYTES}); reviewer will fall back to full diff`
+        });
+      }
+      return ok3({
+        status: "ok",
+        reviewed_sha: sanitizedReviewedSha,
+        diff: diffBuffer.toString()
+      });
     }
   );
 }

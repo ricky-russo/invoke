@@ -10,8 +10,12 @@ export type ReviewDiffResult =
   | { status: 'invalid_reviewed_sha'; message: string }
   | { status: 'commit_not_found'; message: string }
   | { status: 'diff_error'; message: string }
+  | { status: 'diff_too_large'; message: string }
   | { status: 'resolve_error'; message: string }
   | { status: 'not_supported'; message: string }
+
+const MAX_DIFF_BUFFER_BYTES = 50 * 1024 * 1024
+const DIFF_SIZE_WARN_BYTES = 48 * 1024 * 1024
 
 const ReviewDiffInputSchema = z.object({
   session_id: z.string(),
@@ -83,6 +87,7 @@ export function registerReviewDiffTools(
           cwd: worktreePath,
           stdio: 'pipe',
           timeout: 10000,
+          maxBuffer: MAX_DIFF_BUFFER_BYTES,
         })
       } catch (error) {
         return ok({
@@ -91,17 +96,13 @@ export function registerReviewDiffTools(
         })
       }
 
+      let diffBuffer: Buffer
       try {
-        const diff = execFileSync('git', ['diff', `${sanitizedReviewedSha}...HEAD`], {
+        diffBuffer = execFileSync('git', ['diff', `${sanitizedReviewedSha}...HEAD`], {
           cwd: worktreePath,
           stdio: 'pipe',
           timeout: 30000,
-        }).toString()
-
-        return ok({
-          status: 'ok',
-          reviewed_sha: sanitizedReviewedSha,
-          diff,
+          maxBuffer: MAX_DIFF_BUFFER_BYTES,
         })
       } catch (error) {
         return ok({
@@ -109,6 +110,19 @@ export function registerReviewDiffTools(
           message: formatExecError(error),
         })
       }
+
+      if (diffBuffer.length > DIFF_SIZE_WARN_BYTES) {
+        return ok({
+          status: 'diff_too_large',
+          message: `Review diff is ${diffBuffer.length} bytes (threshold ${DIFF_SIZE_WARN_BYTES}); reviewer will fall back to full diff`,
+        })
+      }
+
+      return ok({
+        status: 'ok',
+        reviewed_sha: sanitizedReviewedSha,
+        diff: diffBuffer.toString(),
+      })
     }
   )
 }

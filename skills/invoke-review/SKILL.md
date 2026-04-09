@@ -77,14 +77,16 @@ Only an exact match on all three keys triggers the cycle ≥ 2 path. A non-empty
 
 - **No matching prior cycle (treat as cycle 1):** Set `priorFindings = '(first review cycle — no prior findings)'`. Use the full `git diff main...HEAD` (or `git diff $(git merge-base HEAD main)...HEAD`) as the diff.
 
-- **Matching prior cycle exists (cycle ≥ 2):** Read its `reviewed_sha`. Call `invoke_compute_review_diff({ session_id: <pipeline_id>, reviewed_sha: <prior cycle reviewed_sha> })`.
-  - If the tool returns `{ status: 'ok', reviewed_sha, diff }`: use `result.diff` as the delta diff for this cycle. Build `priorFindings` as a numbered checklist of that cycle's `triaged.accepted` findings, **excluding any with `out_of_scope === true`**:
-    ```
-    1. [HIGH] src/auth/token.ts:42 — SQL injection
-       Fix: Use parameterized queries
-    ```
-    **Cap the checklist at 20 entries OR 4000 characters, whichever comes first.** If the prior cycle's accepted-and-in-scope findings exceed either limit, truncate and append a single overflow line: `(N more prior findings truncated — review the delta diff for full context)`. Prefer to filter the checklist to findings relevant to the current reviewer's specialty when reviewer-relevance metadata is available; otherwise use the natural order from `triaged.accepted`.
-  - If the tool returns any other status (`invalid_reviewed_sha`, `commit_not_found`, `diff_error`, `resolve_error`, `not_supported`): emit ⚠️ `No prior review SHA (tool returned <status>) — falling back to full diff`, use `git diff main...HEAD` as the diff, and set `priorFindings = '(prior cycle had no usable reviewed_sha — full diff being reviewed)'`.
+- **Matching prior cycle exists (cycle ≥ 2):** Read its `reviewed_sha`.
+  - **If `reviewed_sha` is undefined or missing** (legacy ReviewCycles may not carry one): emit ⚠️ `Prior cycle has no reviewed_sha — falling back to full diff`, skip the tool call entirely, use the full `git diff main...HEAD` as the diff, and set `priorFindings = '(prior cycle has no reviewed_sha — full diff being reviewed)'`.
+  - **If `reviewed_sha` is defined:** Call `invoke_compute_review_diff({ session_id: <pipeline_id>, reviewed_sha: <prior cycle reviewed_sha> })`.
+    - If the tool returns `{ status: 'ok', reviewed_sha, diff }`: use `result.diff` as the delta diff for this cycle. Build `priorFindings` as a numbered checklist of that cycle's `triaged.accepted` findings, **excluding any with `out_of_scope === true`**:
+      ```
+      1. [HIGH] src/auth/token.ts:42 — SQL injection
+         Fix: Use parameterized queries
+      ```
+      **Cap the checklist at 20 entries OR 4000 characters, whichever comes first.** If the prior cycle's accepted-and-in-scope findings exceed either limit, truncate and append a single overflow line: `(N more prior findings truncated — review the delta diff for full context)`. Prefer to filter the checklist to findings relevant to the current reviewer's specialty when reviewer-relevance metadata is available; otherwise use the natural order from `triaged.accepted`.
+    - If the tool returns any other status (`invalid_reviewed_sha`, `commit_not_found`, `diff_error`, `diff_too_large`, `resolve_error`, `not_supported`): emit ⚠️ `No prior review SHA (tool returned <status>) — falling back to full diff`, use `git diff main...HEAD` as the diff, and set `priorFindings = '(prior cycle had no usable reviewed_sha — full diff being reviewed)'`.
 
 Both `specContext` and `priorFindings` **MUST** always be set to a non-empty string before dispatching — never `undefined`.
 

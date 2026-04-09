@@ -18,6 +18,7 @@ type ReviewDiffResult =
   | { status: 'invalid_reviewed_sha'; message: string }
   | { status: 'commit_not_found'; message: string }
   | { status: 'diff_error'; message: string }
+  | { status: 'diff_too_large'; message: string }
   | { status: 'resolve_error'; message: string }
   | { status: 'not_supported'; message: string }
 
@@ -157,13 +158,13 @@ describe('registerReviewDiffTools', () => {
       1,
       'git',
       ['rev-parse', '--verify', 'abc1234^{commit}'],
-      { cwd: worktreePath, stdio: 'pipe', timeout: 10000 }
+      { cwd: worktreePath, stdio: 'pipe', timeout: 10000, maxBuffer: 50 * 1024 * 1024 }
     )
     expect(execFileSyncMock).toHaveBeenNthCalledWith(
       2,
       'git',
       ['diff', 'abc1234...HEAD'],
-      { cwd: worktreePath, stdio: 'pipe', timeout: 30000 }
+      { cwd: worktreePath, stdio: 'pipe', timeout: 30000, maxBuffer: 50 * 1024 * 1024 }
     )
     expect(parseResponse(result)).toEqual({
       status: 'ok',
@@ -299,5 +300,39 @@ describe('registerReviewDiffTools', () => {
       expect(parsed.message).toContain('session-corrupt')
     }
     expect(execFileSyncMock).not.toHaveBeenCalled()
+  })
+
+  it('returns diff_too_large when git diff output exceeds the warn threshold', async () => {
+    const projectDir = await mkdtemp(path.join(os.tmpdir(), 'invoke-review-diff-unit-'))
+    const worktreePath = await mkdtemp(path.join(os.tmpdir(), 'invoke-review-diff-worktree-'))
+    tempDirs.push(projectDir, worktreePath)
+    const sessionManager = await createSessionState(projectDir, 'session-large-diff', {
+      work_branch: 'invoke/sessions/session-large-diff',
+      work_branch_path: worktreePath,
+      base_branch: 'main',
+    })
+    const execImpl = vi
+      .fn<typeof childProcess.execFileSync>()
+      .mockReturnValueOnce(Buffer.from('abc1234\n'))
+      .mockReturnValueOnce(Buffer.alloc(49 * 1024 * 1024, 'x'))
+
+    const { tool } = await registerTool(
+      projectDir,
+      sessionManager,
+      execImpl,
+      async () => worktreePath
+    )
+
+    const result = await tool.handler({
+      session_id: 'session-large-diff',
+      reviewed_sha: 'abc1234',
+    })
+
+    const parsed = parseResponse(result)
+    expect(parsed.status).toBe('diff_too_large')
+    if (parsed.status === 'diff_too_large') {
+      expect(parsed.message).toContain('bytes')
+      expect(parsed.message).toContain('full diff')
+    }
   })
 })

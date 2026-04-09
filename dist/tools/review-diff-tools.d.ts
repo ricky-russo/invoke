@@ -14,6 +14,9 @@ export type ReviewDiffResult = {
     status: 'diff_error';
     message: string;
 } | {
+    status: 'diff_too_large';
+    message: string;
+} | {
     status: 'resolve_error';
     message: string;
 } | {
