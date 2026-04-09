@@ -20,6 +20,7 @@ const mocks = vi.hoisted(() => ({
   registerComparisonTools: vi.fn(),
   registerBugTools: vi.fn(),
   registerRebaseTools: vi.fn(),
+  registerReviewDiffTools: vi.fn(),
   checkForNewDefaults: vi.fn(),
   writeFile: vi.fn(),
   serverInstances: [] as any[],
@@ -242,6 +243,10 @@ vi.mock('../src/tools/rebase-tools.js', () => ({
   registerRebaseTools: mocks.registerRebaseTools,
 }))
 
+vi.mock('../src/tools/review-diff-tools.js', () => ({
+  registerReviewDiffTools: mocks.registerReviewDiffTools,
+}))
+
 vi.mock('../src/defaults-checker.js', () => ({
   checkForNewDefaults: mocks.checkForNewDefaults,
 }))
@@ -319,6 +324,7 @@ describe('index bootstrap', () => {
       expect(mocks.registerStateTools).toHaveBeenCalledTimes(1)
       expect(mocks.registerBugTools).toHaveBeenCalledTimes(1)
       expect(mocks.registerRebaseTools).toHaveBeenCalledTimes(1)
+      expect(mocks.registerReviewDiffTools).toHaveBeenCalledTimes(1)
     })
 
     const server = mocks.serverInstances[0]
@@ -367,6 +373,7 @@ describe('index bootstrap', () => {
     expect(mocks.registerStateTools).toHaveBeenCalledWith(server, stateManager, process.cwd(), sessionManager)
     expect(mocks.registerBugTools).toHaveBeenCalledWith(server, bugManager)
     expect(mocks.registerRebaseTools).toHaveBeenCalledWith(server, sessionManager, process.cwd())
+    expect(mocks.registerReviewDiffTools).toHaveBeenCalledWith(server, sessionManager, process.cwd())
     expect(console.error).toHaveBeenCalledWith('Migrated legacy state to session: session-123')
   })
 
