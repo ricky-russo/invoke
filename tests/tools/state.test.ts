@@ -2,8 +2,9 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { StateManager } from '../../src/tools/state.js'
 import { SessionManager } from '../../src/session/manager.js'
 import { registerStateTools } from '../../src/tools/state-tools.js'
-import { mkdir, rm, readFile } from 'fs/promises'
+import { mkdir, rm, readFile, writeFile, mkdtemp } from 'fs/promises'
 import { existsSync } from 'fs'
+import { tmpdir } from 'os'
 import path from 'path'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import type { PipelineState } from '../../src/types.js'
@@ -84,6 +85,14 @@ function getTool(name: string): RegisteredTool {
 
 function parseResponseText(result: Awaited<ReturnType<RegisteredTool['handler']>>) {
   return JSON.parse(result.content[0].text) as Record<string, unknown>
+}
+
+async function writeRawStateFile(state: PipelineState): Promise<string> {
+  const projectDir = await mkdtemp(path.join(tmpdir(), 'invoke-state-test-'))
+  const storageDir = path.join(projectDir, '.invoke')
+  await mkdir(storageDir, { recursive: true })
+  await writeFile(path.join(storageDir, 'state.json'), JSON.stringify(state, null, 2))
+  return projectDir
 }
 
 async function initializeWithPersistOnceFields(
@@ -197,6 +206,104 @@ describe('StateManager', () => {
   it('returns zero review cycles when state does not exist', async () => {
     await expect(stateManager.getReviewCycleCount()).resolves.toBe(0)
     await expect(stateManager.getReviewCycleCount(1)).resolves.toBe(0)
+  })
+
+  it('sanitizes a tampered reviewed_sha containing shell separators on load', async () => {
+    const projectDir = await writeRawStateFile({
+      pipeline_id: 'pipeline-123',
+      started: new Date().toISOString(),
+      last_updated: new Date().toISOString(),
+      current_stage: 'review',
+      batches: [],
+      review_cycles: [
+        { id: 1, reviewers: [], findings: [], reviewed_sha: '; rm -rf ~' },
+      ],
+    })
+
+    try {
+      const result = await new StateManager(projectDir).get()
+      expect(result?.review_cycles[0].reviewed_sha).toBeUndefined()
+    } finally {
+      await rm(projectDir, { recursive: true, force: true })
+    }
+  })
+
+  it('sanitizes a tampered reviewed_sha containing command substitution on load', async () => {
+    const projectDir = await writeRawStateFile({
+      pipeline_id: 'pipeline-123',
+      started: new Date().toISOString(),
+      last_updated: new Date().toISOString(),
+      current_stage: 'review',
+      batches: [],
+      review_cycles: [
+        { id: 1, reviewers: [], findings: [], reviewed_sha: '$(evil)' },
+      ],
+    })
+
+    try {
+      const result = await new StateManager(projectDir).get()
+      expect(result?.review_cycles[0].reviewed_sha).toBeUndefined()
+    } finally {
+      await rm(projectDir, { recursive: true, force: true })
+    }
+  })
+
+  it('preserves a valid reviewed_sha when loading state from disk', async () => {
+    const projectDir = await writeRawStateFile({
+      pipeline_id: 'pipeline-123',
+      started: new Date().toISOString(),
+      last_updated: new Date().toISOString(),
+      current_stage: 'review',
+      batches: [],
+      review_cycles: [
+        { id: 1, reviewers: [], findings: [], reviewed_sha: 'abcdef1234567890' },
+      ],
+    })
+
+    try {
+      const result = await new StateManager(projectDir).get()
+      expect(result?.review_cycles[0].reviewed_sha).toBe('abcdef1234567890')
+    } finally {
+      await rm(projectDir, { recursive: true, force: true })
+    }
+  })
+
+  it('loads legacy review cycles without a reviewed_sha field', async () => {
+    const projectDir = await writeRawStateFile({
+      pipeline_id: 'pipeline-123',
+      started: new Date().toISOString(),
+      last_updated: new Date().toISOString(),
+      current_stage: 'review',
+      batches: [],
+      review_cycles: [
+        { id: 1, reviewers: [], findings: [] },
+      ],
+    })
+
+    try {
+      const result = await new StateManager(projectDir).get()
+      expect(result?.review_cycles[0].reviewed_sha).toBeUndefined()
+    } finally {
+      await rm(projectDir, { recursive: true, force: true })
+    }
+  })
+
+  it('loads cleanly when review_cycles is an empty array', async () => {
+    const projectDir = await writeRawStateFile({
+      pipeline_id: 'pipeline-123',
+      started: new Date().toISOString(),
+      last_updated: new Date().toISOString(),
+      current_stage: 'review',
+      batches: [],
+      review_cycles: [],
+    })
+
+    try {
+      const result = await new StateManager(projectDir).get()
+      expect(result?.review_cycles).toEqual([])
+    } finally {
+      await rm(projectDir, { recursive: true, force: true })
+    }
   })
 
   it('adds a batch via addBatch', async () => {

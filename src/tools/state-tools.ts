@@ -4,6 +4,7 @@ import { z } from 'zod'
 import { loadConfig } from '../config.js'
 import { SessionManager } from '../session/manager.js'
 import { SESSION_ID_PATTERN } from '../worktree/session-id-validator.js'
+import { REVIEWED_SHA_PATTERN } from './reviewed-sha.js'
 import { StateManager } from './state.js'
 
 const TaskSchema = z.object({
@@ -34,7 +35,7 @@ const ReviewCycleSchema = z.object({
   batch_id: z.number().optional(),
   scope: z.enum(['batch', 'final']).optional(),
   tier: z.string().optional(),
-  reviewed_sha: z.string().regex(/^[0-9a-f]{7,40}$/, 'reviewed_sha must be a 7-40 char lowercase hex SHA').optional(),
+  reviewed_sha: z.string().regex(REVIEWED_SHA_PATTERN, 'reviewed_sha must be a 7-40 char lowercase hex SHA').optional(),
   triaged: z.object({
     accepted: z.array(z.any()),
     dismissed: z.array(z.any()),

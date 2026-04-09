@@ -40861,6 +40861,14 @@ var BugManager = class {
 import { mkdir as mkdir4, readFile as readFile6, writeFile as writeFile3, rename as rename4 } from "fs/promises";
 import { existsSync as existsSync5 } from "fs";
 import path10 from "path";
+
+// src/tools/reviewed-sha.ts
+var REVIEWED_SHA_PATTERN = /^[0-9a-f]{7,40}$/;
+function sanitizeReviewedSha(value) {
+  return typeof value === "string" && REVIEWED_SHA_PATTERN.test(value) ? value : void 0;
+}
+
+// src/tools/state.ts
 var StateManager = class _StateManager {
   static PERSIST_ONCE_KEYS = [
     "work_branch",
@@ -40893,6 +40901,13 @@ var StateManager = class _StateManager {
     }
     const content = await readFile6(this.statePath, "utf-8");
     const parsed = JSON.parse(content);
+    if (parsed?.review_cycles) {
+      for (const rc of parsed.review_cycles) {
+        if (rc.reviewed_sha !== void 0) {
+          rc.reviewed_sha = sanitizeReviewedSha(rc.reviewed_sha);
+        }
+      }
+    }
     this.cachedState = parsed;
     return parsed;
   }
@@ -42639,7 +42654,7 @@ var ReviewCycleSchema = external_exports3.object({
   batch_id: external_exports3.number().optional(),
   scope: external_exports3.enum(["batch", "final"]).optional(),
   tier: external_exports3.string().optional(),
-  reviewed_sha: external_exports3.string().regex(/^[0-9a-f]{7,40}$/, "reviewed_sha must be a 7-40 char lowercase hex SHA").optional(),
+  reviewed_sha: external_exports3.string().regex(REVIEWED_SHA_PATTERN, "reviewed_sha must be a 7-40 char lowercase hex SHA").optional(),
   triaged: external_exports3.object({
     accepted: external_exports3.array(external_exports3.any()),
     dismissed: external_exports3.array(external_exports3.any()),
