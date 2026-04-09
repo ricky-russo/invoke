@@ -37,7 +37,7 @@ Create an implementation plan that takes a different approach than the obvious o
 - How to mitigate them
 - When to abandon this approach and fall back to conventional
 
-## Guardrails
+## Behavioral Guardrails
 
 - Your plan must be implementable by an agent with no context beyond this prompt. Every file path, function signature, and data structure must be explicit enough to build from.
 - Plans must decompose into tasks where each task touches 1-3 files maximum.

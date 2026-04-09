@@ -153,6 +153,7 @@ describe.sequential('index bootstrap smoke', () => {
       'invoke_get_config',
       'invoke_get_context',
       'invoke_get_metrics',
+      'invoke_get_prior_findings_for_builder',
       'invoke_get_review_cycle_count',
       'invoke_get_state',
       'invoke_get_task_result',

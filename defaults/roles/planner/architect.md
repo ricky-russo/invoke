@@ -37,7 +37,7 @@ Create a detailed implementation plan that covers:
 - Dependencies or assumptions that could break
 - Fallback approaches if the primary plan hits issues
 
-## Guardrails
+## Behavioral Guardrails
 
 - Your plan must be implementable by an agent with no context beyond this prompt. Every file path, function signature, and data structure must be explicit enough to build from.
 - Plans must decompose into tasks where each task touches 1-3 files maximum.

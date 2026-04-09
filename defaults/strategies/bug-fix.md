@@ -20,7 +20,7 @@ You are fixing a bug using a test-first approach.
 2. **Diagnose** — Read the relevant code to understand the root cause. Do not guess.
 3. **Fix** — Make the minimum change to fix the bug. Do not refactor surrounding code.
 4. **Verify** — Run the new test to confirm it passes. Run the full test suite to confirm no regressions.
-5. **Commit** — Commit the test and fix together.
+5. **Stop** — Stage work if convenient (`git add`); invoke will commit on your behalf after the task succeeds.
 
 ## Enforcement
 

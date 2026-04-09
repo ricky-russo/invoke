@@ -5,6 +5,7 @@ import type { BatchManager } from '../dispatch/batch-manager.js'
 import type { MetricsManager } from '../metrics/manager.js'
 import type { SessionManager } from '../session/manager.js'
 import type { InvokeConfig, ProviderMode } from '../types.js'
+import { formatPriorFindingsForBuilder } from '../dispatch/prior-findings.js'
 import { loadConfig } from '../config.js'
 import { StateManager } from './state.js'
 import { getSessionScopedMetrics } from './session-metrics.js'
@@ -276,6 +277,44 @@ export function registerDispatchTools(
         return errorResponse(
           `Dispatch error: ${err instanceof Error ? err.message : String(err)}`
         )
+      }
+    }
+  )
+
+  server.registerTool(
+    'invoke_get_prior_findings_for_builder',
+    {
+      description: 'Format the most recent review cycle\'s accepted findings as a builder-facing checklist. Returns empty string on R1 or when no accepted findings remain after out-of-scope filtering.',
+      inputSchema: z.object({
+        session_id: z.string(),
+        batch_id: z.number().optional().describe(
+          'Optional — when set, only returns findings from cycles with this batch_id. Use for inter-batch review fix dispatches.'
+        ),
+      }),
+    },
+    async ({ session_id, batch_id }) => {
+      try {
+        if (!sessionManager) {
+          throw new Error('Session manager is required for session-scoped dispatch')
+        }
+
+        if (!sessionManager.exists(session_id)) {
+          return errorResponse(`Session not found: ${session_id}`)
+        }
+
+        const sessionDir = sessionManager.resolve(session_id)
+        const state = await getScopedStateManager(sessionDir).get()
+        const cycles = state?.review_cycles ?? []
+        const cycle = batch_id !== undefined
+          ? [...cycles].reverse().find(candidate => candidate.batch_id === batch_id)
+          : cycles[cycles.length - 1]
+        const formatted = formatPriorFindingsForBuilder(cycle)
+
+        return {
+          content: [{ type: 'text', text: formatted }],
+        }
+      } catch (err) {
+        return errorResponse(`Assembly error: ${err instanceof Error ? err.message : String(err)}`)
       }
     }
   )
