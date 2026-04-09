@@ -125,6 +125,17 @@ When using tiered review, prefix the reviewer heading with the tier name: `### C
 In tiered review, include the tier name in the heading so the user can see which gate is being evaluated, for example:
 > **Critical Tier — Security Review** (3 findings)
 
+**Provider Agreement Display.** When a reviewer's merged `result.output.provider_counts` is present (multi-provider parallel dispatch), print a per-provider count line under the reviewer header BEFORE the findings list:
+
+> _providers: claude=4, codex=4_
+
+If any provider has `0` while another has `>0`, emit a divergence warning immediately after the count line:
+
+> ⚠️ **Provider divergence:** claude returned 0 findings, codex returned 4.
+> Review the findings carefully — one provider may have missed issues the other caught, or one may be hallucinating. Consider re-running the reviewer or checking the raw output for each provider.
+
+Omit the provider line entirely when `provider_counts` is undefined (single-provider review dispatches).
+
 ### 5.1 Partition Out-of-Scope Findings
 
 Before triage, partition all findings:

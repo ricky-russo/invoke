@@ -72,6 +72,7 @@ Present available builders using `AskUserQuestion` with `multiSelect: true`, not
 For a new batch, call `invoke_dispatch_batch` with:
 - `tasks`: the batch's tasks with their task_context
 - `create_worktrees: true`
+- `session_id: <pipeline_id>` — **REQUIRED.** Without `session_id`, builder worktrees branch from `main` instead of the session work branch, producing incorrect diffs. The server emits a warning when this happens but does not block dispatch (see BUG-015).
 
 The response includes the **resolved provider/model/effort** for each task (read from the current pipeline.yaml). Use this info for your dispatch message — do NOT guess the provider before the tool returns. Display the dispatch summary AFTER receiving the response.
 
