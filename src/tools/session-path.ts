@@ -16,6 +16,65 @@ export class MissingSessionWorkBranchPath extends Error {
   }
 }
 
+type ResolvePersistedSessionWorkBranchPathOptions = {
+  sessionId: string
+  projectDir: string
+  workBranch: string | undefined
+  workBranchPath: string
+}
+
+export function resolvePersistedSessionWorkBranchPath({
+  sessionId,
+  projectDir,
+  workBranch,
+  workBranchPath,
+}: ResolvePersistedSessionWorkBranchPathOptions): string {
+  // Gate 2: tmpdir + invoke-session- basename + same git-common-dir. Returns
+  // the EXACT canonical path that was validated so we do not re-resolve.
+  const canonicalPath = resolveSafeSessionWorkBranchPath(workBranchPath, projectDir)
+  if (canonicalPath === null) {
+    throw new Error(
+      `Refusing to use unsafe session work branch path for session '${sessionId}'`
+    )
+  }
+
+  // Gate 3: session-identity check on the stored branch name. The expected
+  // branch is `<prefix>/<sessionId>` — anything else means state was either
+  // corrupted or pointing at another session.
+  const workBranchPrefix = workBranch
+    ? workBranch.split('/').slice(0, -1).join('/')
+    : 'invoke/work'
+  if (!isSafeWorkBranch(workBranch, sessionId, workBranchPrefix)) {
+    throw new Error(
+      `Refusing to use session '${sessionId}': state.work_branch '${workBranch ?? '<unset>'}' does not match the expected session branch name`
+    )
+  }
+
+  // Gate 4: the worktree at canonicalPath is actually checked out on that
+  // branch RIGHT NOW. This catches cross-session drift where `work_branch_path`
+  // was rewritten to another session's worktree inside the same repo.
+  let currentBranch: string
+  try {
+    currentBranch = execFileSync('git', ['symbolic-ref', '--short', 'HEAD'], {
+      cwd: canonicalPath,
+      stdio: 'pipe',
+    })
+      .toString()
+      .trim()
+  } catch (err) {
+    throw new Error(
+      `Refusing to use session '${sessionId}': could not read HEAD at '${canonicalPath}' (${err instanceof Error ? err.message : String(err)})`
+    )
+  }
+  if (currentBranch !== workBranch) {
+    throw new Error(
+      `Refusing to use session '${sessionId}': worktree at '${canonicalPath}' is checked out on '${currentBranch}', expected '${workBranch}'`
+    )
+  }
+
+  return canonicalPath
+}
+
 /**
  * Resolve the canonical filesystem path of a session's integration worktree
  * for the given session_id, verifying in this order:
@@ -64,50 +123,10 @@ export async function resolveSessionWorkBranchPath(
   if (state.work_branch_path === undefined) {
     throw new MissingSessionWorkBranchPath(sessionId)
   }
-  const workBranchPath = state.work_branch_path
-
-  // Gate 2: tmpdir + invoke-session- basename + same git-common-dir. Returns
-  // the EXACT canonical path that was validated so we do not re-resolve.
-  const canonicalPath = resolveSafeSessionWorkBranchPath(workBranchPath, projectDir)
-  if (canonicalPath === null) {
-    throw new Error(
-      `Refusing to use unsafe session work branch path for session '${sessionId}'`
-    )
-  }
-
-  // Gate 3: session-identity check on the stored branch name. The expected
-  // branch is `<prefix>/<sessionId>` — anything else means state was either
-  // corrupted or pointing at another session.
-  const workBranchPrefix = state?.work_branch
-    ? state.work_branch.split('/').slice(0, -1).join('/')
-    : 'invoke/work'
-  if (!isSafeWorkBranch(state?.work_branch, sessionId, workBranchPrefix)) {
-    throw new Error(
-      `Refusing to use session '${sessionId}': state.work_branch '${state?.work_branch ?? '<unset>'}' does not match the expected session branch name`
-    )
-  }
-
-  // Gate 4: the worktree at canonicalPath is actually checked out on that
-  // branch RIGHT NOW. This catches cross-session drift where `work_branch_path`
-  // was rewritten to another session's worktree inside the same repo.
-  let currentBranch: string
-  try {
-    currentBranch = execFileSync('git', ['symbolic-ref', '--short', 'HEAD'], {
-      cwd: canonicalPath,
-      stdio: 'pipe',
-    })
-      .toString()
-      .trim()
-  } catch (err) {
-    throw new Error(
-      `Refusing to use session '${sessionId}': could not read HEAD at '${canonicalPath}' (${err instanceof Error ? err.message : String(err)})`
-    )
-  }
-  if (currentBranch !== state.work_branch) {
-    throw new Error(
-      `Refusing to use session '${sessionId}': worktree at '${canonicalPath}' is checked out on '${currentBranch}', expected '${state.work_branch}'`
-    )
-  }
-
-  return canonicalPath
+  return resolvePersistedSessionWorkBranchPath({
+    sessionId,
+    projectDir,
+    workBranch: state.work_branch,
+    workBranchPath: state.work_branch_path,
+  })
 }

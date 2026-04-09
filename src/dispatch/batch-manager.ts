@@ -2,6 +2,7 @@ import { randomUUID } from 'crypto'
 import type { DispatchEngine } from './engine.js'
 import { buildExecutionLayers } from './dag-scheduler.js'
 import type { WorktreeManager } from '../worktree/manager.js'
+import { resolvePersistedSessionWorkBranchPath } from '../tools/session-path.js'
 import type { StateManager } from '../tools/state.js'
 import type {
   BatchRequest,
@@ -37,6 +38,7 @@ interface ScheduledBatchTask extends BatchTask {
 
 interface BatchManagerOptions {
   terminalRetentionMs?: number
+  repoDir?: string
 }
 
 type DispatchBatchOptions = {
@@ -63,6 +65,7 @@ export class BatchManager {
   private evictionTimers = new Map<string, ReturnType<typeof setTimeout>>()
   private isShutdown = false
   private readonly terminalRetentionMs: number
+  private readonly repoDir?: string
 
   constructor(
     private engine: DispatchEngine,
@@ -71,6 +74,7 @@ export class BatchManager {
     options: BatchManagerOptions = {}
   ) {
     this.terminalRetentionMs = options.terminalRetentionMs ?? DEFAULT_TERMINAL_RETENTION_MS
+    this.repoDir = options.repoDir
   }
 
   async dispatchBatch(request: BatchRequest, options: DispatchBatchOptions = {}): Promise<string> {
@@ -469,16 +473,31 @@ export class BatchManager {
       const state = await stateManager.get()
       if (request.createWorktrees) {
         sessionWorkBranch = state?.work_branch
-        if (!sessionWorkBranch) {
+      } else if (state?.work_branch_path && this.repoDir) {
+        try {
+          resolvedReviewerWorkDir = resolvePersistedSessionWorkBranchPath({
+            sessionId: request.sessionId,
+            projectDir: this.repoDir,
+            workBranch: state.work_branch,
+            workBranchPath: state.work_branch_path,
+          })
+        } catch (err) {
           console.warn(
-            `[invoke] BatchManager: createWorktrees=true but state.work_branch is unset ` +
-            `for sessionId=${request.sessionId}. Builder worktrees will branch from main. ` +
-            `This will produce incorrect diffs — ensure invoke_session_init_worktree ran.`
+            `[invoke] BatchManager: rejected unsafe work_branch_path for sessionId=${request.sessionId}: ` +
+            `${err instanceof Error ? err.message : String(err)}`
           )
+          resolvedReviewerWorkDir = undefined
         }
-      } else if (state?.work_branch_path) {
-        resolvedReviewerWorkDir = state.work_branch_path
       }
+    }
+
+    if (request.createWorktrees && !sessionWorkBranch) {
+      const sessionIdText = request.sessionId ?? '<no session_id>'
+      console.warn(
+        `[invoke] BatchManager: createWorktrees=true but state.work_branch is unset ` +
+        `for sessionId=${sessionIdText}. Builder worktrees will branch from main. ` +
+        `This will produce incorrect diffs — ensure invoke_session_init_worktree ran.`
+      )
     }
 
     const scheduledTasks: ScheduledBatchTask[] = request.tasks.map((task, index) => ({
