@@ -65,7 +65,7 @@ const STRATEGIES: StrategyExpectation[] = [
       'DO NOT modify tests to make them pass instead of fixing the code.',
     ],
     preservedText: [
-      '1. **Reproduce** — Write a failing test that demonstrates the bug. The test should pass once the bug is fixed.',
+      '- Create a failing test case that reproduces the bug.',
       '- Always write the failing test before attempting a fix.',
     ],
   },

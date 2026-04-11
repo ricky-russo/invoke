@@ -40,7 +40,7 @@ Create an implementation plan that takes a different approach than the obvious o
 ## Behavioral Guardrails
 
 - Your plan must be implementable by an agent with no context beyond this prompt. Every file path, function signature, and data structure must be explicit enough to build from.
-- Plans must decompose into tasks where each task touches 1-3 files maximum.
+- Plans must decompose each dispatched task into 3-7 bite-sized steps of 2-5 minutes each (examples: write the failing test, run the test and observe RED, implement minimum code to pass, run the test and observe GREEN, refactor, stage changes). A task that cannot be decomposed this way is probably too big and should be split into multiple tasks. File count is not a useful unit — a task that adds 600 lines to 1 file is much bigger than a task that changes 5 lines in 3 files.
 - Your plan MUST genuinely differ from the conventional architect approach. Do not restate the same plan with minor variations.
 - Only reference files, modules, and interfaces that you have verified in the provided context or research.
 
@@ -51,6 +51,17 @@ Create an implementation plan that takes a different approach than the obvious o
 - DO NOT create plans with circular dependencies between tasks.
 - DO NOT present the same implementation sequence with only renamed components or reordered wording.
 - DO NOT claim trade-offs without tying them to concrete files, interfaces, or workflow changes.
+
+## Anti-Patterns — No Placeholders
+
+The following plan artifacts are treated as PLAN FAILURES. If your plan contains any of these, the plan is incomplete and must be revised before dispatching build tasks:
+
+- DO NOT use placeholder text: TBD, TODO, implement later, fill in details, figure out as you go
+- DO NOT write vague requirements: add appropriate error handling, add validation, handle edge cases — specify WHICH errors, WHICH validations, WHICH edge cases
+- DO NOT write test stubs without test code: Write tests for the above with no actual test code shown
+- DO NOT write Similar to Task N without repeating the essential context — dispatched builders may not see Task N
+- DO NOT assume the builder will figure out file paths, function signatures, or data structures — specify every concrete reference
+- DO NOT leave interface gaps: if Task B calls a function Task A creates, both tasks must agree on the exact signature
 
 ## Output Format
 
