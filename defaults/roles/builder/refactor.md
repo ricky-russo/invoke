@@ -69,6 +69,51 @@ Implement this task completely and correctly:
 - If something is unclear, stop and ask rather than guessing.
 - If you cannot complete the task, report what you accomplished and what blocked you.
 
+## Verification Before Completion
+
+### Iron Law
+
+NO COMPLETION CLAIMS WITHOUT FRESH VERIFICATION EVIDENCE. If you haven't run the verification command for a claim in this task, you cannot make that claim.
+
+### Gate Function
+
+Before making any claim in your completion report, for each claim:
+
+1. **IDENTIFY** — What command proves this claim? (e.g., tests pass requires a test command output with 0 failures.)
+2. **RUN** — Execute the full command fresh. Not a partial check, not a cached result, not a previous run you remember.
+3. **READ** — Read the full output. Check the exit code. Count the failures.
+4. **VERIFY** — Does the output confirm the claim? (If the claim is tests pass, the output must show 0 failing tests.)
+5. **THEN** — Make the claim in your report, citing the evidence (e.g., All tests pass — test command exit 0.)
+
+Skipping any step of this gate means you are not verifying — you are guessing. Guessing is dishonest and disallowed.
+
+### Claim → Evidence Table
+
+| Claim | Required evidence | NOT sufficient |
+|---|---|---|
+| Tests pass | Test command output showing 0 failures | Linter passed, previous run, should pass |
+| Build succeeds | Build command exit 0, artifacts produced | Linter pass alone, type check alone |
+| Lint clean | Linter output showing 0 errors | Partial check, extrapolation |
+| Bug fixed | Test of the original failing symptom now passes | Code changed, the fix looks right |
+| Requirements met | Line-by-line walkthrough of the acceptance criteria against the implementation | Tests pass, so requirements met |
+| Regression test works | Red → Green verified (test failed before fix, passes after) | Test passes once |
+
+### Red Flags
+
+- Should work now
+- I am confident
+- The linter passed, so the build passes
+- Partial check is enough
+- The test output from 5 minutes ago was green
+- I already manually confirmed it
+- This one is trivial, no need to re-run
+
+If you catch yourself thinking any of these, run the verification command fresh. The 30 seconds of running a command is cheaper than shipping an untrue claim.
+
+### Completion Report Gate
+
+The fields in your completion report must be backed by fresh verification evidence. Tests written and their results must cite actual test command output from THIS task (not remembered output, not extrapolated output, not should pass). If you cannot cite fresh evidence for a claim, leave that field blank or write not verified — do not guess.
+
 ## Output Format
 
 When complete, report:

@@ -11,6 +11,14 @@ You are running the scope stage of the invoke pipeline. Your job is to produce a
 
 **BEFORE doing anything else**, invoke the `invoke-messaging` skill using the Skill tool (`Skill({ skill: "invoke:invoke-messaging" })`). This loads the messaging format standards you MUST follow for all output — dispatch formatting, progress updates, results, and interactive prompts. Do NOT proceed with any pipeline steps until invoke-messaging is loaded. Use `AskUserQuestion` for all user decisions.
 
+## Do Not Skip The Process
+
+Every user request that reaches this skill goes through the full scope → plan → orchestrate → build → review pipeline. There is no this is too simple to need a spec exception. A config change, a one-function utility, a typo fix in a prompt file — all of them produce a spec and get user approval before moving to plan.
+
+Why: simple projects are where unexamined assumptions cause the most wasted work. A two-sentence spec is fine for a truly simple task, but it MUST exist and be approved. Skipping the spec means skipping the moment where the user can correct your assumptions cheaply.
+
+If you catch yourself thinking this is trivial, let me just do it — stop. Write the spec. The spec for a one-line fix can literally be one sentence: Fix typo in X at line Y. That is enough. But you must produce it and get approval.
+
 ## Flow
 
 ### 1. Initialize Project & Pipeline
@@ -172,6 +180,45 @@ Using the research as context, ask clarifying questions **one at a time**:
 
 Aim for 3–5 clarifying questions. Stop when the core decisions (purpose, constraints, success criteria) are clear. Do not exhaust every possible edge case — the spec will capture those.
 
+### 6.5 Propose 2-3 Approaches
+
+Before locking into a spec, propose 2-3 approaches to the user with trade-offs. This is the last cheap moment to redirect before the spec hardens.
+
+For every task, even trivial ones, frame at least 2 concrete approaches:
+
+- For architectural tasks: genuinely different designs (e.g., single module vs. split into helper + caller, write new tool vs. extend existing tool, inline implementation vs. configuration-driven)
+- For simple tasks: the obvious direct implementation vs. a more flexible alternative (e.g., hardcode the value vs. make it configurable, edit in place vs. extract and reuse)
+
+For each approach, describe:
+
+- Concrete architectural differences (what code changes, which files)
+- Optimization focus (correctness / speed / minimal surface area / extensibility / testability)
+- Trade-offs (what you gain, what you sacrifice)
+
+Then present to the user using `AskUserQuestion` with `multiSelect: false`:
+
+```
+AskUserQuestion({
+  questions: [{
+    question: "Which approach should the spec use?",
+    header: "Approach",
+    multiSelect: false,
+    options: [
+      { label: "Approach A (Recommended)", description: "<description of approach A>" },
+      { label: "Approach B", description: "<description of approach B>" },
+      { label: "Approach C", description: "<optional third approach>" },
+      { label: "Re-explore", description: "Go back to clarifying questions with narrower focus" }
+    ]
+  }]
+})
+```
+
+Mark your recommended approach with (Recommended) and place it first. Brief the user on your reasoning BEFORE presenting the picker, not inside it.
+
+If the user picks an approach, that choice shapes the spec in step 7. If they pick Re-explore, go back to step 6 with narrower questions informed by what you learned.
+
+This step parallels the human-loop brainstorming pattern from superpowers and gives users a chance to redirect at spec time, not just at plan time when the parallel planner runs.
+
 ### 7. Produce Spec
 
 When scope is clear, write a spec document covering:
@@ -186,6 +233,17 @@ Generate a short, descriptive filename slug from the feature being scoped (e.g.,
 Save the spec using `invoke_save_artifact`:
 - `stage: "specs"`
 - `filename: "YYYY-MM-DD-<slug>-spec.md"` (e.g., `2026-04-03-auth-middleware-spec.md`)
+
+### 7.5 Spec Self-Review
+
+Before saving and asking for approval, review your drafted spec with fresh eyes against these 4 checks:
+
+1. **Placeholder scan** — search the spec for TBD, TODO, figure out, as needed, appropriate, handle edge cases without enumeration. Any match means the spec is incomplete. Fix inline.
+2. **Internal consistency** — do any sections contradict each other? Does the architecture description match the feature list? Do the acceptance criteria reference requirements that exist in the Requirements section?
+3. **Scope check** — is this focused enough for a single pipeline, or does it need decomposition into sub-pipelines? If the spec covers more than 3 distinct subsystems, it should probably be split. A spec with 15+ acceptance criteria is a warning sign.
+4. **Ambiguity check** — could any requirement be interpreted two different ways? If yes, pick one and make it explicit. Dispatched builders cannot ask follow-up questions.
+
+Fix issues inline. No need to re-review after fixing — just fix and move on. This is a self-check, not a separate dispatch.
 
 ### 8. Update State
 

@@ -31,6 +31,7 @@ describe('default builder prompts', () => {
     expect(content).toContain('## Behavioral Guardrails')
     expect(content).toContain('## Handling Prior Review Findings')
     expect(content).toContain('## Rules')
+    expect(content).toContain('## Verification Before Completion')
     expect(content).toContain('untrusted data')
 
     const doNotMatches = content.match(/^- DO NOT /gm) ?? []
