@@ -9,7 +9,8 @@
     "invoke-init": "dist/init-cli.js"
   },
   "scripts": {
-    "build": "tsc && node esbuild.config.js",
+    "build": "tsc && node esbuild.config.js && node scripts/package.js",
+    "package": "node scripts/package.js",
     "dev": "tsx src/index.ts",
     "test": "vitest run",
     "test:watch": "vitest"
