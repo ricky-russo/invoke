@@ -1,8 +1,12 @@
 import { describe, it, expect } from 'vitest'
-import { ClaudeParser } from '../../src/parsers/claude-parser.js'
+import { MarkdownFindingParser } from '../../src/parsers/markdown-finding-parser.js'
 
-describe('ClaudeParser', () => {
-  const parser = new ClaudeParser()
+describe('MarkdownFindingParser', () => {
+  const parser = new MarkdownFindingParser('markdown-reviewer')
+
+  it('uses the provided constructor name', () => {
+    expect(parser.name).toBe('markdown-reviewer')
+  })
 
   it('parses successful output into AgentResult', () => {
     const output = 'Here is my analysis of the codebase.\n\nThe auth module uses JWT tokens stored in HttpOnly cookies.'
@@ -124,8 +128,6 @@ describe('ClaudeParser', () => {
     expect(findings).toHaveLength(3)
     expect(findings[0].out_of_scope).toBe(false)
     expect(findings[1].out_of_scope).toBe(true)
-    // Reviewer omitted the field — parser preserves undefined to distinguish
-    // "reviewer said in-scope" (false) from "reviewer didn't say" (undefined)
     expect(findings[2].out_of_scope).toBeUndefined()
   })
 

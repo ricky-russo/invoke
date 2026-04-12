@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { isValidModelForProvider, checkCliExists, validateConfig } from '../src/config-validator.js'
 import type { InvokeConfig } from '../src/types.js'
-import { mkdir, writeFile, rm } from 'fs/promises'
+import { chmod, mkdir, writeFile, rm } from 'fs/promises'
 import path from 'path'
 import os from 'os'
 
@@ -78,9 +78,32 @@ describe('isValidModelForProvider', () => {
     })
   })
 
+  describe('gemini provider', () => {
+    it('accepts gemini-2.5-pro', () => {
+      expect(isValidModelForProvider('gemini', 'gemini-2.5-pro')).toBe(true)
+    })
+
+    it('accepts gemini-2.5-flash', () => {
+      expect(isValidModelForProvider('gemini', 'gemini-2.5-flash')).toBe(true)
+    })
+
+    it('rejects claude-opus-4-6', () => {
+      expect(isValidModelForProvider('gemini', 'claude-opus-4-6')).toBe(false)
+    })
+
+    it('rejects gemini without a model suffix', () => {
+      expect(isValidModelForProvider('gemini', 'gemini')).toBe(false)
+    })
+  })
+
   describe('unknown provider', () => {
     it('accepts any model string for unknown provider', () => {
       expect(isValidModelForProvider('some-future-provider', 'any-model-name')).toBe(true)
+    })
+
+    it('uses CLI basename patterns for aliased providers', () => {
+      expect(isValidModelForProvider('my-codex', 'gpt-4.1', '/usr/local/bin/codex')).toBe(true)
+      expect(isValidModelForProvider('my-codex', 'claude-sonnet-4-6', '/usr/local/bin/codex')).toBe(false)
     })
   })
 })
@@ -108,6 +131,7 @@ describe('checkCliExists', () => {
 // ---------------------------------------------------------------------------
 
 const TEST_DIR = path.join(os.tmpdir(), 'invoke-config-validator-test')
+const ORIGINAL_PATH = process.env.PATH
 
 // Base config used across tests — uses 'node' as the CLI so it is always on PATH
 const baseConfig: InvokeConfig = {
@@ -154,6 +178,7 @@ describe('validateConfig', () => {
   })
 
   afterEach(async () => {
+    process.env.PATH = ORIGINAL_PATH
     await rm(TEST_DIR, { recursive: true, force: true })
   })
 
@@ -313,6 +338,35 @@ describe('validateConfig', () => {
     }))
   })
 
+  it('uses aliased provider CLI names for model validation', async () => {
+    const config = structuredClone(baseConfig)
+    const fakeClaudePath = path.join(TEST_DIR, 'claude')
+
+    await writeFile(fakeClaudePath, '#!/bin/sh\nexit 0\n')
+    await chmod(fakeClaudePath, 0o755)
+
+    config.providers = {
+      'my-claude': {
+        cli: fakeClaudePath,
+        args: ['--print', '--model', '{{model}}'],
+      },
+    }
+    config.roles.reviewer.security.providers[0] = {
+      provider: 'my-claude',
+      model: 'gpt-4.1',
+      effort: 'high',
+    }
+
+    const result = await validateConfig(config, TEST_DIR)
+
+    expect(result.valid).toBe(true)
+    expect(result.warnings).toContainEqual(expect.objectContaining({
+      level: 'warning',
+      path: 'roles.reviewer.security.providers[0].model',
+      message: expect.stringContaining('gpt-4.1'),
+    }))
+  })
+
   it('returns an error for a missing prompt file', async () => {
     const config = structuredClone(baseConfig)
     config.roles.reviewer.security.prompt = '.invoke/roles/reviewer/missing-prompt.md'
@@ -360,6 +414,20 @@ describe('validateConfig', () => {
       level: 'error',
       path: 'providers.claude.cli',
     }))
+  })
+
+  it('does not return an error for a missing CLI on an unused provider', async () => {
+    const config = structuredClone(baseConfig)
+    config.providers.gemini = {
+      cli: 'nonexistent-cli-that-does-not-exist-xyz',
+      args: ['--model', '{{model}}'],
+    }
+
+    const result = await validateConfig(config, TEST_DIR)
+    const cliWarnings = result.warnings.filter(w => w.path === 'providers.gemini.cli')
+
+    expect(result.valid).toBe(true)
+    expect(cliWarnings).toHaveLength(0)
   })
 
   it('warns on suspiciously large timeout (likely milliseconds)', async () => {

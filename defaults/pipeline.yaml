@@ -18,6 +18,9 @@ providers:
     # Invoke isolates builders in temporary worktrees that are squash-merged and cleaned up,
     # so the codex sandbox adds no containment value beyond what invoke already provides.
     args: ["exec", "--model", "{{model}}", "--ask-for-approval", "never", "--sandbox", "danger-full-access", "-c", "reasoning_effort={{effort}}"]
+  gemini:
+    cli: gemini
+    args: ["-y", "--output-format", "text", "-m", "{{model}}", "-p"]
 
 # Each subrole lists one or more providers. When multiple providers are listed,
 # provider_mode controls dispatch behavior: parallel (all run concurrently),

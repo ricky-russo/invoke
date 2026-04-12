@@ -1,8 +1,12 @@
 import type { Parser, ParseContext } from './base.js'
 import type { AgentResult, Finding } from '../types.js'
 
-export class ClaudeParser implements Parser {
-  name = 'claude'
+export class MarkdownFindingParser implements Parser {
+  name: string
+
+  constructor(name: string) {
+    this.name = name
+  }
 
   parse(rawOutput: string, exitCode: number, context: ParseContext): AgentResult {
     const base = {
