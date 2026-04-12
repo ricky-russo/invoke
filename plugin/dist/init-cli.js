@@ -4,35 +4,45 @@ import{createRequire}from'module';const require=createRequire(import.meta.url);
 
 // src/init.ts
 import { cp, mkdir, readdir } from "fs/promises";
+import { existsSync as existsSync2 } from "fs";
+import path2 from "path";
+
+// src/defaults-path.ts
 import { existsSync } from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 var __dirname = path.dirname(fileURLToPath(import.meta.url));
 var PACKAGE_ROOT = path.join(__dirname, "..");
+var defaultsDir = existsSync(path.join(PACKAGE_ROOT, "defaults")) ? path.join(PACKAGE_ROOT, "defaults") : path.join(PACKAGE_ROOT, "plugin", "defaults");
+function getDefaultsDir() {
+  return defaultsDir;
+}
+
+// src/init.ts
 async function initProject(projectDir2) {
-  const invokeDir = path.join(projectDir2, ".invoke");
-  const defaultsDir = path.join(PACKAGE_ROOT, "defaults");
+  const invokeDir = path2.join(projectDir2, ".invoke");
+  const defaultsDir2 = getDefaultsDir();
   await mkdir(invokeDir, { recursive: true });
-  const configDest = path.join(invokeDir, "pipeline.yaml");
-  if (!existsSync(configDest)) {
-    await cp(path.join(defaultsDir, "pipeline.yaml"), configDest);
+  const configDest = path2.join(invokeDir, "pipeline.yaml");
+  if (!existsSync2(configDest)) {
+    await cp(path2.join(defaultsDir2, "pipeline.yaml"), configDest);
   }
-  await copyDefaults(path.join(defaultsDir, "roles"), path.join(invokeDir, "roles"));
-  await copyDefaults(path.join(defaultsDir, "strategies"), path.join(invokeDir, "strategies"));
-  await mkdir(path.join(invokeDir, "specs", "research"), { recursive: true });
-  await mkdir(path.join(invokeDir, "plans"), { recursive: true });
-  await mkdir(path.join(invokeDir, "reviews"), { recursive: true });
+  await copyDefaults(path2.join(defaultsDir2, "roles"), path2.join(invokeDir, "roles"));
+  await copyDefaults(path2.join(defaultsDir2, "strategies"), path2.join(invokeDir, "strategies"));
+  await mkdir(path2.join(invokeDir, "specs", "research"), { recursive: true });
+  await mkdir(path2.join(invokeDir, "plans"), { recursive: true });
+  await mkdir(path2.join(invokeDir, "reviews"), { recursive: true });
 }
 async function copyDefaults(srcDir, destDir) {
-  if (!existsSync(srcDir)) return;
+  if (!existsSync2(srcDir)) return;
   await mkdir(destDir, { recursive: true });
   const entries = await readdir(srcDir, { withFileTypes: true });
   for (const entry of entries) {
-    const srcPath = path.join(srcDir, entry.name);
-    const destPath = path.join(destDir, entry.name);
+    const srcPath = path2.join(srcDir, entry.name);
+    const destPath = path2.join(destDir, entry.name);
     if (entry.isDirectory()) {
       await copyDefaults(srcPath, destPath);
-    } else if (!existsSync(destPath)) {
+    } else if (!existsSync2(destPath)) {
       await cp(srcPath, destPath);
     }
   }

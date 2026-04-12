@@ -291,10 +291,10 @@ function mergeDefs(...defs) {
 function cloneDef(schema) {
   return mergeDefs(schema._zod.def);
 }
-function getElementAtPath(obj, path19) {
-  if (!path19)
+function getElementAtPath(obj, path20) {
+  if (!path20)
     return obj;
-  return path19.reduce((acc, key) => acc?.[key], obj);
+  return path20.reduce((acc, key) => acc?.[key], obj);
 }
 function promiseAllObject(promisesObj) {
   const keys = Object.keys(promisesObj);
@@ -606,11 +606,11 @@ function aborted(x, startIndex = 0) {
   }
   return false;
 }
-function prefixIssues(path19, issues) {
+function prefixIssues(path20, issues) {
   return issues.map((iss) => {
     var _a2;
     (_a2 = iss).path ?? (_a2.path = []);
-    iss.path.unshift(path19);
+    iss.path.unshift(path20);
     return iss;
   });
 }
@@ -852,7 +852,7 @@ function formatError(error48, mapper = (issue2) => issue2.message) {
 }
 function treeifyError(error48, mapper = (issue2) => issue2.message) {
   const result = { errors: [] };
-  const processError = (error49, path19 = []) => {
+  const processError = (error49, path20 = []) => {
     var _a2, _b;
     for (const issue2 of error49.issues) {
       if (issue2.code === "invalid_union" && issue2.errors.length) {
@@ -862,7 +862,7 @@ function treeifyError(error48, mapper = (issue2) => issue2.message) {
       } else if (issue2.code === "invalid_element") {
         processError({ issues: issue2.issues }, issue2.path);
       } else {
-        const fullpath = [...path19, ...issue2.path];
+        const fullpath = [...path20, ...issue2.path];
         if (fullpath.length === 0) {
           result.errors.push(mapper(issue2));
           continue;
@@ -894,8 +894,8 @@ function treeifyError(error48, mapper = (issue2) => issue2.message) {
 }
 function toDotPath(_path) {
   const segs = [];
-  const path19 = _path.map((seg) => typeof seg === "object" ? seg.key : seg);
-  for (const seg of path19) {
+  const path20 = _path.map((seg) => typeof seg === "object" ? seg.key : seg);
+  for (const seg of path20) {
     if (typeof seg === "number")
       segs.push(`[${seg}]`);
     else if (typeof seg === "symbol")
@@ -13589,13 +13589,13 @@ function resolveRef(ref, ctx) {
   if (!ref.startsWith("#")) {
     throw new Error("External $ref is not supported, only local refs (#/...) are allowed");
   }
-  const path19 = ref.slice(1).split("/").filter(Boolean);
-  if (path19.length === 0) {
+  const path20 = ref.slice(1).split("/").filter(Boolean);
+  if (path20.length === 0) {
     return ctx.rootSchema;
   }
   const defsKey = ctx.version === "draft-2020-12" ? "$defs" : "definitions";
-  if (path19[0] === defsKey) {
-    const key = path19[1];
+  if (path20[0] === defsKey) {
+    const key = path20[1];
     if (!key || !ctx.defs[key]) {
       throw new Error(`Reference not found: ${ref}`);
     }
@@ -17539,8 +17539,8 @@ var require_utils = __commonJS({
       }
       return ind;
     }
-    function removeDotSegments(path19) {
-      let input = path19;
+    function removeDotSegments(path20) {
+      let input = path20;
       const output = [];
       let nextSlash = -1;
       let len = 0;
@@ -17739,8 +17739,8 @@ var require_schemes = __commonJS({
         wsComponent.secure = void 0;
       }
       if (wsComponent.resourceName) {
-        const [path19, query] = wsComponent.resourceName.split("?");
-        wsComponent.path = path19 && path19 !== "/" ? path19 : void 0;
+        const [path20, query] = wsComponent.resourceName.split("?");
+        wsComponent.path = path20 && path20 !== "/" ? path20 : void 0;
         wsComponent.query = query;
         wsComponent.resourceName = void 0;
       }
@@ -21200,17 +21200,17 @@ var require_visit = __commonJS({
     visit.BREAK = BREAK;
     visit.SKIP = SKIP;
     visit.REMOVE = REMOVE;
-    function visit_(key, node, visitor, path19) {
-      const ctrl = callVisitor(key, node, visitor, path19);
+    function visit_(key, node, visitor, path20) {
+      const ctrl = callVisitor(key, node, visitor, path20);
       if (identity.isNode(ctrl) || identity.isPair(ctrl)) {
-        replaceNode(key, path19, ctrl);
-        return visit_(key, ctrl, visitor, path19);
+        replaceNode(key, path20, ctrl);
+        return visit_(key, ctrl, visitor, path20);
       }
       if (typeof ctrl !== "symbol") {
         if (identity.isCollection(node)) {
-          path19 = Object.freeze(path19.concat(node));
+          path20 = Object.freeze(path20.concat(node));
           for (let i = 0; i < node.items.length; ++i) {
-            const ci = visit_(i, node.items[i], visitor, path19);
+            const ci = visit_(i, node.items[i], visitor, path20);
             if (typeof ci === "number")
               i = ci - 1;
             else if (ci === BREAK)
@@ -21221,13 +21221,13 @@ var require_visit = __commonJS({
             }
           }
         } else if (identity.isPair(node)) {
-          path19 = Object.freeze(path19.concat(node));
-          const ck = visit_("key", node.key, visitor, path19);
+          path20 = Object.freeze(path20.concat(node));
+          const ck = visit_("key", node.key, visitor, path20);
           if (ck === BREAK)
             return BREAK;
           else if (ck === REMOVE)
             node.key = null;
-          const cv = visit_("value", node.value, visitor, path19);
+          const cv = visit_("value", node.value, visitor, path20);
           if (cv === BREAK)
             return BREAK;
           else if (cv === REMOVE)
@@ -21248,17 +21248,17 @@ var require_visit = __commonJS({
     visitAsync.BREAK = BREAK;
     visitAsync.SKIP = SKIP;
     visitAsync.REMOVE = REMOVE;
-    async function visitAsync_(key, node, visitor, path19) {
-      const ctrl = await callVisitor(key, node, visitor, path19);
+    async function visitAsync_(key, node, visitor, path20) {
+      const ctrl = await callVisitor(key, node, visitor, path20);
       if (identity.isNode(ctrl) || identity.isPair(ctrl)) {
-        replaceNode(key, path19, ctrl);
-        return visitAsync_(key, ctrl, visitor, path19);
+        replaceNode(key, path20, ctrl);
+        return visitAsync_(key, ctrl, visitor, path20);
       }
       if (typeof ctrl !== "symbol") {
         if (identity.isCollection(node)) {
-          path19 = Object.freeze(path19.concat(node));
+          path20 = Object.freeze(path20.concat(node));
           for (let i = 0; i < node.items.length; ++i) {
-            const ci = await visitAsync_(i, node.items[i], visitor, path19);
+            const ci = await visitAsync_(i, node.items[i], visitor, path20);
             if (typeof ci === "number")
               i = ci - 1;
             else if (ci === BREAK)
@@ -21269,13 +21269,13 @@ var require_visit = __commonJS({
             }
           }
         } else if (identity.isPair(node)) {
-          path19 = Object.freeze(path19.concat(node));
-          const ck = await visitAsync_("key", node.key, visitor, path19);
+          path20 = Object.freeze(path20.concat(node));
+          const ck = await visitAsync_("key", node.key, visitor, path20);
           if (ck === BREAK)
             return BREAK;
           else if (ck === REMOVE)
             node.key = null;
-          const cv = await visitAsync_("value", node.value, visitor, path19);
+          const cv = await visitAsync_("value", node.value, visitor, path20);
           if (cv === BREAK)
             return BREAK;
           else if (cv === REMOVE)
@@ -21302,23 +21302,23 @@ var require_visit = __commonJS({
       }
       return visitor;
     }
-    function callVisitor(key, node, visitor, path19) {
+    function callVisitor(key, node, visitor, path20) {
       if (typeof visitor === "function")
-        return visitor(key, node, path19);
+        return visitor(key, node, path20);
       if (identity.isMap(node))
-        return visitor.Map?.(key, node, path19);
+        return visitor.Map?.(key, node, path20);
       if (identity.isSeq(node))
-        return visitor.Seq?.(key, node, path19);
+        return visitor.Seq?.(key, node, path20);
       if (identity.isPair(node))
-        return visitor.Pair?.(key, node, path19);
+        return visitor.Pair?.(key, node, path20);
       if (identity.isScalar(node))
-        return visitor.Scalar?.(key, node, path19);
+        return visitor.Scalar?.(key, node, path20);
       if (identity.isAlias(node))
-        return visitor.Alias?.(key, node, path19);
+        return visitor.Alias?.(key, node, path20);
       return void 0;
     }
-    function replaceNode(key, path19, node) {
-      const parent = path19[path19.length - 1];
+    function replaceNode(key, path20, node) {
+      const parent = path20[path20.length - 1];
       if (identity.isCollection(parent)) {
         parent.items[key] = node;
       } else if (identity.isPair(parent)) {
@@ -21926,10 +21926,10 @@ var require_Collection = __commonJS({
     var createNode = require_createNode();
     var identity = require_identity();
     var Node = require_Node();
-    function collectionFromPath(schema, path19, value) {
+    function collectionFromPath(schema, path20, value) {
       let v = value;
-      for (let i = path19.length - 1; i >= 0; --i) {
-        const k = path19[i];
+      for (let i = path20.length - 1; i >= 0; --i) {
+        const k = path20[i];
         if (typeof k === "number" && Number.isInteger(k) && k >= 0) {
           const a = [];
           a[k] = v;
@@ -21948,7 +21948,7 @@ var require_Collection = __commonJS({
         sourceObjects: /* @__PURE__ */ new Map()
       });
     }
-    var isEmptyPath = (path19) => path19 == null || typeof path19 === "object" && !!path19[Symbol.iterator]().next().done;
+    var isEmptyPath = (path20) => path20 == null || typeof path20 === "object" && !!path20[Symbol.iterator]().next().done;
     var Collection = class extends Node.NodeBase {
       constructor(type, schema) {
         super(type);
@@ -21978,11 +21978,11 @@ var require_Collection = __commonJS({
        * be a Pair instance or a `{ key, value }` object, which may not have a key
        * that already exists in the map.
        */
-      addIn(path19, value) {
-        if (isEmptyPath(path19))
+      addIn(path20, value) {
+        if (isEmptyPath(path20))
           this.add(value);
         else {
-          const [key, ...rest] = path19;
+          const [key, ...rest] = path20;
           const node = this.get(key, true);
           if (identity.isCollection(node))
             node.addIn(rest, value);
@@ -21996,8 +21996,8 @@ var require_Collection = __commonJS({
        * Removes a value from the collection.
        * @returns `true` if the item was found and removed.
        */
-      deleteIn(path19) {
-        const [key, ...rest] = path19;
+      deleteIn(path20) {
+        const [key, ...rest] = path20;
         if (rest.length === 0)
           return this.delete(key);
         const node = this.get(key, true);
@@ -22011,8 +22011,8 @@ var require_Collection = __commonJS({
        * scalar values from their surrounding node; to disable set `keepScalar` to
        * `true` (collections are always returned intact).
        */
-      getIn(path19, keepScalar) {
-        const [key, ...rest] = path19;
+      getIn(path20, keepScalar) {
+        const [key, ...rest] = path20;
         const node = this.get(key, true);
         if (rest.length === 0)
           return !keepScalar && identity.isScalar(node) ? node.value : node;
@@ -22030,8 +22030,8 @@ var require_Collection = __commonJS({
       /**
        * Checks if the collection includes a value with the key `key`.
        */
-      hasIn(path19) {
-        const [key, ...rest] = path19;
+      hasIn(path20) {
+        const [key, ...rest] = path20;
         if (rest.length === 0)
           return this.has(key);
         const node = this.get(key, true);
@@ -22041,8 +22041,8 @@ var require_Collection = __commonJS({
        * Sets a value in this collection. For `!!set`, `value` needs to be a
        * boolean to add/remove the item from the set.
        */
-      setIn(path19, value) {
-        const [key, ...rest] = path19;
+      setIn(path20, value) {
+        const [key, ...rest] = path20;
         if (rest.length === 0) {
           this.set(key, value);
         } else {
@@ -24554,9 +24554,9 @@ var require_Document = __commonJS({
           this.contents.add(value);
       }
       /** Adds a value to the document. */
-      addIn(path19, value) {
+      addIn(path20, value) {
         if (assertCollection(this.contents))
-          this.contents.addIn(path19, value);
+          this.contents.addIn(path20, value);
       }
       /**
        * Create a new `Alias` node, ensuring that the target `node` has the required anchor.
@@ -24631,14 +24631,14 @@ var require_Document = __commonJS({
        * Removes a value from the document.
        * @returns `true` if the item was found and removed.
        */
-      deleteIn(path19) {
-        if (Collection.isEmptyPath(path19)) {
+      deleteIn(path20) {
+        if (Collection.isEmptyPath(path20)) {
           if (this.contents == null)
             return false;
           this.contents = null;
           return true;
         }
-        return assertCollection(this.contents) ? this.contents.deleteIn(path19) : false;
+        return assertCollection(this.contents) ? this.contents.deleteIn(path20) : false;
       }
       /**
        * Returns item at `key`, or `undefined` if not found. By default unwraps
@@ -24653,10 +24653,10 @@ var require_Document = __commonJS({
        * scalar values from their surrounding node; to disable set `keepScalar` to
        * `true` (collections are always returned intact).
        */
-      getIn(path19, keepScalar) {
-        if (Collection.isEmptyPath(path19))
+      getIn(path20, keepScalar) {
+        if (Collection.isEmptyPath(path20))
           return !keepScalar && identity.isScalar(this.contents) ? this.contents.value : this.contents;
-        return identity.isCollection(this.contents) ? this.contents.getIn(path19, keepScalar) : void 0;
+        return identity.isCollection(this.contents) ? this.contents.getIn(path20, keepScalar) : void 0;
       }
       /**
        * Checks if the document includes a value with the key `key`.
@@ -24667,10 +24667,10 @@ var require_Document = __commonJS({
       /**
        * Checks if the document includes a value at `path`.
        */
-      hasIn(path19) {
-        if (Collection.isEmptyPath(path19))
+      hasIn(path20) {
+        if (Collection.isEmptyPath(path20))
           return this.contents !== void 0;
-        return identity.isCollection(this.contents) ? this.contents.hasIn(path19) : false;
+        return identity.isCollection(this.contents) ? this.contents.hasIn(path20) : false;
       }
       /**
        * Sets a value in this document. For `!!set`, `value` needs to be a
@@ -24687,13 +24687,13 @@ var require_Document = __commonJS({
        * Sets a value in this document. For `!!set`, `value` needs to be a
        * boolean to add/remove the item from the set.
        */
-      setIn(path19, value) {
-        if (Collection.isEmptyPath(path19)) {
+      setIn(path20, value) {
+        if (Collection.isEmptyPath(path20)) {
           this.contents = value;
         } else if (this.contents == null) {
-          this.contents = Collection.collectionFromPath(this.schema, Array.from(path19), value);
+          this.contents = Collection.collectionFromPath(this.schema, Array.from(path20), value);
         } else if (assertCollection(this.contents)) {
-          this.contents.setIn(path19, value);
+          this.contents.setIn(path20, value);
         }
       }
       /**
@@ -26650,9 +26650,9 @@ var require_cst_visit = __commonJS({
     visit.BREAK = BREAK;
     visit.SKIP = SKIP;
     visit.REMOVE = REMOVE;
-    visit.itemAtPath = (cst, path19) => {
+    visit.itemAtPath = (cst, path20) => {
       let item = cst;
-      for (const [field, index] of path19) {
+      for (const [field, index] of path20) {
         const tok = item?.[field];
         if (tok && "items" in tok) {
           item = tok.items[index];
@@ -26661,23 +26661,23 @@ var require_cst_visit = __commonJS({
       }
       return item;
     };
-    visit.parentCollection = (cst, path19) => {
-      const parent = visit.itemAtPath(cst, path19.slice(0, -1));
-      const field = path19[path19.length - 1][0];
+    visit.parentCollection = (cst, path20) => {
+      const parent = visit.itemAtPath(cst, path20.slice(0, -1));
+      const field = path20[path20.length - 1][0];
       const coll = parent?.[field];
       if (coll && "items" in coll)
         return coll;
       throw new Error("Parent collection not found");
     };
-    function _visit(path19, item, visitor) {
-      let ctrl = visitor(item, path19);
+    function _visit(path20, item, visitor) {
+      let ctrl = visitor(item, path20);
       if (typeof ctrl === "symbol")
         return ctrl;
       for (const field of ["key", "value"]) {
         const token = item[field];
         if (token && "items" in token) {
           for (let i = 0; i < token.items.length; ++i) {
-            const ci = _visit(Object.freeze(path19.concat([[field, i]])), token.items[i], visitor);
+            const ci = _visit(Object.freeze(path20.concat([[field, i]])), token.items[i], visitor);
             if (typeof ci === "number")
               i = ci - 1;
             else if (ci === BREAK)
@@ -26688,10 +26688,10 @@ var require_cst_visit = __commonJS({
             }
           }
           if (typeof ctrl === "function" && field === "key")
-            ctrl = ctrl(item, path19);
+            ctrl = ctrl(item, path20);
         }
       }
-      return typeof ctrl === "function" ? ctrl(item, path19) : ctrl;
+      return typeof ctrl === "function" ? ctrl(item, path20) : ctrl;
     }
     exports.visit = visit;
   }
@@ -28451,14 +28451,30 @@ var init_branch_prefix = __esm({
   }
 });
 
+// src/defaults-path.ts
+import { existsSync } from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
+function getDefaultsDir() {
+  return defaultsDir;
+}
+var __dirname, PACKAGE_ROOT, defaultsDir;
+var init_defaults_path = __esm({
+  "src/defaults-path.ts"() {
+    "use strict";
+    __dirname = path.dirname(fileURLToPath(import.meta.url));
+    PACKAGE_ROOT = path.join(__dirname, "..");
+    defaultsDir = existsSync(path.join(PACKAGE_ROOT, "defaults")) ? path.join(PACKAGE_ROOT, "defaults") : path.join(PACKAGE_ROOT, "plugin", "defaults");
+  }
+});
+
 // src/config.ts
 var config_exports = {};
 __export(config_exports, {
   loadConfig: () => loadConfig
 });
 import { readFile } from "fs/promises";
-import path from "path";
-import { fileURLToPath } from "url";
+import path2 from "path";
 function isPlainObject3(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -28477,8 +28493,8 @@ function deepMerge(base, override) {
 }
 async function loadPresetConfig(projectDir, presetName) {
   const presetPaths = [
-    path.join(projectDir, ".invoke", "presets", `${presetName}.yaml`),
-    path.join(PACKAGE_ROOT, "defaults", "presets", `${presetName}.yaml`)
+    path2.join(projectDir, ".invoke", "presets", `${presetName}.yaml`),
+    path2.join(getDefaultsDir(), "presets", `${presetName}.yaml`)
   ];
   for (const presetPath of presetPaths) {
     try {
@@ -28534,7 +28550,7 @@ function normalizeConfig(raw) {
   };
 }
 async function loadConfig(projectDir) {
-  const configPath = path.join(projectDir, ".invoke", "pipeline.yaml");
+  const configPath = path2.join(projectDir, ".invoke", "pipeline.yaml");
   const content = await readFile(configPath, "utf-8");
   const raw = RawInvokeConfigSchema.parse((0, import_yaml.parse)(content));
   let mergedConfig = raw;
@@ -28551,15 +28567,14 @@ async function loadConfig(projectDir) {
   const validated = InvokeConfigSchema.parse(mergedConfig);
   return normalizeConfig(validated);
 }
-var import_yaml, __dirname, PACKAGE_ROOT, ProviderConfigSchema, ProviderEntrySchema, ProviderModeSchema, ReviewTierSchema, ReviewTiersSchema, RawRoleConfigSchema, StrategyConfigSchema, SettingsSchema, PresetConfigSchema, RawInvokeConfigSchema, InvokeConfigSchema;
+var import_yaml, ProviderConfigSchema, ProviderEntrySchema, ProviderModeSchema, ReviewTierSchema, ReviewTiersSchema, RawRoleConfigSchema, StrategyConfigSchema, SettingsSchema, PresetConfigSchema, RawInvokeConfigSchema, InvokeConfigSchema;
 var init_config = __esm({
   "src/config.ts"() {
     "use strict";
     import_yaml = __toESM(require_dist2(), 1);
     init_zod();
     init_branch_prefix();
-    __dirname = path.dirname(fileURLToPath(import.meta.url));
-    PACKAGE_ROOT = path.join(__dirname, "..");
+    init_defaults_path();
     ProviderConfigSchema = external_exports3.object({
       cli: external_exports3.string(),
       args: external_exports3.array(external_exports3.string())
@@ -29097,8 +29112,8 @@ function getErrorMap() {
 
 // node_modules/zod/v3/helpers/parseUtil.js
 var makeIssue = (params) => {
-  const { data, path: path19, errorMaps, issueData } = params;
-  const fullPath = [...path19, ...issueData.path || []];
+  const { data, path: path20, errorMaps, issueData } = params;
+  const fullPath = [...path20, ...issueData.path || []];
   const fullIssue = {
     ...issueData,
     path: fullPath
@@ -29213,11 +29228,11 @@ var errorUtil;
 
 // node_modules/zod/v3/types.js
 var ParseInputLazyPath = class {
-  constructor(parent, value, path19, key) {
+  constructor(parent, value, path20, key) {
     this._cachedPath = [];
     this.parent = parent;
     this.data = value;
-    this._path = path19;
+    this._path = path20;
     this._key = key;
   }
   get path() {
@@ -38316,13 +38331,11 @@ var StdioServerTransport = class {
 init_config();
 
 // src/config-validator.ts
+init_defaults_path();
 import { execFileSync } from "child_process";
 import { access, readdir } from "fs/promises";
-import path2 from "path";
-import { fileURLToPath as fileURLToPath2 } from "url";
-var __dirname2 = path2.dirname(fileURLToPath2(import.meta.url));
-var PACKAGE_ROOT2 = path2.join(__dirname2, "..");
-var DEFAULT_PRESETS_DIR = path2.join(PACKAGE_ROOT2, "defaults", "presets");
+import path3 from "path";
+var DEFAULT_PRESETS_DIR = path3.join(getDefaultsDir(), "presets");
 var MODEL_PATTERNS = {
   claude: [
     /^claude-[a-z]+-[\d-]+$/,
@@ -38400,7 +38413,7 @@ function toPresetFileName(presetName) {
 async function listAvailablePresets(projectDir) {
   const presetDirs = [
     DEFAULT_PRESETS_DIR,
-    path2.join(projectDir, ".invoke", "presets")
+    path3.join(projectDir, ".invoke", "presets")
   ];
   const presetNames = /* @__PURE__ */ new Set();
   for (const presetDir of presetDirs) {
@@ -38411,7 +38424,7 @@ async function listAvailablePresets(projectDir) {
     for (const entry of entries) {
       if (!entry.isFile()) continue;
       if (!/\.(ya?ml)$/i.test(entry.name)) continue;
-      presetNames.add(path2.basename(entry.name, path2.extname(entry.name)));
+      presetNames.add(path3.basename(entry.name, path3.extname(entry.name)));
     }
   }
   return [...presetNames].sort();
@@ -38419,8 +38432,8 @@ async function listAvailablePresets(projectDir) {
 async function presetFileExists(projectDir, presetName) {
   const presetFileName = toPresetFileName(presetName);
   const presetPaths = [
-    path2.join(DEFAULT_PRESETS_DIR, presetFileName),
-    path2.join(projectDir, ".invoke", "presets", presetFileName)
+    path3.join(DEFAULT_PRESETS_DIR, presetFileName),
+    path3.join(projectDir, ".invoke", "presets", presetFileName)
   ];
   for (const presetPath of presetPaths) {
     if (await pathExists(presetPath)) {
@@ -38485,7 +38498,7 @@ async function validateConfig(config2, projectDir) {
   for (const [roleGroup, subroles] of Object.entries(config2.roles)) {
     for (const [subroleName, roleConfig] of Object.entries(subroles)) {
       const rolePath = `roles.${roleGroup}.${subroleName}`;
-      const promptPath = path2.isAbsolute(roleConfig.prompt) ? roleConfig.prompt : path2.join(projectDir, roleConfig.prompt);
+      const promptPath = path3.isAbsolute(roleConfig.prompt) ? roleConfig.prompt : path3.join(projectDir, roleConfig.prompt);
       if (!await pathExists(promptPath)) {
         warnings.push({
           level: "error",
@@ -38721,14 +38734,14 @@ import { spawn } from "child_process";
 // src/dispatch/prompt-composer.ts
 import { randomBytes } from "crypto";
 import { readFile as readFile2 } from "fs/promises";
-import path3 from "path";
+import path4 from "path";
 var CONTEXT_MAX_LENGTH = 4e3;
 var CONTEXT_FILTER_ROLE_KEY = "__context_filter_role";
 var ALWAYS_INCLUDED_SECTION_KEYWORDS = ["purpose", "tech stack", "conventions", "constraints"];
 var ARCHITECTURE_SECTION_KEYWORD = "architecture";
 var COMPLETED_WORK_SECTION_KEYWORD = "completed work";
 function resolvePromptPath(projectDir, promptPath) {
-  return path3.isAbsolute(promptPath) ? promptPath : path3.join(projectDir, promptPath);
+  return path4.isAbsolute(promptPath) ? promptPath : path4.join(projectDir, promptPath);
 }
 function truncateContext(context, maxLength) {
   if (context.length <= maxLength) {
@@ -38870,7 +38883,7 @@ async function composePromptWithNonce(options, nonce) {
     );
     composed = composed + "\n\n---\n\n" + strategyPrompt;
   }
-  const contextPath = path3.join(projectDir, ".invoke", "context.md");
+  const contextPath = path4.join(projectDir, ".invoke", "context.md");
   let projectContext = "";
   try {
     const rawProjectContext = await readFile2(contextPath, "utf-8");
@@ -39311,7 +39324,7 @@ import { execFileSync as execFileSync3 } from "node:child_process";
 import { execFileSync as execFileSync2 } from "child_process";
 import { realpathSync } from "fs";
 import os from "os";
-import path4 from "path";
+import path5 from "path";
 var INVOKE_SESSION_BASENAME_PREFIX = "invoke-session-";
 function getTmpdirRealpath() {
   try {
@@ -39330,7 +39343,7 @@ function resolveGitCommonDir(cwd, memo) {
       cwd,
       stdio: "pipe"
     }).toString().trim();
-    const resolved = realpathSync(path4.resolve(cwd, output));
+    const resolved = realpathSync(path5.resolve(cwd, output));
     if (memo) memo.set(cwd, resolved);
     return resolved;
   } catch {
@@ -39345,7 +39358,7 @@ function isSafeSessionWorkBranchPath(workBranchPath, repoDir) {
   return resolveSafeSessionWorkBranchPath(workBranchPath, repoDir) !== null;
 }
 function resolveSafeSessionWorkBranchPath(workBranchPath, repoDir) {
-  if (!workBranchPath || !path4.isAbsolute(workBranchPath)) return null;
+  if (!workBranchPath || !path5.isAbsolute(workBranchPath)) return null;
   let canonicalTarget;
   try {
     canonicalTarget = realpathSync(workBranchPath);
@@ -39353,10 +39366,10 @@ function resolveSafeSessionWorkBranchPath(workBranchPath, repoDir) {
     return null;
   }
   const canonicalTmp = getTmpdirRealpath();
-  if (canonicalTarget !== canonicalTmp && !canonicalTarget.startsWith(canonicalTmp + path4.sep)) {
+  if (canonicalTarget !== canonicalTmp && !canonicalTarget.startsWith(canonicalTmp + path5.sep)) {
     return null;
   }
-  if (!path4.basename(canonicalTarget).startsWith(INVOKE_SESSION_BASENAME_PREFIX)) {
+  if (!path5.basename(canonicalTarget).startsWith(INVOKE_SESSION_BASENAME_PREFIX)) {
     return null;
   }
   const memo = /* @__PURE__ */ new Map();
@@ -39369,8 +39382,8 @@ function resolveSafeSessionWorkBranchPath(workBranchPath, repoDir) {
 
 // src/tools/state.ts
 import { mkdir, readFile as readFile3, writeFile, rename } from "fs/promises";
-import { existsSync } from "fs";
-import path5 from "path";
+import { existsSync as existsSync2 } from "fs";
+import path6 from "path";
 
 // src/tools/reviewed-sha.ts
 var REVIEWED_SHA_PATTERN = /^[0-9a-f]{7,40}$/;
@@ -39397,16 +39410,16 @@ var StateManager = class _StateManager {
   writeQueue = Promise.resolve();
   cachedState = null;
   constructor(projectDir, sessionDir) {
-    this.storageDir = sessionDir ?? path5.join(projectDir, ".invoke");
-    this.statePath = path5.join(this.storageDir, "state.json");
-    this.tmpPath = path5.join(this.storageDir, "state.json.tmp");
+    this.storageDir = sessionDir ?? path6.join(projectDir, ".invoke");
+    this.statePath = path6.join(this.storageDir, "state.json");
+    this.tmpPath = path6.join(this.storageDir, "state.json.tmp");
     this.cachedState = null;
   }
   async get() {
     if (this.cachedState !== null) {
       return this.cachedState;
     }
-    if (!existsSync(this.statePath)) {
+    if (!existsSync2(this.statePath)) {
       return null;
     }
     const content = await readFile3(this.statePath, "utf-8");
@@ -39545,7 +39558,7 @@ var StateManager = class _StateManager {
   }
   async reset() {
     await this.enqueueWrite(async () => {
-      if (existsSync(this.statePath)) {
+      if (existsSync2(this.statePath)) {
         const { unlink: unlink2 } = await import("fs/promises");
         await unlink2(this.statePath);
       }
@@ -40144,8 +40157,8 @@ function cloneAgentResult(result) {
 
 // src/worktree/manager.ts
 import { execFileSync as execFileSync4 } from "child_process";
-import { existsSync as existsSync2 } from "fs";
-import path6 from "path";
+import { existsSync as existsSync3 } from "fs";
+import path7 from "path";
 import os2 from "os";
 
 // src/worktree/repo-lock.ts
@@ -40208,7 +40221,7 @@ var WorktreeManager = class {
   worktrees = /* @__PURE__ */ new Map();
   async create(taskId, baseBranch) {
     const branch = `invoke-wt-${taskId}`;
-    const worktreePath = path6.join(os2.tmpdir(), `invoke-worktree-${taskId}-${Date.now()}`);
+    const worktreePath = path7.join(os2.tmpdir(), `invoke-worktree-${taskId}-${Date.now()}`);
     await withRepoLock(this.repoDir, async () => {
       const args = ["worktree", "add", worktreePath, "-b", branch];
       if (baseBranch) {
@@ -40298,7 +40311,7 @@ var WorktreeManager = class {
   async cleanupLocked(taskId) {
     const info = this.worktrees.get(taskId);
     if (!info) return;
-    if (existsSync2(info.worktreePath)) {
+    if (existsSync3(info.worktreePath)) {
       await withRepoLock(this.repoDir, async () => {
         git(this.repoDir, ["worktree", "remove", info.worktreePath, "--force"]);
       });
@@ -40344,9 +40357,9 @@ var WorktreeManager = class {
 // src/worktree/session-worktree.ts
 init_branch_prefix();
 import { execFileSync as execFileSync5 } from "child_process";
-import { existsSync as existsSync3, lstatSync, mkdtempSync, realpathSync as realpathSync3 } from "fs";
+import { existsSync as existsSync4, lstatSync, mkdtempSync, realpathSync as realpathSync3 } from "fs";
 import os3 from "os";
-import path7 from "path";
+import path8 from "path";
 
 // src/worktree/porcelain.ts
 function parsePorcelainWorktrees(porcelainOutput) {
@@ -40397,16 +40410,16 @@ function validateSessionIdForRead(sessionId) {
 
 // src/worktree/session-worktree.ts
 function isWithinPathRoot(targetPath, rootPath) {
-  return targetPath === rootPath || targetPath.startsWith(rootPath + path7.sep);
+  return targetPath === rootPath || targetPath.startsWith(rootPath + path8.sep);
 }
 function toKnownPath(worktreePath) {
-  return existsSync3(worktreePath) ? realpathSync3(worktreePath) : worktreePath;
+  return existsSync4(worktreePath) ? realpathSync3(worktreePath) : worktreePath;
 }
 var SessionWorktreeManager = class {
   constructor(repoDir) {
     this.repoDir = repoDir;
     this.repoPath = toKnownPath(repoDir);
-    this.tmpdirPath = path7.resolve(os3.tmpdir());
+    this.tmpdirPath = path8.resolve(os3.tmpdir());
     this.realTmpdirPath = this.resolveTmpdirPath();
   }
   repoDir;
@@ -40471,13 +40484,13 @@ var SessionWorktreeManager = class {
       if (toKnownPath(existing2.worktreePath) !== toKnownPath(recordedPath)) {
         return null;
       }
-      if (!existsSync3(existing2.worktreePath)) {
+      if (!existsSync4(existing2.worktreePath)) {
         return null;
       }
       return existing2;
     }
     const existing = await this.resolve(sessionId, workBranch);
-    if (existing && existsSync3(existing.worktreePath)) {
+    if (existing && existsSync4(existing.worktreePath)) {
       return existing;
     }
     if (!this.branchExists(workBranch)) {
@@ -40485,7 +40498,7 @@ var SessionWorktreeManager = class {
     }
     return withRepoLock(this.repoDir, async () => {
       const lockedExisting = await this.resolve(sessionId, workBranch);
-      if (lockedExisting && existsSync3(lockedExisting.worktreePath)) {
+      if (lockedExisting && existsSync4(lockedExisting.worktreePath)) {
         return lockedExisting;
       }
       if (!this.branchExists(workBranch)) {
@@ -40545,7 +40558,7 @@ var SessionWorktreeManager = class {
       }
       const workBranch = entry.branch;
       const matchingPrefix = this.matchingPrefix(workBranch);
-      const isSessionPath = path7.basename(entry.worktreePath).startsWith(INVOKE_SESSION_BASENAME_PREFIX);
+      const isSessionPath = path8.basename(entry.worktreePath).startsWith(INVOKE_SESSION_BASENAME_PREFIX);
       if (!isSessionPath && !matchingPrefix) {
         continue;
       }
@@ -40586,10 +40599,10 @@ var SessionWorktreeManager = class {
     }
   }
   freshWorktreePath(sessionId) {
-    return mkdtempSync(path7.join(os3.tmpdir(), `${INVOKE_SESSION_BASENAME_PREFIX}${sessionId}-`));
+    return mkdtempSync(path8.join(os3.tmpdir(), `${INVOKE_SESSION_BASENAME_PREFIX}${sessionId}-`));
   }
   assertUnderTmpdir(worktreePath) {
-    if (existsSync3(worktreePath)) {
+    if (existsSync4(worktreePath)) {
       const stat = lstatSync(worktreePath);
       if (stat.isSymbolicLink()) {
         throw new Error(`Session worktree path cannot be a symlink: ${worktreePath}`);
@@ -40600,7 +40613,7 @@ var SessionWorktreeManager = class {
       }
       throw new Error(`Session worktree path escapes tmpdir: ${realWorktreePath}`);
     }
-    const resolved = path7.resolve(worktreePath);
+    const resolved = path8.resolve(worktreePath);
     if (isWithinPathRoot(resolved, this.tmpdirPath) || isWithinPathRoot(resolved, this.realTmpdirPath)) {
       return;
     }
@@ -40642,7 +40655,7 @@ var SessionWorktreeManager = class {
     throw new Error(`Session worktree path escapes tmpdir: ${resolvedWorktreePath}`);
   }
   safeRealpathUnderTmpdir(worktreePath) {
-    if (!existsSync3(worktreePath)) {
+    if (!existsSync4(worktreePath)) {
       return null;
     }
     try {
@@ -40674,7 +40687,7 @@ var SessionWorktreeManager = class {
     return match;
   }
   sessionIdFromPath(worktreePath) {
-    const match = path7.basename(worktreePath).match(
+    const match = path8.basename(worktreePath).match(
       new RegExp(`^${INVOKE_SESSION_BASENAME_PREFIX}(.+?)-[A-Za-z0-9]{6,}$`)
     );
     return match?.[1] ?? null;
@@ -40689,17 +40702,17 @@ var SessionWorktreeManager = class {
 };
 
 // src/metrics/manager.ts
-import { existsSync as existsSync4 } from "fs";
+import { existsSync as existsSync5 } from "fs";
 import { mkdir as mkdir2, readFile as readFile4, rename as rename2, writeFile as writeFile2 } from "fs/promises";
-import path8 from "path";
+import path9 from "path";
 var COST_PRECISION = 1e9;
 var FLUSH_DEBOUNCE_MS = 100;
 var MetricsManager = class {
   constructor(projectDir, sessionDir) {
     this.projectDir = projectDir;
-    const metricsDir = sessionDir ?? path8.join(projectDir, ".invoke");
-    this.metricsPath = path8.join(metricsDir, "metrics.json");
-    this.tmpPath = path8.join(metricsDir, "metrics.json.tmp");
+    const metricsDir = sessionDir ?? path9.join(projectDir, ".invoke");
+    this.metricsPath = path9.join(metricsDir, "metrics.json");
+    this.tmpPath = path9.join(metricsDir, "metrics.json.tmp");
     this.beforeExitHandler = () => {
       void this.flushPendingWrites();
     };
@@ -40822,7 +40835,7 @@ var MetricsManager = class {
     await this.loadPromise;
   }
   async loadFromDisk() {
-    if (existsSync4(this.metricsPath)) {
+    if (existsSync5(this.metricsPath)) {
       const content = await readFile4(this.metricsPath, "utf-8");
       const parsed = JSON.parse(content);
       this.metrics = [...parsed, ...this.metrics];
@@ -40832,7 +40845,7 @@ var MetricsManager = class {
   }
   async writeAtomic(metrics) {
     if (!this.dirEnsured) {
-      await mkdir2(path8.dirname(this.metricsPath), { recursive: true });
+      await mkdir2(path9.dirname(this.metricsPath), { recursive: true });
       this.dirEnsured = true;
     }
     const content = JSON.stringify(metrics, null, 2) + "\n";
@@ -40910,16 +40923,16 @@ function createEmptySummary() {
 }
 
 // src/session/manager.ts
-import { existsSync as existsSync5 } from "fs";
+import { existsSync as existsSync6 } from "fs";
 import { mkdir as mkdir3, readFile as readFile5, readdir as readdir2, rename as rename3, rm } from "fs/promises";
-import path9 from "path";
+import path10 from "path";
 var MS_PER_DAY = 24 * 60 * 60 * 1e3;
 var SessionManager = class {
   invokeDir;
   sessionsDir;
   constructor(projectDir) {
-    this.invokeDir = path9.resolve(projectDir, ".invoke");
-    this.sessionsDir = path9.join(this.invokeDir, "sessions");
+    this.invokeDir = path10.resolve(projectDir, ".invoke");
+    this.sessionsDir = path10.join(this.invokeDir, "sessions");
   }
   async create(sessionId) {
     validateSessionId(sessionId);
@@ -40930,13 +40943,13 @@ var SessionManager = class {
   resolve(sessionId) {
     validateSessionIdForRead(sessionId);
     const sessionDir = this.getSessionDir(sessionId);
-    if (!existsSync5(sessionDir)) {
+    if (!existsSync6(sessionDir)) {
       throw new Error(`Session '${sessionId}' does not exist`);
     }
     return sessionDir;
   }
   async list(staleDays = 7) {
-    if (!existsSync5(this.sessionsDir)) {
+    if (!existsSync6(this.sessionsDir)) {
       return [];
     }
     const entries = await readdir2(this.sessionsDir, { withFileTypes: true });
@@ -40952,7 +40965,7 @@ var SessionManager = class {
   }
   async migrate() {
     const legacyStatePath = this.getLegacyStatePath();
-    if (!existsSync5(legacyStatePath)) {
+    if (!existsSync6(legacyStatePath)) {
       return { migrated: false };
     }
     const state = JSON.parse(await readFile5(legacyStatePath, "utf-8"));
@@ -40973,9 +40986,9 @@ var SessionManager = class {
       throw error48;
     }
     const legacyMetricsPath = this.getLegacyMetricsPath();
-    if (existsSync5(legacyMetricsPath)) {
+    if (existsSync6(legacyMetricsPath)) {
       try {
-        await rename3(legacyMetricsPath, path9.join(sessionDir, "metrics.json"));
+        await rename3(legacyMetricsPath, path10.join(sessionDir, "metrics.json"));
       } catch (error48) {
         if (!this.isMissingFileError(error48)) {
           throw error48;
@@ -40990,19 +41003,19 @@ var SessionManager = class {
   }
   exists(sessionId) {
     validateSessionIdForRead(sessionId);
-    return existsSync5(this.getSessionDir(sessionId));
+    return existsSync6(this.getSessionDir(sessionId));
   }
   getSessionDir(sessionId) {
-    return path9.join(this.sessionsDir, sessionId);
+    return path10.join(this.sessionsDir, sessionId);
   }
   getStatePath(sessionId) {
-    return path9.join(this.getSessionDir(sessionId), "state.json");
+    return path10.join(this.getSessionDir(sessionId), "state.json");
   }
   getLegacyStatePath() {
-    return path9.join(this.invokeDir, "state.json");
+    return path10.join(this.invokeDir, "state.json");
   }
   getLegacyMetricsPath() {
-    return path9.join(this.invokeDir, "metrics.json");
+    return path10.join(this.invokeDir, "metrics.json");
   }
   async readState(sessionId) {
     const content = await readFile5(this.getStatePath(sessionId), "utf-8");
@@ -41010,7 +41023,7 @@ var SessionManager = class {
   }
   async readSessionInfo(sessionId, staleDays = 7) {
     const statePath = this.getStatePath(sessionId);
-    if (!existsSync5(statePath)) {
+    if (!existsSync6(statePath)) {
       return null;
     }
     const state = await this.readState(sessionId);
@@ -41035,7 +41048,7 @@ var SessionManager = class {
 init_zod();
 var import_yaml2 = __toESM(require_dist2(), 1);
 import { lstat, mkdir as mkdir4, readFile as readFile6, rename as rename4, writeFile as writeFile3 } from "fs/promises";
-import path10 from "path";
+import path11 from "path";
 
 // src/session/lock.ts
 var import_proper_lockfile = __toESM(require_proper_lockfile(), 1);
@@ -41087,10 +41100,10 @@ var BugNotFoundError = class extends Error {
 var BugManager = class {
   bugsPath;
   constructor(projectDir) {
-    this.bugsPath = path10.join(projectDir, ".invoke", "bugs.yaml");
+    this.bugsPath = path11.join(projectDir, ".invoke", "bugs.yaml");
   }
   async report(input) {
-    await mkdir4(path10.dirname(this.bugsPath), { recursive: true });
+    await mkdir4(path11.dirname(this.bugsPath), { recursive: true });
     return withLock(this.bugsPath, async () => {
       const bugsFile = await this.readBugsFile();
       const now = (/* @__PURE__ */ new Date()).toISOString();
@@ -41128,7 +41141,7 @@ var BugManager = class {
     });
   }
   async update(id, changes) {
-    await mkdir4(path10.dirname(this.bugsPath), { recursive: true });
+    await mkdir4(path11.dirname(this.bugsPath), { recursive: true });
     return withLock(this.bugsPath, async () => {
       const bugsFile = await this.readBugsFile();
       const bug = bugsFile.bugs.find((entry) => entry.id === id);
@@ -41227,27 +41240,27 @@ var BugManager = class {
 
 // src/tools/artifacts.ts
 import { readFile as readFile7, writeFile as writeFile4, mkdir as mkdir5, readdir as readdir3, unlink } from "fs/promises";
-import path11 from "path";
+import path12 from "path";
 var ArtifactManager = class {
   baseDir;
   constructor(projectDir) {
-    this.baseDir = path11.join(projectDir, ".invoke");
+    this.baseDir = path12.join(projectDir, ".invoke");
   }
   async save(stage, filename, content) {
-    const dir = path11.join(this.baseDir, stage);
+    const dir = path12.join(this.baseDir, stage);
     await mkdir5(dir, { recursive: true });
-    const filePath = path11.join(dir, filename);
+    const filePath = path12.join(dir, filename);
     await withLock(filePath, async () => {
       await writeFile4(filePath, content);
     });
     return filePath;
   }
   async read(stage, filename) {
-    const filePath = path11.join(this.baseDir, stage, filename);
+    const filePath = path12.join(this.baseDir, stage, filename);
     return readFile7(filePath, "utf-8");
   }
   async list(stage) {
-    const dir = path11.join(this.baseDir, stage);
+    const dir = path12.join(this.baseDir, stage);
     try {
       return await readdir3(dir);
     } catch {
@@ -41255,7 +41268,7 @@ var ArtifactManager = class {
     }
   }
   async delete(stage, filename) {
-    const filePath = path11.join(this.baseDir, stage, filename);
+    const filePath = path12.join(this.baseDir, stage, filename);
     await unlink(filePath);
   }
 };
@@ -41265,36 +41278,34 @@ init_zod();
 init_config();
 
 // src/init.ts
+init_defaults_path();
 import { cp, mkdir as mkdir6, readdir as readdir4 } from "fs/promises";
-import { existsSync as existsSync6 } from "fs";
-import path12 from "path";
-import { fileURLToPath as fileURLToPath3 } from "url";
-var __dirname3 = path12.dirname(fileURLToPath3(import.meta.url));
-var PACKAGE_ROOT3 = path12.join(__dirname3, "..");
+import { existsSync as existsSync7 } from "fs";
+import path13 from "path";
 async function initProject(projectDir) {
-  const invokeDir = path12.join(projectDir, ".invoke");
-  const defaultsDir = path12.join(PACKAGE_ROOT3, "defaults");
+  const invokeDir = path13.join(projectDir, ".invoke");
+  const defaultsDir2 = getDefaultsDir();
   await mkdir6(invokeDir, { recursive: true });
-  const configDest = path12.join(invokeDir, "pipeline.yaml");
-  if (!existsSync6(configDest)) {
-    await cp(path12.join(defaultsDir, "pipeline.yaml"), configDest);
+  const configDest = path13.join(invokeDir, "pipeline.yaml");
+  if (!existsSync7(configDest)) {
+    await cp(path13.join(defaultsDir2, "pipeline.yaml"), configDest);
   }
-  await copyDefaults(path12.join(defaultsDir, "roles"), path12.join(invokeDir, "roles"));
-  await copyDefaults(path12.join(defaultsDir, "strategies"), path12.join(invokeDir, "strategies"));
-  await mkdir6(path12.join(invokeDir, "specs", "research"), { recursive: true });
-  await mkdir6(path12.join(invokeDir, "plans"), { recursive: true });
-  await mkdir6(path12.join(invokeDir, "reviews"), { recursive: true });
+  await copyDefaults(path13.join(defaultsDir2, "roles"), path13.join(invokeDir, "roles"));
+  await copyDefaults(path13.join(defaultsDir2, "strategies"), path13.join(invokeDir, "strategies"));
+  await mkdir6(path13.join(invokeDir, "specs", "research"), { recursive: true });
+  await mkdir6(path13.join(invokeDir, "plans"), { recursive: true });
+  await mkdir6(path13.join(invokeDir, "reviews"), { recursive: true });
 }
 async function copyDefaults(srcDir, destDir) {
-  if (!existsSync6(srcDir)) return;
+  if (!existsSync7(srcDir)) return;
   await mkdir6(destDir, { recursive: true });
   const entries = await readdir4(srcDir, { withFileTypes: true });
   for (const entry of entries) {
-    const srcPath = path12.join(srcDir, entry.name);
-    const destPath = path12.join(destDir, entry.name);
+    const srcPath = path13.join(srcDir, entry.name);
+    const destPath = path13.join(destDir, entry.name);
     if (entry.isDirectory()) {
       await copyDefaults(srcPath, destPath);
-    } else if (!existsSync6(destPath)) {
+    } else if (!existsSync7(destPath)) {
       await cp(srcPath, destPath);
     }
   }
@@ -41416,7 +41427,7 @@ init_config();
 
 // src/tools/session-metrics.ts
 import { readFile as readFile8 } from "fs/promises";
-import path13 from "path";
+import path14 from "path";
 async function getSessionScopedMetrics(metricsManager, pipelineId, sessionDir, options) {
   if (pipelineId === null) {
     return [];
@@ -41429,7 +41440,7 @@ async function getSessionScopedMetrics(metricsManager, pipelineId, sessionDir, o
   return filterSessionMetrics(legacyEntries, pipelineId, options);
 }
 async function readLegacySessionMetrics(sessionDir) {
-  const metricsPath = path13.join(sessionDir, "metrics.json");
+  const metricsPath = path14.join(sessionDir, "metrics.json");
   try {
     const content = await readFile8(metricsPath, "utf-8");
     const parsed = JSON.parse(content);
@@ -42755,7 +42766,7 @@ function registerComparisonTools(server, projectDir, sessionManager) {
 // src/tools/state-tools.ts
 init_zod();
 init_config();
-import path14 from "path";
+import path15 from "path";
 var TaskSchema2 = external_exports3.object({
   id: external_exports3.string(),
   status: external_exports3.enum(["pending", "dispatched", "running", "completed", "error", "timeout", "conflict"]),
@@ -42798,7 +42809,7 @@ var SetStateInputSchema = external_exports3.object({
   work_branch: external_exports3.string().regex(WORK_BRANCH_PATTERN, "invalid work_branch format").optional(),
   base_branch: external_exports3.string().regex(BASE_BRANCH_PATTERN, "base_branch must be a safe git ref name (no leading -, no whitespace, no shell metacharacters)").refine((v) => !v.includes("..") && !v.includes("@{"), 'base_branch must not contain ".." or "@{" revspec constructs').optional(),
   work_branch_path: external_exports3.string().refine(
-    (value) => path14.isAbsolute(value) && path14.basename(value).startsWith("invoke-session-"),
+    (value) => path15.isAbsolute(value) && path15.basename(value).startsWith("invoke-session-"),
     "work_branch_path must be an absolute path with invoke-session- basename"
   ).optional(),
   spec: external_exports3.string().optional(),
@@ -43027,11 +43038,11 @@ init_zod();
 // src/tools/config-manager.ts
 var import_yaml3 = __toESM(require_dist2(), 1);
 import { readFile as readFile9, writeFile as writeFile5 } from "fs/promises";
-import path15 from "path";
+import path16 from "path";
 var ConfigManager = class {
   constructor(projectDir) {
     this.projectDir = projectDir;
-    this.configPath = path15.join(projectDir, ".invoke", "pipeline.yaml");
+    this.configPath = path16.join(projectDir, ".invoke", "pipeline.yaml");
   }
   projectDir;
   configPath;
@@ -43212,17 +43223,17 @@ function buildOperation(input) {
 
 // src/tools/context.ts
 import { readFile as readFile10, writeFile as writeFile6 } from "fs/promises";
-import { existsSync as existsSync7 } from "fs";
-import path16 from "path";
+import { existsSync as existsSync8 } from "fs";
+import path17 from "path";
 var ContextManager = class {
   constructor(projectDir) {
     this.projectDir = projectDir;
-    this.contextPath = path16.join(projectDir, ".invoke", "context.md");
+    this.contextPath = path17.join(projectDir, ".invoke", "context.md");
   }
   projectDir;
   contextPath;
   async get(maxLength) {
-    if (!existsSync7(this.contextPath)) {
+    if (!existsSync8(this.contextPath)) {
       return null;
     }
     let content = await readFile10(this.contextPath, "utf-8");
@@ -43232,7 +43243,7 @@ var ContextManager = class {
     return content;
   }
   exists() {
-    return existsSync7(this.contextPath);
+    return existsSync8(this.contextPath);
   }
   async initialize(content) {
     await withLock(this.contextPath, async () => {
@@ -43892,32 +43903,30 @@ function registerReviewDiffTools(server, sessionManager, projectDir) {
 }
 
 // src/defaults-checker.ts
+init_defaults_path();
 import { readdir as readdir5 } from "fs/promises";
-import { existsSync as existsSync8 } from "fs";
-import path17 from "path";
-import { fileURLToPath as fileURLToPath4 } from "url";
-var __dirname4 = path17.dirname(fileURLToPath4(import.meta.url));
-var PACKAGE_ROOT4 = path17.join(__dirname4, "..");
+import { existsSync as existsSync9 } from "fs";
+import path18 from "path";
 async function checkForNewDefaults(projectDir) {
-  const invokeDir = path17.join(projectDir, ".invoke");
-  const defaultsDir = path17.join(PACKAGE_ROOT4, "defaults");
-  if (!existsSync8(invokeDir) || !existsSync8(defaultsDir)) {
+  const invokeDir = path18.join(projectDir, ".invoke");
+  const defaultsDir2 = getDefaultsDir();
+  if (!existsSync9(invokeDir) || !existsSync9(defaultsDir2)) {
     return [];
   }
   const missing = [];
-  await scanDir(defaultsDir, invokeDir, "", missing);
+  await scanDir(defaultsDir2, invokeDir, "", missing);
   return missing;
 }
 async function scanDir(srcDir, destDir, relativePath, missing) {
-  if (!existsSync8(srcDir)) return;
+  if (!existsSync9(srcDir)) return;
   const entries = await readdir5(srcDir, { withFileTypes: true });
   for (const entry of entries) {
-    const srcPath = path17.join(srcDir, entry.name);
-    const destPath = path17.join(destDir, entry.name);
+    const srcPath = path18.join(srcDir, entry.name);
+    const destPath = path18.join(destDir, entry.name);
     const relPath = relativePath ? `${relativePath}/${entry.name}` : entry.name;
     if (entry.isDirectory()) {
       await scanDir(srcPath, destPath, relPath, missing);
-    } else if (!existsSync8(destPath)) {
+    } else if (!existsSync9(destPath)) {
       missing.push({
         relativePath: relPath,
         description: describeDefault(relPath)
@@ -43926,19 +43935,19 @@ async function scanDir(srcDir, destDir, relativePath, missing) {
   }
 }
 function describeDefault(relPath) {
-  if (relPath.includes("roles/reviewer/")) return `New reviewer: ${path17.basename(relPath, ".md")}`;
-  if (relPath.includes("roles/researcher/")) return `New researcher: ${path17.basename(relPath, ".md")}`;
-  if (relPath.includes("roles/planner/")) return `New planner: ${path17.basename(relPath, ".md")}`;
-  if (relPath.includes("roles/builder/")) return `New builder: ${path17.basename(relPath, ".md")}`;
-  if (relPath.includes("presets/")) return `New preset: ${path17.basename(relPath, path17.extname(relPath))}`;
-  if (relPath.includes("strategies/")) return `New strategy: ${path17.basename(relPath, ".md")}`;
+  if (relPath.includes("roles/reviewer/")) return `New reviewer: ${path18.basename(relPath, ".md")}`;
+  if (relPath.includes("roles/researcher/")) return `New researcher: ${path18.basename(relPath, ".md")}`;
+  if (relPath.includes("roles/planner/")) return `New planner: ${path18.basename(relPath, ".md")}`;
+  if (relPath.includes("roles/builder/")) return `New builder: ${path18.basename(relPath, ".md")}`;
+  if (relPath.includes("presets/")) return `New preset: ${path18.basename(relPath, path18.extname(relPath))}`;
+  if (relPath.includes("strategies/")) return `New strategy: ${path18.basename(relPath, ".md")}`;
   if (relPath === "context-template.md") return "Project context template";
   return `New default: ${relPath}`;
 }
 
 // src/index.ts
 import { writeFile as writeFile7 } from "fs/promises";
-import path18 from "path";
+import path19 from "path";
 async function main() {
   const projectDir = process.cwd();
   const server = new McpServer({
@@ -43963,7 +43972,7 @@ async function main() {
     }
     try {
       await writeFile7(
-        path18.join(projectDir, ".invoke", "validation.json"),
+        path19.join(projectDir, ".invoke", "validation.json"),
         JSON.stringify(validation, null, 2)
       );
     } catch {
