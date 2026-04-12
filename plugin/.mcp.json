@@ -1,3 +1,8 @@
 {
-  "mcpServers": {}
+  "mcpServers": {
+    "pipeline": {
+      "command": "node",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/dist/index.js"]
+    }
+  }
 }
