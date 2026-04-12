@@ -56,7 +56,7 @@ describe('E2E: MCP Server Components', () => {
     const providers = createProviderRegistry(config.providers)
     expect(providers.get('claude')).toBeTruthy()
 
-    const parsers = createParserRegistry()
+    const parsers = createParserRegistry(Object.keys(config.providers))
     expect(parsers.get('claude')).toBeTruthy()
 
     const stateManager = new StateManager(TEST_DIR)

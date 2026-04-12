@@ -3,7 +3,7 @@ import { mkdir, writeFile, rm } from 'fs/promises'
 import path from 'path'
 import { stringify } from 'yaml'
 import { DispatchEngine } from '../../src/dispatch/engine.js'
-import { ClaudeParser } from '../../src/parsers/claude-parser.js'
+import { MarkdownFindingParser } from '../../src/parsers/markdown-finding-parser.js'
 import type { Provider, CommandSpec } from '../../src/providers/base.js'
 import type { InvokeConfig } from '../../src/types.js'
 
@@ -91,7 +91,7 @@ describe('CLI Spawn Integration Tests', () => {
     })
 
     const config = makeConfig('echo')
-    const parser = new ClaudeParser()
+    const parser = new MarkdownFindingParser('test')
     // Map provider name 'echo' to the claude parser
     const parsers = new Map([['echo', parser]])
     const providers = new Map([['echo', provider]])
@@ -142,7 +142,7 @@ describe('CLI Spawn Integration Tests', () => {
     })
 
     const config = makeConfig('printf')
-    const parser = new ClaudeParser()
+    const parser = new MarkdownFindingParser('test')
     const parsers = new Map([['printf', parser]])
     const providers = new Map([['printf', provider]])
 
@@ -182,7 +182,7 @@ describe('CLI Spawn Integration Tests', () => {
     })
 
     const config = makeConfig('sh')
-    const parser = new ClaudeParser()
+    const parser = new MarkdownFindingParser('test')
     const parsers = new Map([['sh', parser]])
     const providers = new Map([['sh', provider]])
 
@@ -214,7 +214,7 @@ describe('CLI Spawn Integration Tests', () => {
 
     // 1 second timeout (engine converts to 1000ms)
     const config = makeConfig('sleep', 1)
-    const parser = new ClaudeParser()
+    const parser = new MarkdownFindingParser('test')
     const parsers = new Map([['sleep', parser]])
     const providers = new Map([['sleep', provider]])
 

@@ -115,7 +115,7 @@ async function main() {
   // Register dispatch tools (need config)
   if (config) {
     const providers = createProviderRegistry(config.providers)
-    const parsers = createParserRegistry()
+    const parsers = createParserRegistry(Object.keys(config.providers))
     const engine = new DispatchEngine({
       providers,
       parsers,

@@ -3,7 +3,7 @@ import { createParserRegistry } from '../../src/parsers/registry.js'
 import { mergeFindings } from '../../src/dispatch/merge-findings.js'
 
 describe('Output Parsing Integration', () => {
-  const parsers = createParserRegistry()
+  const parsers = createParserRegistry(['claude', 'codex'])
 
   describe('Claude parser with realistic outputs', () => {
     const claude = parsers.get('claude')!

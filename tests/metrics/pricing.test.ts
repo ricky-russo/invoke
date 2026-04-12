@@ -34,6 +34,14 @@ describe('pricing helpers', () => {
         input: 1.1 / 1_000_000,
         output: 4.4 / 1_000_000,
       },
+      'gemini-2.5-pro': {
+        input: 1.25 / 1_000_000,
+        output: 10 / 1_000_000,
+      },
+      'gemini-2.5-flash': {
+        input: 0.15 / 1_000_000,
+        output: 0.6 / 1_000_000,
+      },
     })
   })
 
@@ -60,6 +68,14 @@ describe('pricing helpers', () => {
       input_tokens: 100,
       output_tokens: 200,
       cost_usd: 0.0018,
+    })
+  })
+
+  it('estimates cost for gemini-2.5-pro', () => {
+    expect(estimateCost('gemini-2.5-pro', 400, 800)).toEqual({
+      input_tokens: 100,
+      output_tokens: 200,
+      cost_usd: 0.002125,
     })
   })
 

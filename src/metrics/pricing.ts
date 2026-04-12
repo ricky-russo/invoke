@@ -25,6 +25,14 @@ export const MODEL_PRICING: Record<string, { input: number; output: number }> = 
     input: 1.1 / 1_000_000,
     output: 4.4 / 1_000_000,
   },
+  'gemini-2.5-pro': {
+    input: 1.25 / 1_000_000,
+    output: 10 / 1_000_000,
+  },
+  'gemini-2.5-flash': {
+    input: 0.15 / 1_000_000,
+    output: 0.6 / 1_000_000,
+  },
 }
 
 const MODEL_NAME_ALIASES: Record<string, string> = {

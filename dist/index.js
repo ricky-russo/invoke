@@ -38332,6 +38332,9 @@ var MODEL_PATTERNS = {
     /^o\d+(-\w+)?$/,
     /^gpt-[\w.-]+$/,
     /^codex-[\w.-]+$/
+  ],
+  gemini: [
+    /^gemini-[\w.-]+$/
   ]
 };
 var MODEL_SUGGESTIONS = {
@@ -38346,10 +38349,25 @@ var MODEL_SUGGESTIONS = {
   },
   codex: {
     "gpt-5.4": "gpt-4.1"
+  },
+  gemini: {
+    "gemini-pro": "gemini-2.5-pro",
+    "gemini-flash": "gemini-2.5-flash"
   }
 };
-function isValidModelForProvider(provider, model) {
-  const patterns = MODEL_PATTERNS[provider];
+function getCliBaseName(cli) {
+  const parts = cli.split(/[\\/]/);
+  return parts[parts.length - 1] || cli;
+}
+function resolveModelProvider(provider, cli) {
+  const cliBaseName = cli ? getCliBaseName(cli) : void 0;
+  if (cliBaseName && MODEL_PATTERNS[cliBaseName]) {
+    return cliBaseName;
+  }
+  return provider;
+}
+function isValidModelForProvider(provider, model, cli) {
+  const patterns = MODEL_PATTERNS[resolveModelProvider(provider, cli)];
   if (!patterns) {
     return true;
   }
@@ -38363,8 +38381,8 @@ function checkCliExists(cli) {
     return false;
   }
 }
-function suggestModel(provider, model) {
-  const suggestions = MODEL_SUGGESTIONS[provider];
+function suggestModel(provider, model, cli) {
+  const suggestions = MODEL_SUGGESTIONS[resolveModelProvider(provider, cli)];
   if (!suggestions) return void 0;
   return suggestions[model];
 }
@@ -38411,11 +38429,26 @@ async function presetFileExists(projectDir, presetName) {
   }
   return false;
 }
+function getReferencedProviders(config2) {
+  const referencedProviders = /* @__PURE__ */ new Set();
+  for (const subroles of Object.values(config2.roles)) {
+    for (const roleConfig of Object.values(subroles)) {
+      for (const providerEntry of roleConfig.providers) {
+        referencedProviders.add(providerEntry.provider);
+      }
+    }
+  }
+  return referencedProviders;
+}
 async function validateConfig(config2, projectDir) {
   const warnings = [];
   const reviewerSubroles = new Set(Object.keys(config2.roles.reviewer ?? {}));
   const availablePresetNames = await listAvailablePresets(projectDir);
+  const referencedProviders = getReferencedProviders(config2);
   for (const [providerName, providerConfig] of Object.entries(config2.providers)) {
+    if (!referencedProviders.has(providerName)) {
+      continue;
+    }
     if (!checkCliExists(providerConfig.cli)) {
       warnings.push({
         level: "error",
@@ -38479,8 +38512,9 @@ async function validateConfig(config2, projectDir) {
             suggestion: `Available providers: ${Object.keys(config2.providers).join(", ")}`
           });
         }
-        if (!isValidModelForProvider(entry.provider, entry.model)) {
-          const suggestion = suggestModel(entry.provider, entry.model);
+        const providerCli = config2.providers[entry.provider]?.cli;
+        if (!isValidModelForProvider(entry.provider, entry.model, providerCli)) {
+          const suggestion = suggestModel(entry.provider, entry.model, providerCli);
           warnings.push({
             level: "warning",
             path: `${entryPath}.model`,
@@ -38559,97 +38593,51 @@ var CodexProvider = class {
   }
 };
 
+// src/providers/generic.ts
+var ConfigDrivenProvider = class {
+  constructor(name, config2) {
+    this.config = config2;
+    this.name = name;
+  }
+  config;
+  name;
+  buildCommand(params) {
+    const args = this.config.args.map(
+      (arg) => arg.replace("{{model}}", params.model).replace("{{effort}}", params.effort)
+    );
+    args.push(params.prompt);
+    return { cmd: this.config.cli, args, cwd: params.workDir };
+  }
+};
+
 // src/providers/registry.ts
-var PROVIDER_CONSTRUCTORS = {
+var KNOWN_PROVIDERS = {
+  claude: ClaudeProvider,
+  codex: CodexProvider
+};
+var KNOWN_CLI_MAP = {
   claude: ClaudeProvider,
   codex: CodexProvider
 };
 function createProviderRegistry(configs) {
   const registry2 = /* @__PURE__ */ new Map();
   for (const [name, config2] of Object.entries(configs)) {
-    const Constructor = PROVIDER_CONSTRUCTORS[name];
-    if (!Constructor) {
-      throw new Error(`Unknown provider: ${name}. Available: ${Object.keys(PROVIDER_CONSTRUCTORS).join(", ")}`);
+    const Constructor = KNOWN_PROVIDERS[name] ?? KNOWN_CLI_MAP[config2.cli];
+    if (Constructor) {
+      registry2.set(name, new Constructor(config2));
+    } else {
+      registry2.set(name, new ConfigDrivenProvider(name, config2));
     }
-    registry2.set(name, new Constructor(config2));
   }
   return registry2;
 }
 
-// src/parsers/claude-parser.ts
-var ClaudeParser = class {
-  name = "claude";
-  parse(rawOutput, exitCode, context) {
-    const base = {
-      role: context.role,
-      subrole: context.subrole,
-      provider: context.provider,
-      model: context.model,
-      duration: context.duration
-    };
-    if (exitCode !== 0) {
-      return {
-        ...base,
-        status: "error",
-        output: {
-          summary: `Agent exited with code ${exitCode}`,
-          raw: rawOutput
-        }
-      };
-    }
-    const findings = context.role === "reviewer" ? this.extractFindings(rawOutput) : void 0;
-    const summary = rawOutput.split("\n").filter((l) => l.trim()).slice(0, 3).join(" ").slice(0, 200);
-    return {
-      ...base,
-      status: "success",
-      output: {
-        summary,
-        findings: context.role === "reviewer" ? findings ?? [] : void 0,
-        raw: rawOutput
-      }
-    };
+// src/parsers/markdown-finding-parser.ts
+var MarkdownFindingParser = class {
+  name;
+  constructor(name) {
+    this.name = name;
   }
-  extractFindings(output) {
-    const findings = [];
-    const findingBlocks = output.split(/###\s+Finding\s+\d+/i).slice(1);
-    for (const block of findingBlocks) {
-      const severity = this.extractField(block, "Severity");
-      const file2 = this.extractField(block, "File");
-      const lineStr = this.extractField(block, "Line");
-      const issue2 = this.extractField(block, "Issue");
-      const suggestion = this.extractField(block, "Suggestion");
-      const outOfScopeRaw = this.extractField(block, "Out-of-Scope");
-      if (severity && file2 && issue2 && suggestion) {
-        findings.push({
-          severity: this.normalizeSeverity(severity),
-          file: file2,
-          line: lineStr ? parseInt(lineStr, 10) : void 0,
-          issue: issue2,
-          suggestion,
-          ...outOfScopeRaw != null && {
-            out_of_scope: outOfScopeRaw.toLowerCase().trim() === "yes"
-          }
-        });
-      }
-    }
-    return findings;
-  }
-  extractField(block, field) {
-    const match = block.match(new RegExp(`\\*\\*${field}:\\*\\*\\s*(.+)`, "i"));
-    return match ? match[1].trim() : null;
-  }
-  normalizeSeverity(s) {
-    const lower = s.toLowerCase();
-    if (lower === "critical") return "critical";
-    if (lower === "high") return "high";
-    if (lower === "medium") return "medium";
-    return "low";
-  }
-};
-
-// src/parsers/codex-parser.ts
-var CodexParser = class {
-  name = "codex";
   parse(rawOutput, exitCode, context) {
     const base = {
       role: context.role,
@@ -38719,14 +38707,10 @@ var CodexParser = class {
 };
 
 // src/parsers/registry.ts
-var PARSERS = {
-  claude: ClaudeParser,
-  codex: CodexParser
-};
-function createParserRegistry() {
+function createParserRegistry(providerNames) {
   const registry2 = /* @__PURE__ */ new Map();
-  for (const [name, Constructor] of Object.entries(PARSERS)) {
-    registry2.set(name, new Constructor());
+  for (const name of providerNames) {
+    registry2.set(name, new MarkdownFindingParser(name));
   }
   return registry2;
 }
@@ -38999,6 +38983,14 @@ var MODEL_PRICING = {
   "o3-mini": {
     input: 1.1 / 1e6,
     output: 4.4 / 1e6
+  },
+  "gemini-2.5-pro": {
+    input: 1.25 / 1e6,
+    output: 10 / 1e6
+  },
+  "gemini-2.5-flash": {
+    input: 0.15 / 1e6,
+    output: 0.6 / 1e6
   }
 };
 var MODEL_NAME_ALIASES = {
@@ -44003,7 +43995,7 @@ async function main() {
   registerSessionInitTools(server, sessionWorktreeManager, sessionManager, () => config2, projectDir);
   if (config2) {
     const providers = createProviderRegistry(config2.providers);
-    const parsers = createParserRegistry();
+    const parsers = createParserRegistry(Object.keys(config2.providers));
     const engine = new DispatchEngine({
       providers,
       parsers,

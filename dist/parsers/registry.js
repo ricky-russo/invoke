@@ -1,13 +1,8 @@
-import { ClaudeParser } from './claude-parser.js';
-import { CodexParser } from './codex-parser.js';
-const PARSERS = {
-    claude: ClaudeParser,
-    codex: CodexParser,
-};
-export function createParserRegistry() {
+import { MarkdownFindingParser } from './markdown-finding-parser.js';
+export function createParserRegistry(providerNames) {
     const registry = new Map();
-    for (const [name, Constructor] of Object.entries(PARSERS)) {
-        registry.set(name, new Constructor());
+    for (const name of providerNames) {
+        registry.set(name, new MarkdownFindingParser(name));
     }
     return registry;
 }

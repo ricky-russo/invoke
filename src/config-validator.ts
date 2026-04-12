@@ -38,6 +38,9 @@ const MODEL_PATTERNS: Record<string, RegExp[]> = {
     /^gpt-[\w.-]+$/,
     /^codex-[\w.-]+$/,
   ],
+  gemini: [
+    /^gemini-[\w.-]+$/,
+  ],
 }
 
 const MODEL_SUGGESTIONS: Record<string, Record<string, string>> = {
@@ -53,14 +56,32 @@ const MODEL_SUGGESTIONS: Record<string, Record<string, string>> = {
   codex: {
     'gpt-5.4': 'gpt-4.1',
   },
+  gemini: {
+    'gemini-pro': 'gemini-2.5-pro',
+    'gemini-flash': 'gemini-2.5-flash',
+  },
+}
+
+function getCliBaseName(cli: string): string {
+  const parts = cli.split(/[\\/]/)
+  return parts[parts.length - 1] || cli
+}
+
+function resolveModelProvider(provider: string, cli?: string): string {
+  const cliBaseName = cli ? getCliBaseName(cli) : undefined
+  if (cliBaseName && MODEL_PATTERNS[cliBaseName]) {
+    return cliBaseName
+  }
+
+  return provider
 }
 
 // ---------------------------------------------------------------------------
 // isValidModelForProvider
 // ---------------------------------------------------------------------------
 
-export function isValidModelForProvider(provider: string, model: string): boolean {
-  const patterns = MODEL_PATTERNS[provider]
+export function isValidModelForProvider(provider: string, model: string, cli?: string): boolean {
+  const patterns = MODEL_PATTERNS[resolveModelProvider(provider, cli)]
   if (!patterns) {
     // Unknown provider — allow any model
     return true
@@ -85,8 +106,8 @@ export function checkCliExists(cli: string): boolean {
 // suggestModel (private helper)
 // ---------------------------------------------------------------------------
 
-function suggestModel(provider: string, model: string): string | undefined {
-  const suggestions = MODEL_SUGGESTIONS[provider]
+function suggestModel(provider: string, model: string, cli?: string): string | undefined {
+  const suggestions = MODEL_SUGGESTIONS[resolveModelProvider(provider, cli)]
   if (!suggestions) return undefined
   return suggestions[model]
 }
@@ -143,6 +164,20 @@ async function presetFileExists(projectDir: string, presetName: string): Promise
   return false
 }
 
+function getReferencedProviders(config: InvokeConfig): Set<string> {
+  const referencedProviders = new Set<string>()
+
+  for (const subroles of Object.values(config.roles)) {
+    for (const roleConfig of Object.values(subroles)) {
+      for (const providerEntry of roleConfig.providers) {
+        referencedProviders.add(providerEntry.provider)
+      }
+    }
+  }
+
+  return referencedProviders
+}
+
 // ---------------------------------------------------------------------------
 // validateConfig
 // ---------------------------------------------------------------------------
@@ -154,9 +189,14 @@ export async function validateConfig(
   const warnings: ValidationWarning[] = []
   const reviewerSubroles = new Set(Object.keys(config.roles.reviewer ?? {}))
   const availablePresetNames = await listAvailablePresets(projectDir)
+  const referencedProviders = getReferencedProviders(config)
 
   // 1. CLI existence for each provider
   for (const [providerName, providerConfig] of Object.entries(config.providers)) {
+    if (!referencedProviders.has(providerName)) {
+      continue
+    }
+
     if (!checkCliExists(providerConfig.cli)) {
       warnings.push({
         level: 'error',
@@ -240,8 +280,9 @@ export async function validateConfig(
         }
 
         // 6. Model matches provider patterns
-        if (!isValidModelForProvider(entry.provider, entry.model)) {
-          const suggestion = suggestModel(entry.provider, entry.model)
+        const providerCli = config.providers[entry.provider]?.cli
+        if (!isValidModelForProvider(entry.provider, entry.model, providerCli)) {
+          const suggestion = suggestModel(entry.provider, entry.model, providerCli)
           warnings.push({
             level: 'warning',
             path: `${entryPath}.model`,

@@ -168,7 +168,7 @@ describe('Dispatch Chain Integration', () => {
   })
 
   it('parsers produce correct AgentResult shape from reviewer output', () => {
-    const parsers = createParserRegistry()
+    const parsers = createParserRegistry(['claude', 'codex'])
     const claude = parsers.get('claude')!
 
     const reviewOutput = `## Security Review
@@ -205,7 +205,7 @@ describe('Dispatch Chain Integration', () => {
   })
 
   it('parsers produce correct AgentResult shape from researcher output', () => {
-    const parsers = createParserRegistry()
+    const parsers = createParserRegistry(['claude', 'codex'])
     const claude = parsers.get('claude')!
 
     const researchOutput = 'The codebase uses Express with TypeScript.\n\nKey modules: auth, api, db.'
@@ -223,7 +223,7 @@ describe('Dispatch Chain Integration', () => {
   })
 
   it('parsers handle error exit codes', () => {
-    const parsers = createParserRegistry()
+    const parsers = createParserRegistry(['claude', 'codex'])
     const codex = parsers.get('codex')!
 
     const result = codex.parse('Something broke', 1, {
@@ -241,7 +241,7 @@ describe('Dispatch Chain Integration', () => {
   it('full chain: config → role lookup → compose → command → parse', async () => {
     const config = await loadConfig(TEST_DIR)
     const providers = createProviderRegistry(config.providers)
-    const parsers = createParserRegistry()
+    const parsers = createParserRegistry(['claude', 'codex'])
 
     const roleConfig = config.roles.reviewer.security
     expect(roleConfig).toBeTruthy()

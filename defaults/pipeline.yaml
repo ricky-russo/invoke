@@ -15,6 +15,9 @@ providers:
   codex:
     cli: codex
     args: ["exec", "--model", "{{model}}", "--full-auto", "-c", "reasoning_effort={{effort}}"]
+  gemini:
+    cli: gemini
+    args: ["-y", "--output-format", "text", "-m", "{{model}}", "-p"]
 
 # Each subrole lists one or more providers. When multiple providers are listed,
 # provider_mode controls dispatch behavior: parallel (all run concurrently),
