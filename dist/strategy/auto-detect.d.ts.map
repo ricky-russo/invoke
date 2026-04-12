@@ -1,1 +1,0 @@
-{"version":3,"file":"auto-detect.d.ts","sourceRoot":"","sources":["../../src/strategy/auto-detect.ts"],"names":[],"mappings":"AAAA,OAAO,KAAK,EAAE,iBAAiB,EAAE,MAAM,aAAa,CAAA;AAQpD,UAAU,yBAAyB;IACjC,aAAa,CAAC,EAAE,MAAM,EAAE,CAAA;CACzB;AA2CD,wBAAgB,kBAAkB,CAChC,IAAI,EAAE,MAAM,EACZ,OAAO,GAAE,yBAA8B,GACtC,iBAAiB,CA8BnB"}

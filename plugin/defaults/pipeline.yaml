@@ -1,0 +1,188 @@
+# Invoke Pipeline Configuration
+# This file defines providers, roles, strategies, and settings for your invoke pipeline.
+# Customize roles and strategies by editing the referenced .md files.
+#
+# Cost guide:
+#   Opus is ~5x more expensive than Sonnet per token.
+#   Use Opus for tasks requiring strong reasoning (planning, spec-compliance review).
+#   Use Sonnet for mechanical tasks (research, building, pattern-matching reviews).
+#   Single-provider is cheaper than dual-provider — reserve dual for critical reviews.
+
+providers:
+  claude:
+    cli: claude
+    args: ["--print", "--model", "{{model}}", "--dangerously-skip-permissions"]
+  codex:
+    cli: codex
+    # SECURITY: danger-full-access disables codex sandbox (network + filesystem).
+    # Invoke isolates builders in temporary worktrees that are squash-merged and cleaned up,
+    # so the codex sandbox adds no containment value beyond what invoke already provides.
+    args: ["exec", "--model", "{{model}}", "--ask-for-approval", "never", "--sandbox", "danger-full-access", "-c", "reasoning_effort={{effort}}"]
+  gemini:
+    cli: gemini
+    args: ["-y", "--output-format", "text", "-m", "{{model}}", "-p"]
+
+# Each subrole lists one or more providers. When multiple providers are listed,
+# provider_mode controls dispatch behavior: parallel (all run concurrently),
+# fallback (try in order until one succeeds), or single (first provider only).
+# Override the global default per-subrole by setting provider_mode on that subrole.
+roles:
+  researcher:
+    codebase:
+      prompt: .invoke/roles/researcher/codebase.md
+      providers:
+        - provider: claude
+          model: claude-sonnet-4-6
+          effort: medium
+          timeout: 600
+    best-practices:
+      prompt: .invoke/roles/researcher/best-practices.md
+      providers:
+        - provider: claude
+          model: claude-sonnet-4-6
+          effort: medium
+          timeout: 600
+    dependencies:
+      prompt: .invoke/roles/researcher/dependencies.md
+      providers:
+        - provider: claude
+          model: claude-sonnet-4-6
+          effort: medium
+          timeout: 600
+
+  planner:
+    architect:
+      prompt: .invoke/roles/planner/architect.md
+      providers:
+        - provider: claude
+          model: claude-opus-4-6
+          effort: high
+          timeout: 600
+    alternative:
+      prompt: .invoke/roles/planner/alternative.md
+      providers:
+        - provider: claude
+          model: claude-opus-4-6
+          effort: high
+          timeout: 600
+
+  builder:
+    default:
+      prompt: .invoke/roles/builder/default.md
+      providers:
+        - provider: claude
+          model: claude-sonnet-4-6
+          effort: medium
+          timeout: 300
+    docs:
+      prompt: .invoke/roles/builder/docs.md
+      providers:
+        - provider: claude
+          model: claude-sonnet-4-6
+          effort: medium
+          timeout: 300
+    integration-test:
+      prompt: .invoke/roles/builder/integration-test.md
+      providers:
+        - provider: claude
+          model: claude-sonnet-4-6
+          effort: medium
+          timeout: 300
+    refactor:
+      prompt: .invoke/roles/builder/refactor.md
+      providers:
+        - provider: claude
+          model: claude-sonnet-4-6
+          effort: medium
+          timeout: 300
+    migration:
+      prompt: .invoke/roles/builder/migration.md
+      providers:
+        - provider: claude
+          model: claude-sonnet-4-6
+          effort: medium
+          timeout: 300
+
+  reviewer:
+    spec-compliance:
+      prompt: .invoke/roles/reviewer/spec-compliance.md
+      providers:
+        - provider: claude
+          model: claude-opus-4-6
+          effort: high
+          timeout: 300
+    security:
+      prompt: .invoke/roles/reviewer/security.md
+      providers:
+        - provider: claude
+          model: claude-sonnet-4-6
+          effort: high
+          timeout: 300
+    code-quality:
+      prompt: .invoke/roles/reviewer/code-quality.md
+      providers:
+        - provider: claude
+          model: claude-sonnet-4-6
+          effort: medium
+          timeout: 300
+    performance:
+      prompt: .invoke/roles/reviewer/performance.md
+      providers:
+        - provider: claude
+          model: claude-sonnet-4-6
+          effort: medium
+          timeout: 300
+    ux:
+      prompt: .invoke/roles/reviewer/ux.md
+      providers:
+        - provider: claude
+          model: claude-sonnet-4-6
+          effort: medium
+          timeout: 300
+    accessibility:
+      prompt: .invoke/roles/reviewer/accessibility.md
+      providers:
+        - provider: claude
+          model: claude-sonnet-4-6
+          effort: medium
+          timeout: 300
+
+strategies:
+  tdd:
+    prompt: .invoke/strategies/tdd.md
+  implementation-first:
+    prompt: .invoke/strategies/implementation-first.md
+  prototype:
+    prompt: .invoke/strategies/prototype.md
+  bug-fix:
+    prompt: .invoke/strategies/bug-fix.md
+
+settings:
+  default_strategy: tdd
+  agent_timeout: 300
+  commit_style: per-task  # per-task is the default: reviewer fixes fold into per-task commits via end-of-review autosquash
+  work_branch_prefix: invoke/work
+  # Global default for subroles with multiple providers (parallel/fallback/single):
+  default_provider_mode: parallel
+  max_review_cycles: 3
+  # Commands to run after merging worktrees (e.g., regenerate lockfiles):
+  post_merge_commands:
+    - npm install
+    - npm run test
+    - npm run build
+  # Maximum agents to run in parallel per batch (omit for unlimited):
+  # max_parallel_agents: 4
+  # Global cap on total dispatches across the entire pipeline run:
+  # max_dispatches: 20
+  # Days before sessions are considered stale and eligible for cleanup:
+  # stale_session_days: 7
+  # Activate a named preset defined in the presets section:
+  # preset: minimal
+  # Tiered reviewer groups — each tier has a name and a list of reviewer subrole keys:
+  # review_tiers:
+  #   - name: critical
+  #     reviewers: [spec-compliance, security]
+  #   - name: quality
+  #     reviewers: [code-quality, performance]
+  #   - name: polish
+  #     reviewers: [ux, accessibility]

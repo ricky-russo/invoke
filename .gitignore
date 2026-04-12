@@ -4,3 +4,4 @@ docs/superpowers/
 .invoke/*
 !.invoke/roles/
 !.invoke/strategies/
+/dist/
