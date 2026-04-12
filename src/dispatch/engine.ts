@@ -276,6 +276,7 @@ export class DispatchEngine {
   ): Promise<{ stdout: string; stderr: string; exitCode: number; timedOut: boolean }> {
     return new Promise((resolve, reject) => {
       const proc = spawn(cmd, args, { stdio: ['pipe', 'pipe', 'pipe'], cwd })
+      proc.stdin.end()
 
       let stdout = ''
       let stderr = ''

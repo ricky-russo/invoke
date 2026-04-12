@@ -4,7 +4,7 @@ import { readFile } from 'fs/promises'
 import path from 'path'
 import { parse } from 'yaml'
 
-const PRESETS_DIR = path.join(import.meta.dirname, '..', 'defaults', 'presets')
+const PRESETS_DIR = path.join(import.meta.dirname, '..', 'plugin', 'defaults', 'presets')
 
 const expectedPresets = {
   quick: {

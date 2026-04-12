@@ -1,10 +1,7 @@
 import { readdir } from 'fs/promises'
 import { existsSync } from 'fs'
 import path from 'path'
-import { fileURLToPath } from 'url'
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url))
-const PACKAGE_ROOT = path.join(__dirname, '..')
+import { getDefaultsDir } from './defaults-path.js'
 
 export interface MissingDefault {
   relativePath: string
@@ -13,7 +10,7 @@ export interface MissingDefault {
 
 export async function checkForNewDefaults(projectDir: string): Promise<MissingDefault[]> {
   const invokeDir = path.join(projectDir, '.invoke')
-  const defaultsDir = path.join(PACKAGE_ROOT, 'defaults')
+  const defaultsDir = getDefaultsDir()
 
   if (!existsSync(invokeDir) || !existsSync(defaultsDir)) {
     return []

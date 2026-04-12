@@ -17,7 +17,7 @@ const BUILDER_PROMPTS: BuilderPromptExpectation[] = [
 
 describe('default builder prompts', () => {
   it.each(BUILDER_PROMPTS)('has required structure: $file', async ({ file, expectedTitle }) => {
-    const promptPath = path.join(import.meta.dirname, '..', 'defaults', 'roles', 'builder', file)
+    const promptPath = path.join(import.meta.dirname, '..', 'plugin', 'defaults', 'roles', 'builder', file)
     const content = await readFile(promptPath, 'utf-8')
 
     expect(content).toMatch(expectedTitle)
@@ -43,7 +43,7 @@ describe('default builder prompts', () => {
   // not defaults/. If the .invoke/ tree drifts from defaults/, build tasks silently
   // regress. This test asserts byte-for-byte equality so any drift breaks CI immediately.
   it.each(BUILDER_PROMPTS)('.invoke/ builder prompt is byte-for-byte identical to defaults/: $file', async ({ file }) => {
-    const defaultsPath = path.join(import.meta.dirname, '..', 'defaults', 'roles', 'builder', file)
+    const defaultsPath = path.join(import.meta.dirname, '..', 'plugin', 'defaults', 'roles', 'builder', file)
     const invokePath = path.join(import.meta.dirname, '..', '.invoke', 'roles', 'builder', file)
     const defaultsContent = await readFile(defaultsPath, 'utf-8')
     const invokeContent = await readFile(invokePath, 'utf-8')

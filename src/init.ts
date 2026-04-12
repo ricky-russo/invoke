@@ -1,14 +1,11 @@
 import { cp, mkdir, readdir } from 'fs/promises'
 import { existsSync } from 'fs'
 import path from 'path'
-import { fileURLToPath } from 'url'
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url))
-const PACKAGE_ROOT = path.join(__dirname, '..')
+import { getDefaultsDir } from './defaults-path.js'
 
 export async function initProject(projectDir: string): Promise<void> {
   const invokeDir = path.join(projectDir, '.invoke')
-  const defaultsDir = path.join(PACKAGE_ROOT, 'defaults')
+  const defaultsDir = getDefaultsDir()
 
   // Create .invoke directory
   await mkdir(invokeDir, { recursive: true })

@@ -1,13 +1,10 @@
 import { readFile } from 'fs/promises'
 import path from 'path'
-import { fileURLToPath } from 'url'
 import { parse } from 'yaml'
 import { z } from 'zod'
 import type { InvokeConfig } from './types.js'
 import { validateWorkBranchPrefix } from './worktree/branch-prefix.js'
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url))
-const PACKAGE_ROOT = path.join(__dirname, '..')
+import { getDefaultsDir } from './defaults-path.js'
 
 const ProviderConfigSchema = z.object({
   cli: z.string(),
@@ -136,7 +133,7 @@ function deepMerge(base: unknown, override: unknown): unknown {
 async function loadPresetConfig(projectDir: string, presetName: string): Promise<PresetConfig> {
   const presetPaths = [
     path.join(projectDir, '.invoke', 'presets', `${presetName}.yaml`),
-    path.join(PACKAGE_ROOT, 'defaults', 'presets', `${presetName}.yaml`),
+    path.join(getDefaultsDir(), 'presets', `${presetName}.yaml`),
   ]
 
   for (const presetPath of presetPaths) {

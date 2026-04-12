@@ -1,8 +1,8 @@
 import { execFileSync } from 'child_process'
 import { access, readdir } from 'fs/promises'
 import path from 'path'
-import { fileURLToPath } from 'url'
 import type { InvokeConfig } from './types.js'
+import { getDefaultsDir } from './defaults-path.js'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -20,9 +20,7 @@ export interface ValidationResult {
   warnings: ValidationWarning[]
 }
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url))
-const PACKAGE_ROOT = path.join(__dirname, '..')
-const DEFAULT_PRESETS_DIR = path.join(PACKAGE_ROOT, 'defaults', 'presets')
+const DEFAULT_PRESETS_DIR = path.join(getDefaultsDir(), 'presets')
 
 // ---------------------------------------------------------------------------
 // Model Patterns

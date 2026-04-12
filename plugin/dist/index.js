@@ -39219,6 +39219,7 @@ ${r.output.raw}`).join("\n\n"),
   runProcess(cmd, args, timeout, cwd) {
     return new Promise((resolve, reject) => {
       const proc = spawn(cmd, args, { stdio: ["pipe", "pipe", "pipe"], cwd });
+      proc.stdin.end();
       let stdout = "";
       let stderr = "";
       let timedOut = false;

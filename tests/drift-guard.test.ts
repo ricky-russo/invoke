@@ -40,7 +40,7 @@ function collectProviderEntries(config: PipelineConfig): ProviderEntry[] {
 
 describe('drift-guard: defaults/pipeline.yaml', () => {
   const yaml = readFileSync(
-    path.join(__dirname, '..', 'defaults', 'pipeline.yaml'),
+    path.join(__dirname, '..', 'plugin', 'defaults', 'pipeline.yaml'),
     'utf-8',
   )
   const config = parseYaml(yaml) as PipelineConfig
