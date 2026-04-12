@@ -11,13 +11,16 @@
 providers:
     claude:
         cli: claude
-        args: ["--print", "--model", "{{model}}", "--dangerously-skip-permissions"]
+        args: ["--print", "--model", "{{model}}", "--effort", "{{effort}}", "--dangerously-skip-permissions"]
     codex:
         cli: codex
         # SECURITY: danger-full-access disables codex sandbox (network + filesystem).
         # Invoke isolates builders in temporary worktrees that are squash-merged and cleaned up,
         # so the codex sandbox adds no containment value beyond what invoke already provides.
-        args: ["--ask-for-approval", "never", "exec", "--model", "{{model}}", "--sandbox", "danger-full-access", "-c", "reasoning_effort={{effort}}"]
+        args: ["exec", "--model", "{{model}}", "--ask-for-approval", "never", "--sandbox", "danger-full-access", "-c", "reasoning_effort={{effort}}"]
+    gemini:
+        cli: gemini
+        args: ["-y", "--output-format", "text", "-m", "{{model}}", "-p"]
 
 roles:
     researcher:
@@ -25,23 +28,47 @@ roles:
             prompt: .invoke/roles/researcher/codebase.md
             providers:
                 - provider: claude
-                  model: claude-sonnet-4-6
-                  effort: medium
-                  timeout: 600
+                  model: claude-opus-4-6
+                  effort: high
+                  timeout: 900
+                - provider: codex
+                  model: gpt-5.4
+                  effort: high
+                  timeout: 900
+                - provider: gemini
+                  model: gemini-3.1-pro-preview
+                  effort: high
+                  timeout: 900
         best-practices:
             prompt: .invoke/roles/researcher/best-practices.md
             providers:
                 - provider: claude
-                  model: claude-sonnet-4-6
-                  effort: medium
-                  timeout: 600
+                  model: claude-opus-4-6
+                  effort: high
+                  timeout: 900
+                - provider: codex
+                  model: gpt-5.4
+                  effort: high
+                  timeout: 900
+                - provider: gemini
+                  model: gemini-3.1-pro-preview
+                  effort: high
+                  timeout: 900
         dependencies:
             prompt: .invoke/roles/researcher/dependencies.md
             providers:
                 - provider: claude
-                  model: claude-sonnet-4-6
-                  effort: medium
-                  timeout: 600
+                  model: claude-opus-4-6
+                  effort: high
+                  timeout: 900
+                - provider: codex
+                  model: gpt-5.4
+                  effort: high
+                  timeout: 900
+                - provider: gemini
+                  model: gemini-3.1-pro-preview
+                  effort: high
+                  timeout: 900
 
     planner:
         architect:
@@ -55,7 +82,10 @@ roles:
                   model: gpt-5.4
                   effort: high
                   timeout: 900
-            provider_mode: fallback
+                - provider: gemini
+                  model: gemini-3.1-pro-preview
+                  effort: high
+                  timeout: 900
         alternative:
             prompt: .invoke/roles/planner/alternative.md
             providers:
@@ -67,7 +97,10 @@ roles:
                   model: gpt-5.4
                   effort: high
                   timeout: 900
-            provider_mode: fallback
+                - provider: gemini
+                  model: gemini-3.1-pro-preview
+                  effort: high
+                  timeout: 900
 
     builder:
         default:
@@ -80,31 +113,31 @@ roles:
         docs:
             prompt: .invoke/roles/builder/docs.md
             providers:
-                - provider: claude
-                  model: claude-sonnet-4-6
-                  effort: medium
-                  timeout: 600
+                - provider: codex
+                  model: gpt-5.4
+                  effort: high
+                  timeout: 900
         integration-test:
             prompt: .invoke/roles/builder/integration-test.md
             providers:
-                - provider: claude
-                  model: claude-sonnet-4-6
-                  effort: medium
-                  timeout: 600
+                - provider: codex
+                  model: gpt-5.4
+                  effort: high
+                  timeout: 900
         refactor:
             prompt: .invoke/roles/builder/refactor.md
             providers:
-                - provider: claude
-                  model: claude-opus-4-6
+                - provider: codex
+                  model: gpt-5.4
                   effort: high
                   timeout: 900
         migration:
             prompt: .invoke/roles/builder/migration.md
             providers:
-                - provider: claude
-                  model: claude-sonnet-4-6
-                  effort: medium
-                  timeout: 600
+                - provider: codex
+                  model: gpt-5.4
+                  effort: high
+                  timeout: 900
 
     reviewer:
         spec-compliance:
@@ -119,6 +152,10 @@ roles:
                   model: gpt-5.4
                   effort: high
                   timeout: 900
+                - provider: gemini
+                  model: gemini-3.1-pro-preview
+                  effort: high
+                  timeout: 900
         security:
             prompt: .invoke/roles/reviewer/security.md
             provider_mode: parallel
@@ -129,6 +166,10 @@ roles:
                   timeout: 900
                 - provider: codex
                   model: gpt-5.4
+                  effort: high
+                  timeout: 900
+                - provider: gemini
+                  model: gemini-3.1-pro-preview
                   effort: high
                   timeout: 900
         code-quality:
@@ -143,6 +184,10 @@ roles:
                   model: gpt-5.4
                   effort: high
                   timeout: 900
+                - provider: gemini
+                  model: gemini-3.1-pro-preview
+                  effort: high
+                  timeout: 900
         performance:
             prompt: .invoke/roles/reviewer/performance.md
             provider_mode: parallel
@@ -155,20 +200,40 @@ roles:
                   model: gpt-5.4
                   effort: high
                   timeout: 900
+                - provider: gemini
+                  model: gemini-3.1-pro-preview
+                  effort: high
+                  timeout: 900
         ux:
             prompt: .invoke/roles/reviewer/ux.md
             providers:
                 - provider: claude
                   model: claude-sonnet-4-6
                   effort: medium
-                  timeout: 300
+                  timeout: 900
+                - provider: codex
+                  model: gpt-5.4
+                  effort: high
+                  timeout: 900
+                - provider: gemini
+                  model: gemini-3.1-pro-preview
+                  effort: high
+                  timeout: 900
         accessibility:
             prompt: .invoke/roles/reviewer/accessibility.md
             providers:
                 - provider: claude
                   model: claude-sonnet-4-6
                   effort: medium
-                  timeout: 300
+                  timeout: 900
+                - provider: codex
+                  model: gpt-5.4
+                  effort: high
+                  timeout: 900
+                - provider: gemini
+                  model: gemini-3.1-pro-preview
+                  effort: high
+                  timeout: 900
 
 strategies:
     tdd:
