@@ -1,8 +1,0 @@
-name: prototype
-description: Rapid iteration preset with minimal review overhead.
-settings:
-  default_strategy: prototype
-  max_review_cycles: 0
-reviewer_selection: []
-strategy_selection:
-  - prototype
