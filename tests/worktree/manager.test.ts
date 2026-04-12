@@ -1,10 +1,10 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { WorktreeManager } from '../../src/worktree/manager.js'
 import { SessionWorktreeManager } from '../../src/worktree/session-worktree.js'
 import { withRepoLock } from '../../src/worktree/repo-lock.js'
 import { execFileSync, execSync } from 'child_process'
 import { mkdtemp, readFile, rm, writeFile } from 'fs/promises'
-import { existsSync, realpathSync } from 'fs'
+import { existsSync, realpathSync, writeFileSync } from 'fs'
 import path from 'path'
 import os from 'os'
 
@@ -97,18 +97,40 @@ describe('WorktreeManager', () => {
     expect(parentCount).toBe(1)
   })
 
-  it('auto-commits uncommitted worktree changes before merge (sandbox agents)', async () => {
+  it('auto-commits unstaged worktree files before merge and logs diagnostics', async () => {
     execSync('git checkout -b work-branch-sandbox', { cwd: repoDir })
 
     const wt = await manager.create('task-sandbox')
-    // Simulate agent writing a file without committing (sandbox restriction)
-    await writeFile(path.join(wt.worktreePath, 'sandbox-file.ts'), 'export const z = 3')
+    writeFileSync(path.join(wt.worktreePath, 'sandbox-file.ts'), 'export const z = 3')
+    writeFileSync(path.join(wt.worktreePath, 'sandbox-extra.txt'), 'sandbox extra')
 
-    const result = await manager.merge('task-sandbox')
+    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
 
-    expect(result.status).toBe('merged')
-    expect(result.commitSha).toMatch(/^[0-9a-f]{40}$/)
-    expect(existsSync(path.join(repoDir, 'sandbox-file.ts'))).toBe(true)
+    try {
+      const result = await manager.merge('task-sandbox')
+
+      expect(result.status).toBe('merged')
+      if (result.status !== 'merged') {
+        throw new Error('Expected merged result')
+      }
+
+      expect(result.commitSha).toMatch(/^[0-9a-f]{40}$/)
+      expect(execSync('git show HEAD:sandbox-file.ts', { cwd: repoDir }).toString().trim()).toBe(
+        'export const z = 3'
+      )
+      expect(execSync('git show HEAD:sandbox-extra.txt', { cwd: repoDir }).toString().trim()).toBe('sandbox extra')
+
+      const autoCommitSha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: wt.worktreePath }).toString().trim()
+      const autoCommitMessage = execSync('git log -1 --pretty=%s', { cwd: wt.worktreePath }).toString().trim()
+
+      expect(autoCommitMessage).toContain('task-sandbox')
+      expect(consoleErrorSpy).toHaveBeenCalledWith(
+        '[invoke] auto-commit: staged 2 file(s) in worktree for task-sandbox'
+      )
+      expect(consoleErrorSpy).toHaveBeenCalledWith(`[invoke] auto-commit: committed ${autoCommitSha} for task-sandbox`)
+    } finally {
+      consoleErrorSpy.mockRestore()
+    }
   })
 
   it('uses a custom commit message when provided', async () => {

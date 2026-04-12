@@ -20,7 +20,7 @@ providers:
     args: ["--print", "--model", "{{model}}"]
   codex:
     cli: codex
-    args: ["exec", "--model", "{{model}}", "--full-auto", "-c", "reasoning_effort={{effort}}"]
+    args: ["exec", "--model", "{{model}}", "--ask-for-approval", "never", "--sandbox", "danger-full-access", "-c", "reasoning_effort={{effort}}"]
 
 roles:
   researcher:

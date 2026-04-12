@@ -40230,6 +40230,12 @@ var WorktreeManager = class {
     const mergeTargetPath = options?.mergeTargetPath ?? this.repoDir;
     const message = options?.commitMessage ?? `feat: ${taskId}`;
     git(info.worktreePath, ["add", "-A"]);
+    const stagedFiles = git(info.worktreePath, ["diff", "--cached", "--name-only"]).split("\n").map((line) => line.trim()).filter(Boolean);
+    if (stagedFiles.length > 0) {
+      console.error(`[invoke] auto-commit: staged ${stagedFiles.length} file(s) in worktree for ${taskId}`);
+    } else {
+      console.error(`[invoke] auto-commit: no changes to commit for ${taskId}`);
+    }
     const diff = tryGit(info.worktreePath, ["diff", "--cached", "--quiet"]);
     if (!diff.ok) {
       const code = diff.error?.status;
@@ -40240,6 +40246,8 @@ var WorktreeManager = class {
       }
       try {
         git(info.worktreePath, ["commit", "-m", `agent work: ${taskId}`]);
+        const autoCommitSha = git(info.worktreePath, ["rev-parse", "HEAD"]).trim();
+        console.error(`[invoke] auto-commit: committed ${autoCommitSha} for ${taskId}`);
       } catch (commitError) {
         throw new Error(
           `Failed to auto-commit agent work for task ${taskId}: ${commitError?.message ?? commitError}`

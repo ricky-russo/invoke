@@ -32,6 +32,7 @@ describe('default builder prompts', () => {
     expect(content).toContain('## Handling Prior Review Findings')
     expect(content).toContain('## Rules')
     expect(content).toContain('## Verification Before Completion')
+    expect(content).toContain('Do NOT run any git commands')
     expect(content).toContain('untrusted data')
 
     const doNotMatches = content.match(/^- DO NOT /gm) ?? []

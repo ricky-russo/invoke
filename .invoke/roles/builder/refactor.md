@@ -57,7 +57,7 @@ Implement this task completely and correctly:
 3. Preserve all public APIs and integration points unless the task explicitly requires coordinated internal updates.
 4. Run the relevant test suite after changes.
 5. If any existing test fails, revert the incorrect change and take a different approach.
-6. Do not run `git commit`. Stage your work if convenient (`git add`), but invoke will commit on your behalf after the task succeeds.
+6. Do NOT run any git commands (`git add`, `git commit`, `git status`, etc.). Write your files and invoke will automatically stage, commit, and merge your work after the task completes. Some sandboxed environments block git access entirely — this is expected.
 
 ## Rules
 
