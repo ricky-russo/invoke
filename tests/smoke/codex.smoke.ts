@@ -14,7 +14,7 @@ try {
 describe.skipIf(!cliAvailable)('Codex CLI Smoke Tests', () => {
   const provider = new CodexProvider({
     cli: 'codex',
-    args: ['exec', '--model', '{{model}}', '--ask-for-approval', 'never', '--sandbox', 'danger-full-access', '-c', 'reasoning_effort={{effort}}'],
+    args: ['--ask-for-approval', 'never', 'exec', '--model', '{{model}}', '--sandbox', 'danger-full-access', '-c', 'reasoning_effort={{effort}}'],
   })
   const parser = new CodexParser()
 
