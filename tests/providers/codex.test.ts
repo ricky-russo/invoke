@@ -4,7 +4,7 @@ import { CodexProvider } from '../../src/providers/codex.js'
 describe('CodexProvider', () => {
   const provider = new CodexProvider({
     cli: 'codex',
-    args: ['exec', '--model', '{{model}}', '--full-auto', '-c', 'reasoning_effort={{effort}}'],
+    args: ['exec', '--model', '{{model}}', '--ask-for-approval', 'never', '--sandbox', 'danger-full-access', '-c', 'reasoning_effort={{effort}}'],
   })
 
   it('has the correct name', () => {

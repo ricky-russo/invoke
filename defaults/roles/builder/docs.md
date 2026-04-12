@@ -122,4 +122,4 @@ When complete, report:
 
 ## IMPORTANT
 
-Do not run `git commit`. Stage your work if convenient (`git add`), but invoke will commit on your behalf after the task succeeds.
+Do NOT run any git commands (`git add`, `git commit`, `git status`, etc.). Write your files and invoke will automatically stage, commit, and merge your work after the task completes. Some sandboxed environments block git access entirely — this is expected.
