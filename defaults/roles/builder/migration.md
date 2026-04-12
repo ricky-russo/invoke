@@ -38,7 +38,7 @@ Implement this migration completely and safely:
 6. Verify the migration with realistic data volumes and representative states. Do not rely on empty-table assumptions.
 7. Document rollback procedures before finishing.
 8. Verify your implementation works by running tests.
-9. Do not run `git commit`. Stage your work if convenient (`git add`), but invoke will commit on your behalf after the task succeeds.
+9. Do NOT run any git commands (`git add`, `git commit`, `git status`, etc.). Write your files and invoke will automatically stage, commit, and merge your work after the task completes. Some sandboxed environments block git access entirely — this is expected.
 
 ## Behavioral Guardrails
 

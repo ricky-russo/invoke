@@ -74,6 +74,16 @@ export class WorktreeManager {
     // (agents in sandboxed environments may not be able to commit).
     // Stage everything first — staging failures are real and must throw.
     git(info.worktreePath, ['add', '-A'])
+    const stagedFiles = git(info.worktreePath, ['diff', '--cached', '--name-only'])
+      .split('\n')
+      .map(line => line.trim())
+      .filter(Boolean)
+
+    if (stagedFiles.length > 0) {
+      console.error(`[invoke] auto-commit: staged ${stagedFiles.length} file(s) in worktree for ${taskId}`)
+    } else {
+      console.error(`[invoke] auto-commit: no changes to commit for ${taskId}`)
+    }
 
     // `git diff --cached --quiet` exits 0 when there are no staged changes,
     // and exits 1 when there ARE staged changes. Any other exit code is an error.
@@ -88,6 +98,8 @@ export class WorktreeManager {
       }
       try {
         git(info.worktreePath, ['commit', '-m', `agent work: ${taskId}`])
+        const autoCommitSha = git(info.worktreePath, ['rev-parse', 'HEAD']).trim()
+        console.error(`[invoke] auto-commit: committed ${autoCommitSha} for ${taskId}`)
       } catch (commitError) {
         throw new Error(
           `Failed to auto-commit agent work for task ${taskId}: ${(commitError as Error)?.message ?? commitError}`
