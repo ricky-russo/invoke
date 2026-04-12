@@ -67,6 +67,7 @@ function queueSpawnBehaviors(...behaviors: SpawnBehavior[]): void {
     const proc = new EventEmitter() as any
     proc.stdout = new EventEmitter()
     proc.stderr = new EventEmitter()
+    proc.stdin = { end: vi.fn() }
     proc.pid = 12345
     proc.kill = vi.fn(() => {
       if (behavior.closeOnKill) {

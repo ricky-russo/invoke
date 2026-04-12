@@ -4,7 +4,7 @@ import { fileURLToPath } from 'url'
 import { describe, expect, it } from 'vitest'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
-const TEMPLATE_PATH = path.join(__dirname, '..', 'defaults', 'context-template.md')
+const TEMPLATE_PATH = path.join(__dirname, '..', 'plugin', 'defaults', 'context-template.md')
 
 describe('default context template', () => {
   it('uses the canonical context section headers', async () => {

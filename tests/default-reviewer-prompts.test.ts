@@ -92,7 +92,7 @@ const REVIEWER_PROMPTS: ReviewerPromptExpectation[] = [
 
 describe('default reviewer prompts', () => {
   it.each(REVIEWER_PROMPTS)('includes guardrails, anti-patterns, few-shot examples, and nothing-found handling in $file', async ({ file, nothingFound, antiPatterns, preservedCoreText }) => {
-    const promptPath = path.join(import.meta.dirname, '..', 'defaults', 'roles', 'reviewer', file)
+    const promptPath = path.join(import.meta.dirname, '..', 'plugin', 'defaults', 'roles', 'reviewer', file)
     const content = await readFile(promptPath, 'utf-8')
 
     expect(content).toContain('## Behavioral Guardrails')
@@ -136,7 +136,7 @@ describe('default reviewer prompts', () => {
   // reviews silently regress on every change. This test asserts byte-for-byte equality
   // between the two trees so any drift breaks CI immediately.
   it.each(REVIEWER_PROMPTS)('.invoke/ reviewer prompt is byte-for-byte identical to defaults/: $file', async ({ file }) => {
-    const defaultsPath = path.join(import.meta.dirname, '..', 'defaults', 'roles', 'reviewer', file)
+    const defaultsPath = path.join(import.meta.dirname, '..', 'plugin', 'defaults', 'roles', 'reviewer', file)
     const invokePath = path.join(import.meta.dirname, '..', '.invoke', 'roles', 'reviewer', file)
     const defaultsContent = await readFile(defaultsPath, 'utf-8')
     const invokeContent = await readFile(invokePath, 'utf-8')

@@ -87,10 +87,14 @@ settings:
   work_branch_prefix: invoke
 `
 
+// Use dynamic dates so the session never ages past stale_session_days
+const LEGACY_STARTED = new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString()
+const LEGACY_UPDATED = new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString()
+
 const LEGACY_STATE: PipelineState = {
   pipeline_id: 'legacy-pipeline',
-  started: '2026-04-01T08:00:00.000Z',
-  last_updated: '2026-04-05T09:00:00.000Z',
+  started: LEGACY_STARTED,
+  last_updated: LEGACY_UPDATED,
   current_stage: 'build',
   batches: [],
   review_cycles: [],
@@ -203,8 +207,8 @@ describe.sequential('index bootstrap smoke', () => {
         session_id: 'legacy-pipeline',
         pipeline_id: 'legacy-pipeline',
         current_stage: 'build',
-        started: '2026-04-01T08:00:00.000Z',
-        last_updated: '2026-04-05T09:00:00.000Z',
+        started: LEGACY_STARTED,
+        last_updated: LEGACY_UPDATED,
         status: 'active',
       },
     ])

@@ -14,7 +14,7 @@ const PLANNER_PROMPTS: PlannerPromptExpectation[] = [
 
 describe('default planner prompts', () => {
   it.each(PLANNER_PROMPTS)('has required structure: $file', async ({ file, expectedTitle }) => {
-    const promptPath = path.join(import.meta.dirname, '..', 'defaults', 'roles', 'planner', file)
+    const promptPath = path.join(import.meta.dirname, '..', 'plugin', 'defaults', 'roles', 'planner', file)
     const content = await readFile(promptPath, 'utf-8')
 
     expect(content).toMatch(expectedTitle)
@@ -32,7 +32,7 @@ describe('default planner prompts', () => {
   // Drift guard: planner dispatch reads from .invoke/roles/planner/. This asserts
   // byte-for-byte equality so any drift between defaults/ and .invoke/ breaks CI.
   it.each(PLANNER_PROMPTS)('.invoke/ planner prompt is byte-for-byte identical to defaults/: $file', async ({ file }) => {
-    const defaultsPath = path.join(import.meta.dirname, '..', 'defaults', 'roles', 'planner', file)
+    const defaultsPath = path.join(import.meta.dirname, '..', 'plugin', 'defaults', 'roles', 'planner', file)
     const invokePath = path.join(import.meta.dirname, '..', '.invoke', 'roles', 'planner', file)
     const defaultsContent = await readFile(defaultsPath, 'utf-8')
     const invokeContent = await readFile(invokePath, 'utf-8')

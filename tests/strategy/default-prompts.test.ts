@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { readFile } from 'fs/promises'
 import path from 'path'
 
-const STRATEGY_DIR = path.join(import.meta.dirname, '..', '..', 'defaults', 'strategies')
+const STRATEGY_DIR = path.join(import.meta.dirname, '..', '..', 'plugin', 'defaults', 'strategies')
 
 interface StrategyExpectation {
   file: string
