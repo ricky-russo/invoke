@@ -1,27 +1,50 @@
 # Configuration Reference
 
-Invoke is configured through `.invoke/pipeline.yaml` in your project root. This file defines the AI providers available to the pipeline, the roles agents play, the strategies that govern execution order, and global settings.
+`.invoke/pipeline.yaml` is the project-level configuration file that Invoke reads on every config load. It defines provider commands, role prompts and provider assignments, strategy prompt files, global settings, and optional preset definitions.
 
-When invoke starts it validates the full configuration against its schema and surfaces any warnings before proceeding. See [Validation](#validation) for details.
+## 1. Overview
 
----
+Invoke loads the pipeline config from `<project-root>/.invoke/pipeline.yaml`. The loader expects top-level `providers`, `roles`, `strategies`, and `settings` keys. `presets` is optional.
 
-## File location
+This is a minimal schema-valid starting point:
 
+```yaml
+providers:
+  claude:
+    cli: claude
+    args: ["--print", "--model", "{{model}}", "--dangerously-skip-permissions"]
+
+roles:
+  builder:
+    default:
+      prompt: .invoke/roles/builder/default.md
+      providers:
+        - provider: claude
+          model: claude-sonnet-4-6
+          effort: medium
+
+strategies:
+  tdd:
+    prompt: .invoke/strategies/tdd.md
+
+settings:
+  default_strategy: tdd
+  agent_timeout: 300
+  commit_style: per-task
+  work_branch_prefix: invoke/work
 ```
-<project-root>/
-  .invoke/
-    pipeline.yaml     ← main configuration file
-    roles/            ← prompt files referenced by roles
-    strategies/       ← prompt files referenced by strategies
-    presets/          ← optional project-local preset files
-```
 
----
+> **Security:** `--dangerously-skip-permissions` and `--dangerously-bypass-approvals-and-sandbox` bypass provider-side permission checks. See [Security Considerations](providers.md#security-considerations) before using either flag in production.
 
-## Providers
+Each role entry must provide a `prompt` plus either a `providers` array or the single-provider shorthand (`provider`, `model`, `effort`). During normalization, shorthand entries are converted into the same `providers[]` structure used everywhere else.
 
-The `providers` map declares every AI CLI tool that invoke can dispatch to. Keys are arbitrary names you choose; they are referenced from role definitions.
+The generated default file is larger than the minimal example above. It includes three provider definitions, four role groups, four built-in strategies, and a populated settings block.
+
+## 2. Providers
+
+`providers` is a map from provider name to a command definition. Each provider config has a `cli` string and an `args` string array.
+
+The shipped defaults define these three providers:
 
 ```yaml
 providers:
@@ -30,362 +53,138 @@ providers:
     args: ["--print", "--model", "{{model}}", "--dangerously-skip-permissions"]
   codex:
     cli: codex
-    args: ["exec", "--model", "{{model}}", "--full-auto", "-c", "reasoning_effort={{effort}}"]
+    args: ["--dangerously-bypass-approvals-and-sandbox", "exec", "--model", "{{model}}", "-c", "reasoning_effort={{effort}}"]
+  gemini:
+    cli: gemini
+    args: ["-y", "--output-format", "text", "-m", "{{model}}", "-p"]
 ```
+
+> **Security:** The shipped Claude and Codex provider examples both include `dangerously-*` flags. Review [Security Considerations](providers.md#security-considerations) before reusing these defaults in production.
+
+These default values come directly from the generated pipeline template.
 
 ### `providers.<name>.cli`
 
 Type: `string`
 
-The CLI binary name that invoke will execute. The binary must be on `PATH`. Examples: `claude`, `codex`.
+The executable Invoke runs for that provider. Validation checks that the CLI exists on `PATH` for providers that are referenced by at least one role.
 
 ### `providers.<name>.args`
 
 Type: `string[]`
 
-Array of arguments passed to the CLI binary. Two template variables are interpolated at dispatch time:
+This is the configured argument list for the provider command. At dispatch time, Invoke substitutes template variables in each configured argument string. It then appends the rendered prompt as the final CLI argument. The built-in Codex provider also appends `--skip-git-repo-check` before the prompt.
 
-- `{{model}}` — replaced with the `model` value from the role's provider entry
-- `{{effort}}` — replaced with the `effort` value from the role's provider entry (`low`, `medium`, or `high`)
+### Template Variables
 
-You can include these variables anywhere in the args array. Providers that do not use a particular variable (e.g., a provider that has no effort concept) simply omit it from the args.
+The built-in provider args use two placeholders:
 
----
+- `{{model}}` is replaced with the `model` value from the selected provider entry under a role's `providers` array.
+- `{{effort}}` is replaced with the provider entry's `effort` value. The value must be `low`, `medium`, or `high`.
 
-## Roles
+Gemini's default args use `{{model}}` but not `{{effort}}`. No effort placeholder is present in the shipped Gemini config.
 
-The `roles` map organises agents into four named groups. Each group contains one or more subroles. Invoke runs the appropriate subroles for each stage of the pipeline.
+## 3. Roles
 
-```yaml
-roles:
-  researcher:   # discovery and analysis before planning
-    codebase: ...
-    best-practices: ...
-    dependencies: ...
+`roles` is a nested map: role group -> subrole -> role config. A normalized role config always has a `prompt` and a `providers` array. It can also set `provider_mode`. Each provider entry contains `provider`, `model`, `effort`, and optional `timeout`.
 
-  planner:      # architecture and alternative approaches
-    architect: ...
-    alternative: ...
+The defaults define four role groups: `researcher`, `planner`, `builder`, and `reviewer`.
 
-  builder:      # implementation
-    default: ...
-    docs: ...
-    integration-test: ...
-    refactor: ...
-    migration: ...
-
-  reviewer:     # post-build quality checks
-    spec-compliance: ...
-    security: ...
-    code-quality: ...
-    performance: ...
-    ux: ...
-    accessibility: ...
-```
-
-### Role groups
-
-| Group | Purpose |
-|---|---|
-| `researcher` | Analyses the existing codebase, third-party best practices, and dependency landscape before a plan is written. Subroles: `codebase`, `best-practices`, `dependencies`. |
-| `planner` | Produces the implementation plan. The `architect` subrole generates the primary plan; the `alternative` subrole generates a competing approach so the orchestrator can compare them. |
-| `builder` | Executes the implementation tasks produced by the planner. Five subroles are available — see [Builder subroles](#builder-subroles) below. |
-| `reviewer` | Reviews completed work across six dimensions: `spec-compliance`, `security`, `code-quality`, `performance`, `ux`, and `accessibility`. |
-
-### Builder subroles
-
-Each builder subrole has a distinct focus. The orchestrator assigns tasks to the appropriate subrole based on the nature of the work.
-
-| Subrole | Intended use |
-|---|---|
-| `default` | General-purpose implementation work — new features, modifications, and anything without a more specific category. |
-| `docs` | Documentation updates: README files, API references, inline comments, and other written material. |
-| `integration-test` | Cross-module and end-to-end tests that exercise multiple components working together. |
-| `refactor` | Code quality improvements that change structure without altering behaviour: renaming, extracting, simplifying. |
-| `migration` | Breaking changes and data migrations: schema changes, renamed APIs, format upgrades. |
-
-### Subrole fields
-
-Each subrole entry requires a `prompt` path and at least one provider, declared in one of two formats.
-
-#### `prompt`
+### `roles.<group>.<subrole>.prompt`
 
 Type: `string`
 
-Path to the Markdown prompt file for this subrole, relative to the project root.
+Path to the prompt file for that subrole. Validation checks that the referenced file exists on disk.
+
+### `roles.<group>.<subrole>.providers`
+
+Type: `ProviderEntry[]`
+
+Each entry selects a provider by name. It also supplies the `model`, `effort`, and optional per-entry `timeout` used for that role. If `timeout` is omitted, dispatch falls back to `settings.agent_timeout`.
+
+The shipped defaults use the `providers` array form for every subrole, even when only one provider entry is present.
+
+### Researcher
+
+| Subrole | Default `prompt` | Default provider entry |
+|---|---|---|
+| `codebase` | `.invoke/roles/researcher/codebase.md` | `claude`, `claude-sonnet-4-6`, `medium`, `timeout: 600` |
+| `best-practices` | `.invoke/roles/researcher/best-practices.md` | `claude`, `claude-sonnet-4-6`, `medium`, `timeout: 600` |
+| `dependencies` | `.invoke/roles/researcher/dependencies.md` | `claude`, `claude-sonnet-4-6`, `medium`, `timeout: 600` |
+
+Defaults above are defined in the pipeline template.
+
+### Planner
+
+| Subrole | Default `prompt` | Default provider entry |
+|---|---|---|
+| `architect` | `.invoke/roles/planner/architect.md` | `claude`, `claude-opus-4-6`, `high`, `timeout: 600` |
+| `alternative` | `.invoke/roles/planner/alternative.md` | `claude`, `claude-opus-4-6`, `high`, `timeout: 600` |
+
+Defaults above are defined in the pipeline template.
+
+### Builder
+
+| Subrole | Default `prompt` | Default provider entry |
+|---|---|---|
+| `default` | `.invoke/roles/builder/default.md` | `claude`, `claude-sonnet-4-6`, `medium`, `timeout: 300` |
+| `docs` | `.invoke/roles/builder/docs.md` | `claude`, `claude-sonnet-4-6`, `medium`, `timeout: 300` |
+| `integration-test` | `.invoke/roles/builder/integration-test.md` | `claude`, `claude-sonnet-4-6`, `medium`, `timeout: 300` |
+| `refactor` | `.invoke/roles/builder/refactor.md` | `claude`, `claude-sonnet-4-6`, `medium`, `timeout: 300` |
+| `migration` | `.invoke/roles/builder/migration.md` | `claude`, `claude-sonnet-4-6`, `medium`, `timeout: 300` |
+
+Defaults above are defined in the pipeline template.
+
+### Reviewer
+
+| Subrole | Default `prompt` | Default provider entry |
+|---|---|---|
+| `spec-compliance` | `.invoke/roles/reviewer/spec-compliance.md` | `claude`, `claude-opus-4-6`, `high`, `timeout: 300` |
+| `security` | `.invoke/roles/reviewer/security.md` | `claude`, `claude-sonnet-4-6`, `high`, `timeout: 300` |
+| `code-quality` | `.invoke/roles/reviewer/code-quality.md` | `claude`, `claude-sonnet-4-6`, `medium`, `timeout: 300` |
+| `performance` | `.invoke/roles/reviewer/performance.md` | `claude`, `claude-sonnet-4-6`, `medium`, `timeout: 300` |
+| `ux` | `.invoke/roles/reviewer/ux.md` | `claude`, `claude-sonnet-4-6`, `medium`, `timeout: 300` |
+| `accessibility` | `.invoke/roles/reviewer/accessibility.md` | `claude`, `claude-sonnet-4-6`, `medium`, `timeout: 300` |
+
+Defaults above are defined in the pipeline template.
+
+## 4. Strategies
+
+`strategies` is a map from strategy name to a prompt file. The default configuration ships four built-in strategies.
+
+| Strategy | Prompt | What the shipped prompt enforces |
+|---|---|---|
+| `tdd` | `.invoke/strategies/tdd.md` | Strict red -> verify red -> green -> refactor -> repeat. The prompt explicitly forbids writing production code before a failing test exists. |
+| `implementation-first` | `.invoke/strategies/implementation-first.md` | Implement first, then write tests for every acceptance criterion before the task is complete. |
+| `prototype` | `.invoke/strategies/prototype.md` | Optimize for speed and the happy path. Tests and hardening are skipped unless the acceptance criteria require them. |
+| `bug-fix` | `.invoke/strategies/bug-fix.md` | Reproduce the bug, identify the root cause, create a failing test, then make the smallest fix that resolves it. |
+
+Strategy names and prompt paths come from the default pipeline. The behavioral summaries above come from the shipped strategy prompt files.
+
+## 5. Settings
+
+`settings` holds global pipeline options. `settings.review_tiers` and `settings.preset` are documented in sections 6 and 7. They have extra structure and merge behavior.
+
+| Key | Type | Default in `plugin/defaults/pipeline.yaml` | Description |
+|---|---|---|---|
+| `default_strategy` | `string` | `tdd` | Default strategy name. Validation errors if the value does not match a key under `strategies`. |
+| `agent_timeout` | `number` | `300` | Default timeout, in seconds, for provider dispatches that do not specify `providers[].timeout`. |
+| `commit_style` | `"one-commit" \| "per-batch" \| "per-task" \| "custom"` | `per-task` | Commit-style selector. The schema permits four values, and the shipped default file sets `per-task`. |
+| `work_branch_prefix` | `string` | `invoke/work` | Prefix used when creating session work branches. Session work branches are created as `<work_branch_prefix>/<session_id>`. |
+| `stale_session_days` | `number` | unset | Optional stale-session threshold. When it is not configured, session tooling falls back to 7 days. |
+| `post_merge_commands` | `string[]` | `["npm install", "npm run test", "npm run build"]` | Shell commands run after merge. If the list is unset or empty, nothing runs. |
+| `max_parallel_agents` | `number` | unset | Optional per-batch concurrency cap. When unset, batch execution uses `0`, which means unlimited parallelism. |
+| `default_provider_mode` | `"parallel" \| "fallback" \| "single"` | `parallel` | Global default for multi-provider role dispatch when the subrole does not set its own `provider_mode`. |
+| `max_review_cycles` | `number` | `3` | Configured review-cycle cap. The schema accepts `0` or greater, and the value is surfaced with review-cycle counts. |
+| `max_dispatches` | `number` | unset | Optional total dispatch cap for a pipeline. When set, projected dispatch counts are checked before a batch starts. Dispatch can be blocked once the limit is reached. |
+
+Settings defaults come from the shipped pipeline template. Types and constraints come from the config schema. Runtime behavior comes from the dispatch, session, and post-merge code paths.
+
+## 6. Review Tiers
+
+`settings.review_tiers` configures named reviewer groups. The canonical format is an array of objects:
 
 ```yaml
-prompt: .invoke/roles/researcher/codebase.md
-```
-
-#### Multi-provider array format
-
-Declare a `providers` array when you want to assign multiple providers to a subrole. The `provider_mode` field (see below) controls how those providers are used.
-
-```yaml
-roles:
-  researcher:
-    codebase:
-      prompt: .invoke/roles/researcher/codebase.md
-      providers:
-        - provider: claude
-          model: claude-opus-4-6
-          effort: high
-          timeout: 600
-        - provider: codex
-          model: o3
-          effort: high
-          timeout: 600
-```
-
-#### Shorthand single-provider format
-
-When you only need one provider, you can inline the fields directly on the subrole instead of nesting a `providers` array.
-
-```yaml
-roles:
-  builder:
-    default:
-      prompt: .invoke/roles/builder/default.md
-      provider: claude
-      model: claude-sonnet-4-6
-      effort: high
-```
-
-Invoke normalises the shorthand into the same internal structure as the array format. You cannot mix both formats on the same subrole — use one or the other.
-
-#### `provider_mode`
-
-Type: `"parallel" | "fallback" | "single"`, optional
-
-Controls how invoke uses multiple providers for a subrole. This field is ignored when the subrole has only one provider configured — single-provider subroles always dispatch to that one provider regardless of this setting.
-
-**Mode resolution order** (first defined value wins):
-
-1. `provider_mode` on the subrole itself
-2. `settings.default_provider_mode` in the settings block
-3. `'parallel'` (built-in default)
-
-If a subrole has only one provider configured, the mode is forced to `'single'` regardless of any setting.
-
-**Mode behaviours:**
-
-| Mode | Behaviour |
-|---|---|
-| `parallel` | All providers are dispatched concurrently. Results are merged when all complete. |
-| `fallback` | Providers are tried in order. The first provider to succeed returns its result; subsequent providers are not called. |
-| `single` | Only `providers[0]` is dispatched. Additional entries in the array are ignored. |
-
-**Parallel result merging:**
-
-When running in `parallel` mode with multiple providers, invoke merges results as follows:
-
-- **Reviewer roles** (subroles that produce `findings`): Findings are deduplicated by file and line number (or by word overlap in the issue text when no line number is present). Findings from multiple providers that match the same location are merged into one entry; the `agreedBy` array on the merged finding lists every provider that flagged it. When providers disagree on severity, the higher severity is kept.
-- **Non-reviewer roles**: Reports are concatenated in sequence, with a `## {provider} ({model})` header before each provider's output.
-
-```yaml
-roles:
-  reviewer:
-    spec-compliance:
-      prompt: .invoke/roles/reviewer/spec-compliance.md
-      provider_mode: parallel
-      providers:
-        - provider: claude
-          model: claude-opus-4-6
-          effort: high
-          timeout: 300
-        - provider: codex
-          model: o3
-          effort: high
-          timeout: 300
-```
-
-### Provider entry fields
-
-#### `provider`
-
-Type: `string`
-
-Must match a key defined under `providers:` at the top level.
-
-#### `model`
-
-Type: `string`
-
-The model identifier passed to the CLI at runtime via the `{{model}}` template variable. Examples: `claude-opus-4-6`, `claude-sonnet-4-6`, `o3`.
-
-#### `effort`
-
-Type: `"low" | "medium" | "high"`
-
-Reasoning effort level. Passed to the CLI via the `{{effort}}` template variable. Higher effort typically produces better results at the cost of latency and token usage.
-
-#### `timeout`
-
-Type: `number` (seconds), optional
-
-Per-subrole timeout in seconds. When set, this overrides the global `settings.agent_timeout` for this specific subrole. Useful for long-running research or architecture roles that need more time than the default.
-
-```yaml
-providers:
-  - provider: claude
-    model: claude-opus-4-6
-    effort: high
-    timeout: 600   # 10 minutes, overrides the global 300-second default
-```
-
----
-
-## Strategies
-
-The `strategies` map defines named execution strategies. A strategy prompt instructs the orchestrator on how to sequence and structure the build phase.
-
-```yaml
-strategies:
-  tdd:
-    prompt: .invoke/strategies/tdd.md
-  implementation-first:
-    prompt: .invoke/strategies/implementation-first.md
-  prototype:
-    prompt: .invoke/strategies/prototype.md
-  bug-fix:
-    prompt: .invoke/strategies/bug-fix.md
-```
-
-### `strategies.<name>.prompt`
-
-Type: `string`
-
-Path to the strategy prompt Markdown file, relative to the project root.
-
-### Default strategies
-
-| Name | Description |
-|---|---|
-| `tdd` | Test-driven development. Builder agents write tests first, then implementation. |
-| `implementation-first` | Implementation is written before tests, suitable for well-understood features. |
-| `prototype` | Rapid exploration with minimal structure. Useful for spikes and proof-of-concept work. |
-| `bug-fix` | Focused diagnostic and fix workflow. Orients research and build phases around reproducing and resolving a defect. |
-
-### Auto-detection
-
-When you describe a task, invoke scans the description for keywords and suggests a strategy before asking you to confirm. The suggestion is advisory only — you always make the final choice.
-
-| Keywords found | Suggested strategy |
-|---|---|
-| `fix`, `bug`, `regression`, `broken` | `bug-fix` |
-| `prototype`, `spike`, `mvp`, `quickly`, `urgent` | `prototype` |
-| `test` + existing test files detected | `tdd` |
-| No strong pattern | `tdd` (default) |
-
-Two or more matching keywords from the same group raise the confidence level from `medium` to `high`. Invoke displays the suggestion and its reasoning; you select the strategy to use.
-
----
-
-## Settings
-
-The `settings` block controls global pipeline behaviour.
-
-```yaml
-settings:
-  default_strategy: tdd
-  agent_timeout: 300
-  commit_style: per-batch
-  work_branch_prefix: invoke/work
-  default_provider_mode: parallel
-  max_review_cycles: 3
-  post_merge_commands:
-    - composer install
-```
-
-### `default_strategy`
-
-Type: `string`
-
-The strategy used when the user does not specify one at invocation time. Must match a key defined under `strategies:`.
-
-### `agent_timeout`
-
-Type: `number` (seconds)
-
-Default: `300`
-
-Global fallback timeout for all agent dispatches. Any subrole that does not define its own `timeout` field will be subject to this limit. Must be a positive number.
-
-### `commit_style`
-
-Type: `"one-commit" | "per-batch" | "per-task" | "custom"`
-
-Controls how invoke creates git commits during the build phase.
-
-| Value | Behaviour |
-|---|---|
-| `one-commit` | All changes from the entire pipeline run are squashed into a single commit. |
-| `per-batch` | One commit is created after each batch of parallel tasks completes. |
-| `per-task` | Each individual task produces its own commit when its worktree is merged. |
-| `custom` | Invoke makes no automatic commits. You manage git history yourself. |
-
-### `work_branch_prefix`
-
-Type: `string`
-
-String prefix used when invoke creates work branches and worktrees. For example, with `invoke/work`, invoke creates branches like `invoke/work/abc123`.
-
-### `preset`
-
-Type: `string`, optional
-
-Name of the preset to activate for this pipeline run. When set, invoke loads the named preset and uses its values as a base, then applies any values explicitly defined in `settings` on top. See [Presets](#presets) for details.
-
-```yaml
-settings:
-  preset: quick
-```
-
-### `stale_session_days`
-
-Type: `number`, optional
-
-Default: `7`
-
-Number of days after which a session is considered stale and eligible for cleanup. Must be a positive number.
-
-### `default_provider_mode`
-
-Type: `"parallel" | "fallback" | "single"`, optional
-
-Global default dispatch mode for subroles that have multiple providers configured but no explicit `provider_mode` set. When omitted, `parallel` is used. Subroles can override this per-subrole with their own `provider_mode` field.
-
-### `max_parallel_agents`
-
-Type: `number`, optional
-
-Maximum number of agents that invoke will run in parallel within a single batch. When omitted, there is no limit and all tasks in a batch run concurrently. Use this to reduce load on API services or avoid hitting rate limits.
-
-### `max_dispatches`
-
-Type: `number`, optional
-
-Global cap on the total number of agent dispatches across the entire pipeline run. Invoke will not start new dispatches once this limit is reached. Must be a positive number when set.
-
-### `max_review_cycles`
-
-Type: `number` (nonnegative), optional
-
-Advisory limit on review iterations per batch during the build phase. The build skill checks this count before offering inter-batch review. Set to `0` to skip inter-batch review. The final review stage at the end of the pipeline is not affected by this setting.
-
-### `review_tiers`
-
-Type: array of `{ name: string, reviewers: string[] }` or dict, optional
-
-Groups reviewer subroles into named tiers. Invoke runs tiers sequentially, so a lighter first tier can gate access to a more expensive second tier.
-
-The review skill recognizes three tier names: `critical`, `quality`, and `polish`. Other tier names are stored in config but skipped during review.
-
-Two formats are accepted:
-
-```yaml
-# Array format (explicit ordering):
 settings:
   review_tiers:
     - name: critical
@@ -396,148 +195,109 @@ settings:
       reviewers: [ux, accessibility]
 ```
 
-```yaml
-# Dict format (order not guaranteed):
-settings:
-  review_tiers:
-    critical: [spec-compliance, security]
-    quality: [code-quality, performance]
-```
+Each entry has this shape:
 
-Each reviewer name must match a subrole key defined under `roles.reviewer`. Invoke warns at startup if a tier references an undefined reviewer.
+- `name: string`
+- `reviewers: string[]`
 
-### `post_merge_commands`
+The schema accepts either the array form above or a mapping object such as `critical: [spec-compliance, security]`. Mapping input is normalized into the same array-of-objects structure internally.
 
-Type: `string[]`, optional
+The shipped default pipeline leaves `review_tiers` unset. The commented example in the default file shows `critical`, `quality`, and `polish` as a typical tier layout. Validation warns when a tier references a reviewer name that is not configured under `roles.reviewer`.
 
-Commands to run in the project root after invoke merges each worktree back into the work branch. Use this to regenerate lockfiles or perform other housekeeping that must happen after file changes are merged.
+## 7. Presets
 
-```yaml
-post_merge_commands:
-  - composer install
-  - npm install
-```
+Presets are optional named bundles of config overrides and selection lists. A preset definition can include:
 
-Each command is executed sequentially in a shell. If a command fails, invoke surfaces the error. Further merges are blocked until the failure is resolved.
+- `name`
+- `description`
+- `settings`
+- `researcher_selection`
+- `reviewer_selection`
+- `strategy_selection`
 
-### `terminalRetentionMs` (not in pipeline.yaml)
+These fields are all optional within a preset object.
 
-The MCP server's `BatchManager` accepts a `terminalRetentionMs` constructor option that controls how long completed, errored, and cancelled batch records are kept in memory before being evicted. The default is 10 minutes (600 000 ms). This option is not exposed via `pipeline.yaml` today. See [Completed batch results expire after ~10 minutes](./troubleshooting.md#completed-batch-results-expire-after-10-minutes) in troubleshooting for user-visible behaviour and workarounds.
-
----
-
-## Presets
-
-Presets are named bundles of settings and selections that you can activate by name. They are useful for switching between pipeline configurations without editing the full settings block each time.
-
-### Preset schema
-
-```yaml
-name: my-preset           # optional, defaults to the file or key name
-description: "..."        # optional, human-readable description
-settings:                 # optional, partial Settings — overrides global defaults
-  default_strategy: tdd
-  max_review_cycles: 2
-researcher_selection:     # optional, list of researcher subrole keys to include
-  - codebase
-reviewer_selection:       # optional, list of reviewer subrole keys to include
-  - spec-compliance
-  - security
-strategy_selection:       # optional, list of strategy names to offer at dispatch time
-  - tdd
-  - bug-fix
-```
-
-All fields are optional. A preset that only sets `reviewer_selection` is valid.
-
-### Loading order
-
-When `settings.preset` is set, invoke locates the preset in this order:
-
-1. `presets.<name>` defined inline in `pipeline.yaml`
-2. `.invoke/presets/<name>.yaml` in the project directory
-3. `defaults/presets/<name>.yaml` shipped with invoke
-
-The first match found is used. If none is found, invoke emits an error and config loading fails. Remove or correct the preset name to proceed.
-
-### Merge behaviour
-
-Preset `settings` values form the **base**. Values explicitly defined in the `settings` block of `pipeline.yaml` are applied on top as overrides. This means you can activate a preset and still override specific fields in-place.
-
-- **Objects** are merged recursively: only keys present in the override replace their counterparts in the base.
-- **Arrays** replace entirely: if the override defines an array, the preset's array is discarded.
-
-### Activating a preset
+You activate a preset with `settings.preset`:
 
 ```yaml
 settings:
   preset: quick
-  # Any settings here override the preset's values:
-  max_review_cycles: 2
 ```
 
-### Defining inline presets
+When `settings.preset` is set, Invoke resolves the preset in this order:
 
-You can define presets directly in `pipeline.yaml` under the top-level `presets` key. Inline presets take priority over file-based presets with the same name.
+1. Inline under `presets.<name>` in `.invoke/pipeline.yaml`
+2. `.invoke/presets/<name>.yaml` in the current project
+3. The bundled default preset file under the defaults directory
+
+Inline presets win over file presets because the loader checks `raw.presets?.[name]` before calling the file loader. Project-local preset files are checked before bundled defaults.
+
+Preset merge behavior is important:
+
+- Invoke starts from the preset's `settings` object and a synthetic `presets` entry for the active preset.
+- It then deep-merges the raw project config on top of that preset base.
+- Objects merge recursively.
+- Arrays replace the preset array instead of concatenating with it.
+- Keys omitted from YAML do not participate in the merge because the parser omits absent keys before `deepMerge()` runs.
+
+Preset `settings` supply defaults. Project-level `settings` override them. The active preset definition remains available under `config.presets[settings.preset]`. That object holds selection lists such as `researcher_selection`, `reviewer_selection`, and `strategy_selection` after loading. When the same nested key is merged from both sides, arrays replace rather than extend.
+
+Inline preset example:
 
 ```yaml
 settings:
-  preset: minimal
+  preset: quick
 
 presets:
-  minimal:
-    description: Minimal pipeline for routine changes
+  quick:
+    name: quick
+    description: Project-specific quick preset
     settings:
-      default_strategy: implementation-first
-      max_review_cycles: 1
+      max_parallel_agents: 1
     reviewer_selection:
       - spec-compliance
-    strategy_selection:
-      - implementation-first
-      - bug-fix
 ```
 
-### Built-in presets
+Bundled preset examples:
 
-Three presets are included with invoke and available without any additional files:
+| Preset | Shipped behavior |
+|---|---|
+| `prototype` | Sets `default_strategy: prototype`, sets `max_review_cycles: 0`, clears `reviewer_selection`, and restricts `strategy_selection` to `prototype`. |
+| `quick` | Sets `default_strategy: implementation-first`, sets `max_review_cycles: 1`, sets `max_parallel_agents: 2`, restricts researchers to `codebase`, reviewers to `spec-compliance` and `security`, and strategies to `implementation-first` and `bug-fix`. |
+| `thorough` | Sets `default_strategy: tdd`, sets `max_review_cycles: 5`, includes all six default reviewers, and offers `tdd`, `implementation-first`, and `bug-fix` as strategies. |
 
-| Preset | Description | Key settings |
-|---|---|---|
-| `quick` | Fast pipeline for small changes with limited review coverage. | `default_strategy: implementation-first`, `max_review_cycles: 1`, `max_parallel_agents: 2` |
-| `thorough` | Full pipeline with maximum review and strategy coverage. | `default_strategy: tdd`, `max_review_cycles: 5` |
-| `prototype` | Rapid iteration with minimal review overhead. | `default_strategy: prototype`, `max_review_cycles: 0` |
+Bundled preset values above come from the shipped preset files.
 
-The `quick` preset limits researchers to `codebase` only and reviewers to `spec-compliance` and `security`. The `thorough` preset enables all six reviewer subroles. The `prototype` preset sets `reviewer_selection: []`, disabling review entirely.
+Validation warns when `settings.preset` does not match either an inline preset or a preset file available in the defaults or project preset directories.
 
----
+## 8. Provider Mode
 
-## Validation
+`provider_mode` controls how a role subrole dispatches when `providers[]` has more than one entry. Valid values are `parallel`, `fallback`, and `single`, and single-provider subroles always resolve to `single`. For full details on provider modes, see [Provider Modes](providers.md#provider-modes).
 
-Invoke validates the full `pipeline.yaml` against its schema at startup using [Zod](https://zod.dev). Validation checks include:
+## 9. Template Variables
 
-**Schema checks** (errors that block startup):
+The provider templates in `providers.<name>.args` are populated from the role-level provider entry selected for the current dispatch. `model` is a free-form string. `effort` must be `low`, `medium`, or `high`.
 
-- All required fields are present and have the correct type
-- `effort` values are one of `low`, `medium`, or `high`
-- `commit_style` is one of the four recognised values
-- `agent_timeout` and per-role `timeout` values are positive numbers
-- Each subrole has either a `providers` array or the inline `provider`/`model`/`effort` shorthand — but not an incomplete combination of both
+Interpolation rules:
 
-**Semantic checks** (errors that block startup):
+- `{{model}}` -> the entry's `model`
+- `{{effort}}` -> the entry's `effort`
 
-- **CLI existence** — each provider's `cli` binary is found on `PATH` via `which`. If not found, invoke emits an error for that provider.
-- **Default strategy** — `settings.default_strategy` references a key that exists under `strategies:`.
-- **Provider references** — every `provider` name used in a subrole entry exists as a key under the top-level `providers:` map.
-- **Prompt file existence** — each subrole's `prompt` path resolves to a file on disk.
+Invoke performs this substitution on each configured argument string immediately before launching the provider command. After interpolation, the prompt text is appended as the last CLI argument. The built-in Codex provider adds `--skip-git-repo-check` before the prompt. Claude and config-driven providers append only the prompt.
 
-**Warnings** (non-blocking, printed before pipeline work begins):
+Example using the shipped Codex config plus a role entry of `model: o3` and `effort: high`:
 
-- **Model format** — model identifiers are checked against known patterns for each provider. For `claude`, valid formats are `claude-{family}-{version}` (e.g. `claude-opus-4-6`) or the short aliases `opus`, `sonnet`, and `haiku`. For `codex`, valid formats are `o{digit}` (e.g. `o3`, `o1-mini`), `gpt-*`, and `codex-*`. Unknown providers allow any model string.
-- **Timeout magnitude** — a `timeout` value greater than `3600` is flagged as likely being in milliseconds instead of seconds, with a suggested corrected value.
-- **Multi-provider without explicit mode** — a subrole with more than one provider and no `provider_mode` field will use the mode from `settings.default_provider_mode` (or `parallel` if that is also unset). Invoke warns so you can set an explicit mode and avoid implicit behavior.
-- **Review tier references** — reviewer names listed in `settings.review_tiers` are checked against defined subroles under `roles.reviewer`.
-- **Preset resolution** — when `settings.preset` is set, invoke checks that the named preset can be found in an inline block, a project-local file, or a built-in file. If none is found, invoke emits an error and config loading fails.
+```yaml
+providers:
+  codex:
+    cli: codex
+    args: ["--dangerously-bypass-approvals-and-sandbox", "exec", "--model", "{{model}}", "-c", "reasoning_effort={{effort}}"]
+```
 
-You can also trigger validation explicitly through the `invoke_validate_config` tool without running a full pipeline. This is useful when editing the configuration to catch mistakes early.
+This produces configured args equivalent to:
 
-For common validation errors and how to resolve them, see [troubleshooting.md](./troubleshooting.md).
+```text
+--dangerously-bypass-approvals-and-sandbox exec --model o3 -c reasoning_effort=high
+```
+
+The default Codex provider definition above comes from the pipeline template. Placeholder replacement comes from the provider implementations.

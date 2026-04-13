@@ -1,141 +1,103 @@
 # Invoke
 
-AI-assisted development pipeline for Claude Code.
-
-## What is Invoke?
-
-Invoke orchestrates AI agents through a structured pipeline: scope, plan, orchestrate, build, and review. It runs as a Claude Code plugin, dispatching agents to multiple providers (Claude, Codex) in parallel, managing git worktrees for isolated builds, and merging results back into your branch. Project context is maintained across sessions so agents always understand your codebase.
+Invoke is an AI development pipeline for Claude Code that orchestrates multi-provider agents across Claude, Codex, and Gemini. It moves work through a structured scope, plan, orchestrate, build, and review flow so implementation, validation, and recovery stay consistent across sessions.
 
 ## Pipeline
 
 ```mermaid
 flowchart LR
-    A["Scope\nResearch + Spec"] --> B["Plan\nCompeting Approaches"]
-    B --> C["Orchestrate\nTask Graph"]
-    C --> D["Build\nParallel Agents"]
-    D --> E["Review\nTiered Multi-Reviewer"]
-    E -->|"Fixes needed"| D
-    E -->|"Approved"| F["Complete"]
+    scope[Scope] --> plan[Plan] --> orchestrate[Orchestrate] --> build[Build] --> review[Review] --> complete[Complete]
+    review -->|Fixes needed| build
 ```
 
 ## Quick Start
 
-### 1. Add the invoke marketplace
+1. Add the marketplace to `~/.claude/settings.json`:
 
-Add invoke as a plugin marketplace in your Claude Code global settings (`~/.claude/settings.json`):
+   ```json
+   {
+     "extraKnownMarketplaces": {
+       "invoke": {
+         "source": {
+           "source": "github",
+           "repo": "ricky-russo/invoke"
+         }
+       }
+     }
+   }
+   ```
 
-```json
-{
-  "extraKnownMarketplaces": {
-    "invoke": {
-      "source": {
-        "source": "github",
-        "repo": "ricky-russo/invoke"
-      }
-    }
-  }
-}
-```
+2. Enable the plugin in `.claude/settings.local.json`:
 
-### 2. Enable the plugin
+   ```json
+   {
+     "enabledPlugins": {
+       "invoke@invoke": true
+     }
+   }
+   ```
 
-In your project's `.claude/settings.local.json`:
+3. Initialize the project with `invoke-init`. This creates `.invoke/` with the default pipeline, role prompts, strategy prompts, and artifact directories.
+4. Configure a provider in `.invoke/pipeline.yaml`. The generated defaults already define `claude`, `codex`, and `gemini`; point the roles you want to use at a CLI you have installed.
+5. Open Claude Code and ask for a feature or bug fix. Invoke routes new development work into the pipeline and carries it through review.
 
-```json
-{
-  "enabledPlugins": {
-    "invoke@invoke": true
-  }
-}
-```
-
-Claude Code will prompt you to approve the plugin on first use.
-
-### 3. Initialize in your project
-
-Run `invoke-init` or start a Claude Code session — invoke will create a `.invoke/` directory with the default pipeline config, role prompts, and strategy templates.
-
-### 4. Configure providers
-
-Edit `.invoke/pipeline.yaml` to match the CLIs you have installed:
-
-```yaml
-providers:
-  claude:
-    cli: claude
-    args: ["--print", "--model", "{{model}}", "--dangerously-skip-permissions"]
-```
-
-### 5. Start building
-
-Open Claude Code in your project and ask it to build something. Invoke's scope skill activates automatically when you describe a feature to implement, and walks you through the full pipeline.
+For the full setup and first-run walkthrough, see [docs/getting-started.md](docs/getting-started.md).
 
 ## How It Works
 
-**Scope** -- Dispatches researcher agents (codebase analysis, best practices, dependency review) in parallel, then asks you targeted clarifying questions informed by the research. Produces a spec document with requirements, constraints, and acceptance criteria. [Details](docs/pipeline-stages.md)
+### Scope
 
-**Plan** -- Dispatches planner agents that propose competing architectural approaches. You review and select the approach, or ask for revisions. [Details](docs/pipeline-stages.md)
+Scope initializes the session and lets you choose a base branch.
+It can also initialize shared project context, dispatch focused researchers, and turn the request into an approved spec with concrete requirements, constraints, and acceptance criteria.
 
-**Orchestrate** -- Breaks the selected plan into ordered batches of parallel tasks. Within each batch, tasks can declare dependencies via `depends_on`; `buildExecutionLayers()` applies a topological sort so tasks are organized into execution layers — all tasks within a layer run in parallel, and layers execute sequentially. Invoke also scans the plan text for keywords and auto-detects a suggested build strategy before asking you to confirm. [Details](docs/pipeline-stages.md)
+### Plan
 
-**Build** -- Dispatches builder agents into isolated git worktrees so they can work in parallel without conflicts. Tasks are offered for merge individually as they complete — you do not have to wait for the full batch. Partial batch state tracks which tasks have been merged so resume correctly skips already-merged work. After each task is merged, post-merge commands run (lockfile regeneration, etc.) and validation checks execute. You can optionally run reviewers between batches. [Details](docs/pipeline-stages.md)
+Plan dispatches planner roles against the approved spec, compares competing implementation approaches, and saves the user-approved plan that the later stages will execute.
 
-**Review** -- Before each reviewer dispatch, invoke shows accumulated cost and usage for the session. Reviewers are dispatched in parallel; when `review_tiers` is configured they run in named tiers (`critical`, `quality`, and optionally `polish`) that gate each other — a tier must pass before the next begins. Findings are triaged, fix tasks are dispatched, and the loop continues until you're satisfied. [Details](docs/pipeline-stages.md)
+### Orchestrate
 
-## Configuration
+Orchestrate suggests a build strategy and breaks the plan into task-sized units.
+It records explicit `depends_on` edges where needed and groups the work into batches that can be scheduled safely in parallel.
 
-Pipeline behavior is controlled by `.invoke/pipeline.yaml`. A minimal configuration:
+### Build
 
-```yaml
-providers:
-  claude:
-    cli: claude
-    args: ["--print", "--model", "{{model}}", "--dangerously-skip-permissions"]
+Build dispatches builder roles into isolated git worktrees and tracks task state per session.
+It offers successful tasks for immediate merge and runs post-merge commands and validation between merges before moving on.
 
-roles:
-  builder:
-    default:
-      prompt: .invoke/roles/builder/default.md
-      providers:
-        - provider: claude
-          model: claude-sonnet-4-6
-          effort: high
-          timeout: 300
+### Review
 
-settings:
-  default_strategy: tdd
-  agent_timeout: 300
-  commit_style: per-batch
-  work_branch_prefix: invoke/work
-  default_provider_mode: parallel
-```
-
-The default config includes roles for researchers, planners, builders, and reviewers. See [Configuration Reference](docs/configuration.md) for the full specification.
+Review shows current usage and cost.
+It dispatches reviewers in fallback or tiered mode and records findings and triage history.
+Accepted fixes loop back through builders.
+Invoke then folds fixup commits according to the configured commit style before completion.
 
 ## Key Features
 
-- **Multi-provider dispatch** -- run tasks on Claude, Codex, or any CLI tool; parallel, fallback, and single provider modes with finding deduplication across providers
-- **DAG-based task scheduling** -- tasks declare dependencies via `depends_on` and execute as soon as their predecessors complete
-- **Parallel builds with git worktrees** -- agents work in isolated worktrees, merged with validation between each merge
-- **Per-task merge** -- tasks are offered for merge immediately on completion; no waiting for the full batch to finish
-- **Tiered review** -- configure review tiers (e.g. `critical`, `quality`, `polish`) that gate each other
-- **Strategy auto-detection** -- invoke suggests a build strategy (TDD, bug-fix, prototype, implementation-first) based on keywords in the plan
-- **Preset system** -- pre-configured pipeline profiles (`prototype`, `quick`, `thorough`)
-- **Spec-compliance reviewer** -- catches hallucinated features and missing requirements
-- **Project context system** -- a living `context.md` document shared across pipelines
-- **Session recovery** -- resume interrupted pipelines at the individual task level
-- **Metrics and cost tracking** -- per-dispatch metrics with estimated costs; session comparison available
-- **Pipeline management** -- `invoke-manage` skill for creating, editing, and removing roles, strategies, and settings
-- **Per-agent configurable timeouts** -- set timeouts per provider entry in each role
-- **Post-merge commands** -- regenerate lockfiles (`composer install`, `npm install`, etc.) after worktree merges
-- **Config validation** -- startup validation with warnings and actionable suggestions
+- Multi-provider dispatch across Claude, Codex, and Gemini
+- DAG-based task scheduling
+- Parallel builds with git worktrees
+- Per-task merge
+- Tiered review
+- Strategy auto-detection
+- Preset system
+- Bug tracking
+- Per-session work branches
+- Fixup folding and autosquash
+- Project context system
+- Session recovery
+- Metrics and cost tracking
+- Pipeline management via `invoke-manage`
+- Config validation
+- Skill invocation enforcement
+- Post-merge commands
 
-## Documentation
+## Documentation Index
 
+- [Getting Started](docs/getting-started.md)
+- [Concepts](docs/concepts.md)
 - [Configuration Reference](docs/configuration.md)
-- [Pipeline Stages](docs/pipeline-stages.md)
-- [Customization Guide](docs/customization.md)
-- [Project Context](docs/project-context.md)
+- [Providers](docs/providers.md)
+- [Customization](docs/customization.md)
 - [Troubleshooting](docs/troubleshooting.md)
 
 ## License
