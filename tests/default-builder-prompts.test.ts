@@ -22,6 +22,10 @@ describe('default builder prompts', () => {
 
     expect(content).toMatch(expectedTitle)
     expect(content).toContain('{{task_description}}')
+    expect(content).toContain('## Project Context')
+    expect(content).toContain('{{project_context}}')
+    expect(content).toContain('{{project_context_delim_start}}')
+    expect(content).toContain('{{project_context_delim_end}}')
     expect(content).toContain('{{acceptance_criteria}}')
     expect(content).toContain('{{relevant_files}}')
     expect(content).toContain('{{interfaces}}')

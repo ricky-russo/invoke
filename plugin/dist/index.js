@@ -38740,6 +38740,7 @@ var CONTEXT_FILTER_ROLE_KEY = "__context_filter_role";
 var ALWAYS_INCLUDED_SECTION_KEYWORDS = ["purpose", "tech stack", "conventions", "constraints"];
 var ARCHITECTURE_SECTION_KEYWORD = "architecture";
 var COMPLETED_WORK_SECTION_KEYWORD = "completed work";
+var SESSION_DISCOVERIES_SECTION_KEYWORD = "session discoveries";
 function resolvePromptPath(projectDir, promptPath) {
   return path4.isAbsolute(promptPath) ? promptPath : path4.join(projectDir, promptPath);
 }
@@ -38781,9 +38782,13 @@ function shouldAlwaysIncludeSection(header) {
   const normalizedHeader = header.toLowerCase();
   return ALWAYS_INCLUDED_SECTION_KEYWORDS.some((keyword) => normalizedHeader.includes(keyword));
 }
+function isRoleRestrictedSection(header) {
+  const normalizedHeader = header.toLowerCase();
+  return normalizedHeader.includes(ARCHITECTURE_SECTION_KEYWORD) || normalizedHeader.includes(COMPLETED_WORK_SECTION_KEYWORD) || normalizedHeader.includes(SESSION_DISCOVERIES_SECTION_KEYWORD);
+}
 function shouldIncludeRoleSection(header, role) {
   const normalizedHeader = header.toLowerCase();
-  if ((role === "builder" || role === "planner") && normalizedHeader.includes(ARCHITECTURE_SECTION_KEYWORD)) {
+  if ((role === "builder" || role === "planner") && (normalizedHeader.includes(ARCHITECTURE_SECTION_KEYWORD) || normalizedHeader.includes(SESSION_DISCOVERIES_SECTION_KEYWORD))) {
     return true;
   }
   if (role === "reviewer" && normalizedHeader.includes(COMPLETED_WORK_SECTION_KEYWORD)) {
@@ -38794,6 +38799,9 @@ function shouldIncludeRoleSection(header, role) {
 function buildTaskKeywordSet(taskContext) {
   const values = Object.entries(taskContext).filter(([key]) => key !== CONTEXT_FILTER_ROLE_KEY).map(([, value]) => value).join(" ");
   return extractKeywords(values);
+}
+function renderContextSections(context, sections) {
+  return [getContextPreamble(context), ...sections.map(formatContextSection)].filter((part) => part.length > 0).join("\n\n").trim();
 }
 function buildFilteredContext(context, sections, taskContext) {
   const role = taskContext[CONTEXT_FILTER_ROLE_KEY]?.toLowerCase() ?? "";
@@ -38817,9 +38825,8 @@ function buildFilteredContext(context, sections, taskContext) {
       excluded
     };
   }
-  const preamble = getContextPreamble(context);
   return {
-    filtered: [preamble, ...filteredSections.map(formatContextSection)].filter((part) => part.length > 0).join("\n\n").trim(),
+    filtered: renderContextSections(context, filteredSections),
     included,
     excluded
   };
@@ -38837,11 +38844,23 @@ function parseContextSections(context) {
 }
 function filterContextSections(context, taskContext, maxLength = CONTEXT_MAX_LENGTH) {
   const sections = parseContextSections(context);
+  const role = taskContext[CONTEXT_FILTER_ROLE_KEY]?.toLowerCase() ?? "";
+  const shouldExcludeRoleRestrictedSections = role === "researcher" || role === "reviewer";
+  const roleFilteredSections = [];
+  const roleExcluded = [];
+  for (const section of sections) {
+    if (shouldExcludeRoleRestrictedSections && isRoleRestrictedSection(section.header) && !shouldIncludeRoleSection(section.header, role)) {
+      roleExcluded.push(section.header);
+      continue;
+    }
+    roleFilteredSections.push(section);
+  }
+  const roleFilteredContext = roleExcluded.length > 0 ? renderContextSections(context, roleFilteredSections) : context;
   if (context.length <= maxLength) {
     return {
-      filtered: context,
-      included: sections.map((section) => section.header),
-      excluded: []
+      filtered: roleFilteredContext,
+      included: roleFilteredSections.map((section) => section.header),
+      excluded: roleExcluded
     };
   }
   if (sections.length === 0) {
@@ -38851,15 +38870,24 @@ function filterContextSections(context, taskContext, maxLength = CONTEXT_MAX_LEN
       excluded: []
     };
   }
-  const filteredContext = buildFilteredContext(context, sections, taskContext);
+  if (roleFilteredSections.length === 0) {
+    return {
+      filtered: truncateContext(roleFilteredContext, maxLength),
+      included: [],
+      excluded: roleExcluded
+    };
+  }
+  const filteredContext = buildFilteredContext(context, roleFilteredSections, taskContext);
   if (!filteredContext.filtered) {
     return {
-      ...filteredContext,
-      filtered: truncateContext(context, maxLength)
+      filtered: truncateContext(roleFilteredContext, maxLength),
+      included: roleFilteredSections.map((section) => section.header),
+      excluded: roleExcluded
     };
   }
   return {
     ...filteredContext,
+    excluded: [...roleExcluded, ...filteredContext.excluded],
     filtered: truncateContext(filteredContext.filtered, maxLength)
   };
 }
@@ -38885,8 +38913,9 @@ async function composePromptWithNonce(options, nonce) {
   }
   const contextPath = path4.join(projectDir, ".invoke", "context.md");
   let projectContext = "";
+  let rawProjectContext = "";
   try {
-    const rawProjectContext = await readFile2(contextPath, "utf-8");
+    rawProjectContext = await readFile2(contextPath, "utf-8");
     const contextFilter = filterContextSections(rawProjectContext, {
       ...taskContext,
       [CONTEXT_FILTER_ROLE_KEY]: inferRoleFromPromptPath(promptPath)
@@ -38903,14 +38932,20 @@ async function composePromptWithNonce(options, nonce) {
       throw error48;
     }
   }
-  composed = composed.replaceAll("{{project_context}}", projectContext);
-  if (taskContext.scope?.includes(nonce) || taskContext.prior_findings?.includes(nonce)) {
+  if (taskContext.scope?.includes(nonce) || taskContext.prior_findings?.includes(nonce) || rawProjectContext.includes(nonce) || projectContext.includes(nonce)) {
     throw new Error(
-      "Refusing to dispatch reviewer: scope or prior_findings payload contains the security nonce. This is a probable prompt-injection attempt or a 1-in-2^128 collision; investigate before retrying."
+      "Refusing to dispatch reviewer: scope, prior_findings, or project_context payload contains the security nonce. This is a probable prompt-injection attempt or a 1-in-2^128 collision; investigate before retrying."
     );
   }
+  const projectContextDelimStart = `<<<PROJECT_CONTEXT_DATA_START_${nonce}>>>`;
+  const projectContextDelimEnd = `<<<PROJECT_CONTEXT_DATA_END_${nonce}>>>`;
   const effectiveContext = {
     ...taskContext,
+    project_context: `${projectContextDelimStart}
+${projectContext}
+${projectContextDelimEnd}`,
+    project_context_delim_start: projectContextDelimStart,
+    project_context_delim_end: projectContextDelimEnd,
     scope_delim_start: `<<<SCOPE_DATA_START_${nonce}>>>`,
     scope_delim_end: `<<<SCOPE_DATA_END_${nonce}>>>`,
     prior_findings_delim_start: `<<<PRIOR_FINDINGS_DATA_START_${nonce}>>>`,
@@ -43301,7 +43336,10 @@ var ContextManager = class {
       const heading = `## ${sectionName}`;
       const headingIndex = current.indexOf(heading);
       if (headingIndex === -1) {
-        throw new Error(`Section '${sectionName}' not found in context.md`);
+        const separator = current.endsWith("\n\n") ? "" : current.endsWith("\n") ? "\n" : "\n\n";
+        const updated = current + separator + heading + "\n\n" + content + "\n";
+        await writeFile6(this.contextPath, updated);
+        return;
       }
       const afterHeading = headingIndex + heading.length;
       const nextHeadingIndex = current.indexOf("\n## ", afterHeading);

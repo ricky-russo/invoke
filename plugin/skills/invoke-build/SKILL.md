@@ -277,6 +277,18 @@ If `commit_style == 'per-batch'` AND `state.work_branch_path` is NOT set (legacy
 If `commit_style != 'per-batch'`:
   Skip this step. Tasks keep their per-task commit_sha.
 
+#### g3. Batch-Boundary Context Enrichment
+
+After step g2, review the current batch for durable discoveries before asking about inter-batch review:
+
+1. Collect the `result.output.summary` / result summary for every completed task in the current batch. These summaries are already available from the `invoke_get_task_result({ batch_id, task_id, session_id: <pipeline_id> })` calls made in step d — reuse them.
+2. Analyze the batch-level results for any newly established patterns, interfaces, conventions, or constraints.
+3. Call `invoke_get_context` and read the current `Session Discoveries` content. It may be empty or may already contain cumulative discoveries from earlier batches.
+4. If no meaningful discoveries emerged from this batch, skip this step.
+5. Otherwise, write a complete cumulative replacement via `invoke_update_context({ section: 'Session Discoveries', mode: 'replace', content: <cumulative summary> })`.
+
+Format `<cumulative summary>` as concise markdown bullet points grouped by `Patterns`, `Interfaces`, `Conventions`, and `Constraints`. Keep the entire section under 500 characters. Each update must be a full cumulative summary that supersedes the previous `Session Discoveries` content.
+
 #### h. Inter-Batch Review (optional)
 
 After each batch is fully resolved — all successful tasks merged and validated, all failed tasks retried or explicitly skipped — ask the user if they want to run reviewers before proceeding to the next batch. Use `AskUserQuestion`:
