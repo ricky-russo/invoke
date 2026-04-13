@@ -1,34 +1,34 @@
 {
-  "name": "invoke-mcp",
-  "version": "0.1.0",
-  "description": "AI-assisted development pipeline MCP server",
-  "type": "module",
-  "main": "dist/index.js",
-  "bin": {
-    "invoke-mcp": "dist/index.js",
-    "invoke-init": "dist/init-cli.js"
-  },
-  "scripts": {
-    "build": "tsc && node esbuild.config.js && node scripts/package.js",
-    "package": "node scripts/package.js",
-    "dev": "tsx src/index.ts",
-    "test": "vitest run",
-    "test:watch": "vitest"
-  },
-  "engines": {
-    "node": ">=18"
-  },
-  "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.29.0",
-    "proper-lockfile": "file:vendor/proper-lockfile",
-    "yaml": "^2.8.3",
-    "zod": "^4.3.6"
-  },
-  "devDependencies": {
-    "@types/node": "^25.5.0",
-    "esbuild": "^0.27.7",
-    "tsx": "^4.21.0",
-    "typescript": "^6.0.2",
-    "vitest": "^4.1.2"
-  }
+	"name": "invoke-mcp",
+	"version": "0.1.1",
+	"description": "AI-assisted development pipeline MCP server",
+	"type": "module",
+	"main": "dist/index.js",
+	"bin": {
+		"invoke-mcp": "dist/index.js",
+		"invoke-init": "dist/init-cli.js"
+	},
+	"scripts": {
+		"build": "tsc && node esbuild.config.js && node scripts/package.js",
+		"package": "node scripts/package.js",
+		"dev": "tsx src/index.ts",
+		"test": "vitest run",
+		"test:watch": "vitest"
+	},
+	"engines": {
+		"node": ">=18"
+	},
+	"dependencies": {
+		"@modelcontextprotocol/sdk": "^1.29.0",
+		"proper-lockfile": "file:vendor/proper-lockfile",
+		"yaml": "^2.8.3",
+		"zod": "^4.3.6"
+	},
+	"devDependencies": {
+		"@types/node": "^25.5.0",
+		"esbuild": "^0.27.7",
+		"tsx": "^4.21.0",
+		"typescript": "^6.0.2",
+		"vitest": "^4.1.2"
+	}
 }

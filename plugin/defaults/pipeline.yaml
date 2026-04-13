@@ -17,7 +17,7 @@ providers:
     # SECURITY: danger-full-access disables codex sandbox (network + filesystem).
     # Invoke isolates builders in temporary worktrees that are squash-merged and cleaned up,
     # so the codex sandbox adds no containment value beyond what invoke already provides.
-    args: ["--ask-for-approval", "never", "exec", "--model", "{{model}}", "--sandbox", "danger-full-access", "-c", "reasoning_effort={{effort}}"]
+    args: ["--dangerously-bypass-approvals-and-sandbox", "exec", "--model", "{{model}}", "-c", "reasoning_effort={{effort}}"]
   gemini:
     cli: gemini
     args: ["-y", "--output-format", "text", "-m", "{{model}}", "-p"]
