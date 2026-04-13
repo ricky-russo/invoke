@@ -42802,6 +42802,22 @@ var ReviewCycleSchema = external_exports3.object({
 });
 var WORK_BRANCH_PATTERN = /^(?!.*\.\.)[A-Za-z0-9][A-Za-z0-9._/-]{0,255}$/;
 var BASE_BRANCH_PATTERN = /^(?![-.])[A-Za-z0-9_.][A-Za-z0-9._/-]{0,254}$/;
+var VALID_TRANSITIONS = {
+  scope: /* @__PURE__ */ new Set(["scope", "plan"]),
+  plan: /* @__PURE__ */ new Set(["scope", "plan", "orchestrate"]),
+  orchestrate: /* @__PURE__ */ new Set(["plan", "orchestrate", "build"]),
+  build: /* @__PURE__ */ new Set(["build", "review"]),
+  review: /* @__PURE__ */ new Set(["build", "review", "complete"]),
+  complete: /* @__PURE__ */ new Set(["complete"])
+};
+var NEXT_STEP = {
+  scope: 'Skill({ skill: "invoke:invoke-scope" })',
+  plan: 'Skill({ skill: "invoke:invoke-plan" })',
+  orchestrate: 'Skill({ skill: "invoke:invoke-orchestrate" })',
+  build: 'Skill({ skill: "invoke:invoke-build" })',
+  review: 'Skill({ skill: "invoke:invoke-review" })',
+  complete: null
+};
 var SetStateInputSchema = external_exports3.object({
   session_id: external_exports3.string().regex(SESSION_ID_PATTERN, "invalid session id format").optional(),
   pipeline_id: external_exports3.string().optional(),
@@ -42899,10 +42915,28 @@ function registerStateTools(server, stateManager, projectDir, sessionManager) {
         }
         const scopedStateManager = await resolveWritableStateManager(resolvedSessionId);
         let state = await scopedStateManager.get();
+        const currentStage = state?.current_stage;
         if (!state) {
           state = await scopedStateManager.initialize(
             resolvedSessionId ?? `pipeline-${Date.now()}`
           );
+        }
+        const effectiveStage = currentStage ?? state.current_stage;
+        if (stateUpdates.current_stage !== void 0 && effectiveStage) {
+          const validTransitions = VALID_TRANSITIONS[effectiveStage];
+          if (validTransitions && !validTransitions.has(stateUpdates.current_stage)) {
+            return {
+              content: [{
+                type: "text",
+                text: JSON.stringify({
+                  error: "Invalid stage transition",
+                  from: effectiveStage,
+                  to: stateUpdates.current_stage
+                }, null, 2)
+              }],
+              isError: true
+            };
+          }
         }
         if (stateUpdates.batches !== void 0 && stateUpdates.batch_update !== void 0) {
           console.warn(
@@ -42920,6 +42954,14 @@ function registerStateTools(server, stateManager, projectDir, sessionManager) {
           reviewCycleUpdate: review_cycle_update,
           partial: rest
         });
+        if (stateUpdates.current_stage !== void 0) {
+          const nextStep = NEXT_STEP[stateUpdates.current_stage];
+          if (nextStep !== null) {
+            return {
+              content: [{ type: "text", text: JSON.stringify({ next_step: nextStep, ...updated }, null, 2) }]
+            };
+          }
+        }
         return {
           content: [{ type: "text", text: JSON.stringify(updated, null, 2) }]
         };

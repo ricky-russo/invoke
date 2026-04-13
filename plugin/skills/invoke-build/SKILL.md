@@ -319,13 +319,9 @@ When all batches are done:
 Update state via `invoke_set_state` with `session_id: <pipeline_id>`:
 - `current_stage: "review"`
 
-**CRITICAL — You MUST invoke the review skill now. Do NOT dispatch reviewers yourself, do NOT run review logic inline, and do NOT skip this step.** The invoke-review skill contains the full review flow including tiered review, triage, fix cycles, and autosquash. Call:
+**CRITICAL — You MUST execute the `next_step` returned by `invoke_set_state` now. Do NOT dispatch reviewers yourself, do NOT run review logic inline, and do NOT skip this step.** The server validates the transition and the response includes a `next_step` field — execute it immediately to invoke the review stage.
 
-```
-Skill({ skill: "invoke:invoke-review" })
-```
-
-**STOP HERE.** Do not proceed past this point in the build skill. The invoke-review skill takes over from here.
+**STOP HERE.** Do not proceed past this point in the build skill. The `next_step` response hands control to invoke-review, which takes over from here.
 
 ## Error Handling
 

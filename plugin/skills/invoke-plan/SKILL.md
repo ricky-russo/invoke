@@ -130,11 +130,7 @@ Call `invoke_set_state` with `session_id: <pipeline_id>` and:
 - `current_stage: "orchestrate"`
 - `plan: "plans/YYYY-MM-DD-<slug>-plan.md"`
 
-Then invoke the next stage:
-
-```
-Skill({ skill: "invoke:invoke-orchestrate" })
-```
+The server validates the transition and the response includes a `next_step` field — execute it immediately to invoke the orchestrate stage.
 
 ## Error Handling
 
