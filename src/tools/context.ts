@@ -45,7 +45,16 @@ export class ContextManager {
       const heading = `## ${sectionName}`
       const headingIndex = current.indexOf(heading)
       if (headingIndex === -1) {
-        throw new Error(`Section '${sectionName}' not found in context.md`)
+        const separator = current.endsWith('\n\n') ? '' : current.endsWith('\n') ? '\n' : '\n\n'
+        const updated =
+          current +
+          separator +
+          heading +
+          '\n\n' +
+          content +
+          '\n'
+        await writeFile(this.contextPath, updated)
+        return
       }
 
       const afterHeading = headingIndex + heading.length

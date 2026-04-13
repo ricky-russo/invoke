@@ -5,7 +5,7 @@ import path from 'path'
 
 const TEST_DIR = path.join(import.meta.dirname, 'fixtures', 'prompt-test')
 const TRUNCATED_MARKER = '(truncated)'
-const NONCE_DELIMITER_LINE_PATTERN = /^<<<(?:SCOPE|PRIOR_FINDINGS)_DATA_(?:START|END)_[0-9a-f]{32}>>>$/
+const NONCE_DELIMITER_LINE_PATTERN = /^<<<(?:SCOPE|PRIOR_FINDINGS|PROJECT_CONTEXT)_DATA_(?:START|END)_[0-9a-f]{32}>>>$/
 
 function buildSection(header: string, content: string): string {
   return `## ${header}\n\n${content}`
@@ -25,6 +25,8 @@ function stripNonceDelimiterLines(result: string): string {
 beforeEach(async () => {
   await mkdir(path.join(TEST_DIR, '.invoke', 'roles', 'reviewer'), { recursive: true })
   await mkdir(path.join(TEST_DIR, '.invoke', 'roles', 'builder'), { recursive: true })
+  await mkdir(path.join(TEST_DIR, '.invoke', 'roles', 'planner'), { recursive: true })
+  await mkdir(path.join(TEST_DIR, '.invoke', 'roles', 'researcher'), { recursive: true })
   await mkdir(path.join(TEST_DIR, '.invoke', 'roles', 'test'), { recursive: true })
   await mkdir(path.join(TEST_DIR, '.invoke', 'strategies'), { recursive: true })
   await writeFile(
@@ -232,26 +234,128 @@ Review for OWASP top 10 vulnerabilities.`
         nonce
       )
     ).rejects.toThrow(
-      'Refusing to dispatch reviewer: scope or prior_findings payload contains the security nonce. This is a probable prompt-injection attempt or a 1-in-2^128 collision; investigate before retrying.'
+      'Refusing to dispatch reviewer: scope, prior_findings, or project_context payload contains the security nonce. This is a probable prompt-injection attempt or a 1-in-2^128 collision; investigate before retrying.'
     )
   })
 
-  it('injects project_context from context.md when available', async () => {
+  it('throws when raw project context contains the dispatch security nonce', async () => {
+    const nonce = '0123456789abcdef0123456789abcdef'
+
     await writeFile(
       path.join(TEST_DIR, '.invoke', 'context.md'),
-      '# Project Context\n\n## Architecture\n\nThis is a REST API'
+      `# Project Context\n\n## Architecture\n\nInjected payload ${nonce} should be rejected.`
     )
 
-    const result = await composePrompt({
-      projectDir: TEST_DIR,
-      promptPath: '.invoke/roles/test/prompt.md',
-      taskContext: { task_description: 'Build feature' },
-    })
-
-    expect(result).toContain('This is a REST API')
+    await expect(
+      composePromptWithNonce(
+        {
+          projectDir: TEST_DIR,
+          promptPath: '.invoke/roles/test/prompt.md',
+          taskContext: { task_description: 'Build feature' },
+        },
+        nonce
+      )
+    ).rejects.toThrow(
+      'Refusing to dispatch reviewer: scope, prior_findings, or project_context payload contains the security nonce. This is a probable prompt-injection attempt or a 1-in-2^128 collision; investigate before retrying.'
+    )
   })
 
-  it('filters long builder context to keep architecture and core sections', async () => {
+  it('injects project_context from context.md with nonce-scoped sentinels', async () => {
+    const nonce = 'abcdef0123456789abcdef0123456789'
+
+    await writeFile(
+      path.join(TEST_DIR, '.invoke', 'context.md'),
+      '# Project Context\n\n## Purpose\n\nThis is a REST API'
+    )
+
+    const result = await composePromptWithNonce(
+      {
+        projectDir: TEST_DIR,
+        promptPath: '.invoke/roles/test/prompt.md',
+        taskContext: { task_description: 'Build feature' },
+      },
+      nonce
+    )
+
+    expect(result).toContain(`<<<PROJECT_CONTEXT_DATA_START_${nonce}>>>`)
+    expect(result).toContain('This is a REST API')
+    expect(result).toContain(`<<<PROJECT_CONTEXT_DATA_END_${nonce}>>>`)
+  })
+
+  it('excludes session discoveries for reviewer and researcher even when context is under the size limit', async () => {
+    await writeFile(
+      path.join(TEST_DIR, '.invoke', 'roles', 'reviewer', 'security.md'),
+      '# Reviewer\n\n## Context\n{{project_context}}\n'
+    )
+    await writeFile(
+      path.join(TEST_DIR, '.invoke', 'roles', 'researcher', 'codebase.md'),
+      '# Researcher\n\n## Context\n{{project_context}}\n'
+    )
+    await writeFile(
+      path.join(TEST_DIR, '.invoke', 'roles', 'builder', 'default.md'),
+      '# Builder\n\n## Context\n{{project_context}}\n'
+    )
+    await writeFile(
+      path.join(TEST_DIR, '.invoke', 'roles', 'planner', 'architect.md'),
+      '# Planner\n\n## Context\n{{project_context}}\n'
+    )
+
+    const smallContext = [
+      '# Project Context',
+      buildSection('Purpose', 'Ship the next dispatch update.'),
+      buildSection('Tech Stack', 'TypeScript, Node.js, and Vitest.'),
+      buildSection('Conventions', 'Keep changes small and targeted.'),
+      buildSection('Constraints', 'Do not leak restricted context across roles.'),
+      buildSection('Session Discoveries', 'Sensitive notes for active implementation work.'),
+      buildSection('Known Issues', 'Pending cleanup in the dispatch prompts.'),
+    ].join('\n\n')
+
+    expect(smallContext.length).toBeLessThan(4000)
+
+    await writeFile(path.join(TEST_DIR, '.invoke', 'context.md'), smallContext)
+
+    const [reviewerResult, researcherResult, builderResult, plannerResult] = await Promise.all([
+      composePrompt({
+        projectDir: TEST_DIR,
+        promptPath: '.invoke/roles/reviewer/security.md',
+        taskContext: { task_description: 'Review the dispatch prompt changes' },
+      }),
+      composePrompt({
+        projectDir: TEST_DIR,
+        promptPath: '.invoke/roles/researcher/codebase.md',
+        taskContext: { task_description: 'Research the dispatch prompt changes' },
+      }),
+      composePrompt({
+        projectDir: TEST_DIR,
+        promptPath: '.invoke/roles/builder/default.md',
+        taskContext: { task_description: 'Build the dispatch prompt changes' },
+      }),
+      composePrompt({
+        projectDir: TEST_DIR,
+        promptPath: '.invoke/roles/planner/architect.md',
+        taskContext: { task_description: 'Plan the dispatch prompt changes' },
+      }),
+    ])
+
+    const reviewerContext = extractContext(reviewerResult)
+    const researcherContext = extractContext(researcherResult)
+    const builderContext = extractContext(builderResult)
+    const plannerContext = extractContext(plannerResult)
+
+    expect(reviewerContext).not.toContain('## Session Discoveries')
+    expect(researcherContext).not.toContain('## Session Discoveries')
+    expect(builderContext).toContain('## Session Discoveries\n\nSensitive notes for active implementation work.')
+    expect(plannerContext).toContain('## Session Discoveries\n\nSensitive notes for active implementation work.')
+
+    for (const context of [reviewerContext, researcherContext, builderContext, plannerContext]) {
+      expect(context).toContain('## Purpose\n\nShip the next dispatch update.')
+      expect(context).toContain('## Tech Stack\n\nTypeScript, Node.js, and Vitest.')
+      expect(context).toContain('## Conventions\n\nKeep changes small and targeted.')
+      expect(context).toContain('## Constraints\n\nDo not leak restricted context across roles.')
+    }
+  })
+
+  it('filters long builder context to keep architecture, session discoveries, and core sections', async () => {
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
 
     await writeFile(
@@ -267,6 +371,7 @@ Review for OWASP top 10 vulnerabilities.`
       buildSection('Conventions', 'Prefer ESM modules and descriptive names.'),
       buildSection('Constraints', 'Keep the CLI interface stable.'),
       buildSection('Architecture', 'Dispatcher, provider, and parser layers.'),
+      buildSection('Session Discoveries', 'Recent workflow findings for the current session.'),
       buildSection('Completed Work', 'Completed item. ' + 'history '.repeat(700)),
       buildSection('Known Issues', 'Known issue. ' + 'issue '.repeat(700)),
     ].join('\n\n')
@@ -286,18 +391,112 @@ Review for OWASP top 10 vulnerabilities.`
       expect(context).toContain('## Conventions\n\nPrefer ESM modules and descriptive names.')
       expect(context).toContain('## Constraints\n\nKeep the CLI interface stable.')
       expect(context).toContain('## Architecture\n\nDispatcher, provider, and parser layers.')
+      expect(context).toContain('## Session Discoveries\n\nRecent workflow findings for the current session.')
       expect(context).not.toContain('## Completed Work')
       expect(context).not.toContain('## Known Issues')
       expect(errorSpy).toHaveBeenCalledWith(
         '[prompt-composer] Filtered project context sections',
         {
-          included: ['Purpose', 'Tech Stack', 'Conventions', 'Constraints', 'Architecture'],
+          included: ['Purpose', 'Tech Stack', 'Conventions', 'Constraints', 'Architecture', 'Session Discoveries'],
           excluded: ['Completed Work', 'Known Issues'],
         }
       )
     } finally {
       errorSpy.mockRestore()
     }
+  })
+
+  it('keeps role-restricted sections for custom roles in short and long contexts', async () => {
+    await mkdir(path.join(TEST_DIR, '.invoke', 'roles', 'qa'), { recursive: true })
+    await writeFile(
+      path.join(TEST_DIR, '.invoke', 'roles', 'qa', 'default.md'),
+      '# QA\n\n## Task\n{{task_description}}\n\n## Context\n{{project_context}}\n'
+    )
+
+    const smallContext = [
+      '# Project Context',
+      buildSection('Purpose', 'Validate custom role filtering.'),
+      buildSection('Architecture', 'System layout details.'),
+      buildSection('Completed Work', 'Recent implementation summary.'),
+      buildSection('Session Discoveries', 'Current session notes.'),
+    ].join('\n\n')
+
+    expect(smallContext.length).toBeLessThan(4000)
+
+    await writeFile(path.join(TEST_DIR, '.invoke', 'context.md'), smallContext)
+
+    const smallResult = await composePrompt({
+      projectDir: TEST_DIR,
+      promptPath: '.invoke/roles/qa/default.md',
+      taskContext: { task_description: 'Validate prompt composition for QA' },
+    })
+
+    const smallRenderedContext = extractContext(smallResult)
+    expect(smallRenderedContext).toContain('## Architecture\n\nSystem layout details.')
+    expect(smallRenderedContext).toContain('## Completed Work\n\nRecent implementation summary.')
+    expect(smallRenderedContext).toContain('## Session Discoveries\n\nCurrent session notes.')
+
+    const largeContext = [
+      '# Project Context',
+      buildSection('Purpose', 'Validate custom role filtering.'),
+      buildSection('Tech Stack', 'TypeScript, Node.js, and Vitest.'),
+      buildSection('Conventions', 'Keep changes small and targeted.'),
+      buildSection('Constraints', 'Do not broaden the requested scope.'),
+      buildSection('Architecture', 'System layout details.'),
+      buildSection('Completed Work', 'Recent implementation summary.'),
+      buildSection('Session Discoveries', 'Current session notes.'),
+      buildSection('Known Issues', 'Known issue summary. ' + 'issue '.repeat(700)),
+    ].join('\n\n')
+
+    expect(largeContext.length).toBeGreaterThan(4000)
+
+    await writeFile(path.join(TEST_DIR, '.invoke', 'context.md'), largeContext)
+
+    const largeResult = await composePrompt({
+      projectDir: TEST_DIR,
+      promptPath: '.invoke/roles/qa/default.md',
+      taskContext: {
+        task_description: 'Review architecture completed work and session discoveries for QA',
+      },
+    })
+
+    const largeRenderedContext = extractContext(largeResult)
+    expect(largeRenderedContext).toContain('## Architecture\n\nSystem layout details.')
+    expect(largeRenderedContext).toContain('## Completed Work\n\nRecent implementation summary.')
+    expect(largeRenderedContext).toContain('## Session Discoveries\n\nCurrent session notes.')
+  })
+
+  it('filters long planner context to keep session discoveries and core sections', async () => {
+    await writeFile(
+      path.join(TEST_DIR, '.invoke', 'roles', 'planner', 'architect.md'),
+      '# Planner\n\n## Context\n{{project_context}}\n'
+    )
+
+    const longContext = [
+      '# Project Context',
+      buildSection('Purpose', 'Plan the next architecture update.'),
+      buildSection('Tech Stack', 'TypeScript, Node.js, Vitest.'),
+      buildSection('Conventions', 'Prefer small focused changes.'),
+      buildSection('Constraints', 'Keep the pipeline stable.'),
+      buildSection('Architecture', 'Planner, builder, and reviewer stages.'),
+      buildSection('Session Discoveries', 'Recent workflow findings for the current session.'),
+      buildSection('Completed Work', 'Completed item. ' + 'history '.repeat(700)),
+      buildSection('Known Issues', 'Known issue. ' + 'issue '.repeat(700)),
+    ].join('\n\n')
+
+    await writeFile(path.join(TEST_DIR, '.invoke', 'context.md'), longContext)
+
+    const result = await composePrompt({
+      projectDir: TEST_DIR,
+      promptPath: '.invoke/roles/planner/architect.md',
+      taskContext: { task_description: 'Plan dashboard routing changes' },
+    })
+
+    const context = extractContext(result)
+    expect(context).toContain('## Session Discoveries\n\nRecent workflow findings for the current session.')
+    expect(context).toContain('## Architecture\n\nPlanner, builder, and reviewer stages.')
+    expect(context).not.toContain('## Completed Work')
+    expect(context).not.toContain('## Known Issues')
   })
 
   it('filters long reviewer context to keep completed work and matching sections', async () => {
@@ -313,6 +512,7 @@ Review for OWASP top 10 vulnerabilities.`
       buildSection('Conventions', 'Use small pure helpers when possible.'),
       buildSection('Constraints', 'Do not change public API signatures.'),
       buildSection('Architecture', 'Core services are split by dispatch layer.'),
+      buildSection('Session Discoveries', 'Recent workflow findings for the current session.'),
       buildSection('Completed Work', 'Delivered feature summary. ' + 'delivery '.repeat(150)),
       buildSection('Authentication', 'Auth flow details. ' + 'auth '.repeat(120)),
       buildSection('Known Issues', 'Known issue summary. ' + 'issue '.repeat(900)),
@@ -334,6 +534,87 @@ Review for OWASP top 10 vulnerabilities.`
     expect(context).toContain('## Completed Work')
     expect(context).toContain('## Authentication')
     expect(context).not.toContain('## Architecture')
+    expect(context).not.toContain('## Session Discoveries')
+  })
+
+  it('filters large reviewer context after role exclusions when the original context exceeds the limit', async () => {
+    await writeFile(
+      path.join(TEST_DIR, '.invoke', 'roles', 'reviewer', 'security.md'),
+      '# Reviewer\n\n## Task\n{{task_description}}\n\n## Context\n{{project_context}}\n'
+    )
+
+    const longArchitecture = 'Architecture notes. ' + 'diagram '.repeat(300)
+    const longSessionDiscoveries = 'Session notes. ' + 'discovery '.repeat(300)
+    const longContext = [
+      '# Project Context',
+      buildSection('Purpose', 'Review authentication changes.'),
+      buildSection('Tech Stack', 'TypeScript and Node.js.'),
+      buildSection('Conventions', 'Keep changes focused.'),
+      buildSection('Constraints', 'Do not change public API signatures.'),
+      buildSection('Architecture', longArchitecture),
+      buildSection('Session Discoveries', longSessionDiscoveries),
+      buildSection('Authentication', 'Authentication flow details.'),
+      buildSection('Known Issues', 'Known issue summary.'),
+    ].join('\n\n')
+
+    const roleFilteredContext = [
+      '# Project Context',
+      buildSection('Purpose', 'Review authentication changes.'),
+      buildSection('Tech Stack', 'TypeScript and Node.js.'),
+      buildSection('Conventions', 'Keep changes focused.'),
+      buildSection('Constraints', 'Do not change public API signatures.'),
+      buildSection('Authentication', 'Authentication flow details.'),
+      buildSection('Known Issues', 'Known issue summary.'),
+    ].join('\n\n')
+
+    expect(longContext.length).toBeGreaterThan(4000)
+    expect(roleFilteredContext.length).toBeLessThan(4000)
+
+    await writeFile(path.join(TEST_DIR, '.invoke', 'context.md'), longContext)
+
+    const result = await composePrompt({
+      projectDir: TEST_DIR,
+      promptPath: '.invoke/roles/reviewer/security.md',
+      taskContext: { task_description: 'Review authentication changes' },
+    })
+
+    const context = extractContext(result)
+    expect(context).toContain('## Authentication\n\nAuthentication flow details.')
+    expect(context).not.toContain('## Architecture')
+    expect(context).not.toContain('## Session Discoveries')
+    expect(context).not.toContain('## Known Issues')
+  })
+
+  it('filters long researcher context to exclude session discoveries without keyword overlap', async () => {
+    await writeFile(
+      path.join(TEST_DIR, '.invoke', 'roles', 'researcher', 'codebase.md'),
+      '# Researcher\n\n## Task\n{{task_description}}\n\n## Context\n{{project_context}}\n'
+    )
+
+    const longContext = [
+      '# Project Context',
+      buildSection('Purpose', 'Map the current codebase structure.'),
+      buildSection('Tech Stack', 'TypeScript and Node.js.'),
+      buildSection('Conventions', 'Prefer direct evidence from source files.'),
+      buildSection('Constraints', 'Do not make changes during research.'),
+      buildSection('Architecture', 'Core services are split by dispatch layer.'),
+      buildSection('Session Discoveries', 'Recent workflow findings for the current session.'),
+      buildSection('Authentication', 'Auth flow details. ' + 'auth '.repeat(120)),
+      buildSection('Known Issues', 'Known issue summary. ' + 'issue '.repeat(900)),
+    ].join('\n\n')
+
+    await writeFile(path.join(TEST_DIR, '.invoke', 'context.md'), longContext)
+
+    const result = await composePrompt({
+      projectDir: TEST_DIR,
+      promptPath: '.invoke/roles/researcher/codebase.md',
+      taskContext: { task_description: 'Research the authentication flow' },
+    })
+
+    const context = extractContext(result)
+    expect(context).toContain('## Authentication')
+    expect(context).not.toContain('## Architecture')
+    expect(context).not.toContain('## Session Discoveries')
   })
 
   it('truncates after filtering when the selected sections still exceed the limit', async () => {
@@ -360,19 +641,26 @@ Review for OWASP top 10 vulnerabilities.`
       taskContext: { task_description: 'Implement reporting flow' },
     })
 
-    const context = extractContext(result).trimEnd()
+    const context = stripNonceDelimiterLines(extractContext(result)).trimEnd()
     expect(context).toContain(TRUNCATED_MARKER)
     expect(context.length).toBeLessThanOrEqual(4013)
   })
 
-  it('sets project_context to empty string when no context.md', async () => {
-    const result = await composePrompt({
-      projectDir: TEST_DIR,
-      promptPath: '.invoke/roles/test/prompt.md',
-      taskContext: { task_description: 'Build feature' },
-    })
+  it('renders empty project_context sentinels when no context.md', async () => {
+    const nonce = '00112233445566778899aabbccddeeff'
+
+    const result = await composePromptWithNonce(
+      {
+        projectDir: TEST_DIR,
+        promptPath: '.invoke/roles/test/prompt.md',
+        taskContext: { task_description: 'Build feature' },
+      },
+      nonce
+    )
 
     expect(result).not.toContain('{{project_context}}')
+    expect(result).toContain(`<<<PROJECT_CONTEXT_DATA_START_${nonce}>>>`)
+    expect(result).toContain(`<<<PROJECT_CONTEXT_DATA_END_${nonce}>>>`)
   })
 
   it('renders nonce-scoped reviewer delimiters when a fixed nonce is provided', async () => {

@@ -505,6 +505,71 @@ After saving the review history, update context.md to record what was built:
    - `section: "Known Issues"`
    - `mode: "append"`
    - `content: "\n- [finding summary] (deferred from pipeline [id])"`
+5. Promote durable discoveries from `Session Discoveries` only with explicit user approval:
+   - Read the current context via `invoke_get_context` and inspect the `Session Discoveries` section.
+   - For each discovery, decide whether it is durable project context or transient session-only information.
+   - Prepare up to three proposed promotion payloads:
+     - Durable architectural changes: first read the existing `Architecture` content, merge in the durable change, and prepare the full merged replacement content for `section: "Architecture"` with `mode: "replace"`.
+     - New conventions that should persist across future work: prepare the exact bullet lines to append to `section: "Conventions"` with `mode: "append"`.
+     - New hard constraints or operational limits: prepare the exact bullet lines to append to `section: "Constraints"` with `mode: "append"`.
+   - Print the proposed promotions as text before asking for approval so the user can review exactly what would be written to each permanent section. Show each non-empty category separately:
+     - `Architecture` proposed replacement: [full merged Architecture section content]
+     - `Conventions` proposed append: [exact bullet lines to append]
+     - `Constraints` proposed append: [exact bullet lines to append]
+   - If no category has a proposed promotion, skip the approval question and do not call `invoke_update_context` for promotion.
+   - Otherwise, BEFORE any promotion `invoke_update_context` calls, ask the user via `AskUserQuestion` to approve each non-empty category separately:
+
+   ```text
+   AskUserQuestion({
+     questions: [
+       {
+         question: 'Approve replacing the Architecture section with the proposed merged content shown above?',
+         header: 'Architecture promotion',
+         multiSelect: false,
+         options: [
+           { label: 'Approve replacement', description: 'Write the proposed Architecture replacement' },
+           { label: 'Reject replacement', description: 'Do not write the proposed Architecture change' }
+         ]
+       },
+       {
+         question: 'Approve appending the proposed Conventions entries shown above?',
+         header: 'Conventions promotion',
+         multiSelect: false,
+         options: [
+           { label: 'Approve append', description: 'Append the proposed Conventions entries' },
+           { label: 'Reject append', description: 'Do not write the proposed Conventions entries' }
+         ]
+       },
+       {
+         question: 'Approve appending the proposed Constraints entries shown above?',
+         header: 'Constraints promotion',
+         multiSelect: false,
+         options: [
+           { label: 'Approve append', description: 'Append the proposed Constraints entries' },
+           { label: 'Reject append', description: 'Do not write the proposed Constraints entries' }
+         ]
+       }
+     ]
+   })
+   ```
+
+   - Include only the questions for categories that actually have proposed content.
+   - After the user answers, call `invoke_update_context` only for the categories the user explicitly approved:
+     - Approved `Architecture` replacement: call `invoke_update_context` with:
+       - `section: "Architecture"`
+       - `mode: "replace"`
+       - `content: [full merged Architecture section content]`
+     - Approved `Conventions` appends: call `invoke_update_context` with:
+       - `section: "Conventions"`
+       - `mode: "append"`
+       - `content: [exact bullet lines approved for append]`
+     - Approved `Constraints` appends: call `invoke_update_context` with:
+       - `section: "Constraints"`
+       - `mode: "append"`
+       - `content: [exact bullet lines approved for append]`
+   - If the user rejects a category, do NOT write that category.
+   - Transient patterns, one-off debugging notes, and session-local observations: do NOT promote them.
+6. Clear `Session Discoveries` after the approval pass regardless of whether any promotions were proposed or approved so the heading remains but the session-only content is removed. Call `invoke_update_context({ section: 'Session Discoveries', mode: 'replace', content: '' })` unconditionally.
 
 At pipeline completion, call `invoke_get_metrics` with `session_id: <pipeline_id>` and print a usage summary, then print the fold result from step 8.5:
 

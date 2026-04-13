@@ -19,6 +19,10 @@ describe('default planner prompts', () => {
 
     expect(content).toMatch(expectedTitle)
     expect(content).toContain('{{task_description}}')
+    expect(content).toContain('## Project Context')
+    expect(content).toContain('{{project_context}}')
+    expect(content).toContain('{{project_context_delim_start}}')
+    expect(content).toContain('{{project_context_delim_end}}')
     expect(content).toContain('{{research_context}}')
     expect(content).toContain('## Behavioral Guardrails')
     expect(content).toContain('## Anti-Patterns')

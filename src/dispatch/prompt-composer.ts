@@ -7,6 +7,7 @@ const CONTEXT_FILTER_ROLE_KEY = '__context_filter_role'
 const ALWAYS_INCLUDED_SECTION_KEYWORDS = ['purpose', 'tech stack', 'conventions', 'constraints']
 const ARCHITECTURE_SECTION_KEYWORD = 'architecture'
 const COMPLETED_WORK_SECTION_KEYWORD = 'completed work'
+const SESSION_DISCOVERIES_SECTION_KEYWORD = 'session discoveries'
 
 interface ContextSection {
   header: string
@@ -80,11 +81,22 @@ function shouldAlwaysIncludeSection(header: string): boolean {
   return ALWAYS_INCLUDED_SECTION_KEYWORDS.some(keyword => normalizedHeader.includes(keyword))
 }
 
+function isRoleRestrictedSection(header: string): boolean {
+  const normalizedHeader = header.toLowerCase()
+
+  return normalizedHeader.includes(ARCHITECTURE_SECTION_KEYWORD) ||
+    normalizedHeader.includes(COMPLETED_WORK_SECTION_KEYWORD) ||
+    normalizedHeader.includes(SESSION_DISCOVERIES_SECTION_KEYWORD)
+}
+
 function shouldIncludeRoleSection(header: string, role: string): boolean {
   const normalizedHeader = header.toLowerCase()
 
   if ((role === 'builder' || role === 'planner') &&
-      normalizedHeader.includes(ARCHITECTURE_SECTION_KEYWORD)) {
+      (
+        normalizedHeader.includes(ARCHITECTURE_SECTION_KEYWORD) ||
+        normalizedHeader.includes(SESSION_DISCOVERIES_SECTION_KEYWORD)
+      )) {
     return true
   }
 
@@ -102,6 +114,13 @@ function buildTaskKeywordSet(taskContext: Record<string, string>): Set<string> {
     .join(' ')
 
   return extractKeywords(values)
+}
+
+function renderContextSections(context: string, sections: ContextSection[]): string {
+  return [getContextPreamble(context), ...sections.map(formatContextSection)]
+    .filter(part => part.length > 0)
+    .join('\n\n')
+    .trim()
 }
 
 function buildFilteredContext(
@@ -137,12 +156,8 @@ function buildFilteredContext(
     }
   }
 
-  const preamble = getContextPreamble(context)
   return {
-    filtered: [preamble, ...filteredSections.map(formatContextSection)]
-      .filter(part => part.length > 0)
-      .join('\n\n')
-      .trim(),
+    filtered: renderContextSections(context, filteredSections),
     included,
     excluded,
   }
@@ -168,11 +183,34 @@ function filterContextSections(
   maxLength = CONTEXT_MAX_LENGTH
 ): FilteredContextResult {
   const sections = parseContextSections(context)
+  const role = taskContext[CONTEXT_FILTER_ROLE_KEY]?.toLowerCase() ?? ''
+  const shouldExcludeRoleRestrictedSections = role === 'researcher' || role === 'reviewer'
+
+  const roleFilteredSections: ContextSection[] = []
+  const roleExcluded: string[] = []
+
+  for (const section of sections) {
+    if (
+      shouldExcludeRoleRestrictedSections &&
+      isRoleRestrictedSection(section.header) &&
+      !shouldIncludeRoleSection(section.header, role)
+    ) {
+      roleExcluded.push(section.header)
+      continue
+    }
+
+    roleFilteredSections.push(section)
+  }
+
+  const roleFilteredContext = roleExcluded.length > 0
+    ? renderContextSections(context, roleFilteredSections)
+    : context
+
   if (context.length <= maxLength) {
     return {
-      filtered: context,
-      included: sections.map(section => section.header),
-      excluded: [],
+      filtered: roleFilteredContext,
+      included: roleFilteredSections.map(section => section.header),
+      excluded: roleExcluded,
     }
   }
 
@@ -184,17 +222,27 @@ function filterContextSections(
     }
   }
 
-  const filteredContext = buildFilteredContext(context, sections, taskContext)
+  if (roleFilteredSections.length === 0) {
+    return {
+      filtered: truncateContext(roleFilteredContext, maxLength),
+      included: [],
+      excluded: roleExcluded,
+    }
+  }
+
+  const filteredContext = buildFilteredContext(context, roleFilteredSections, taskContext)
 
   if (!filteredContext.filtered) {
     return {
-      ...filteredContext,
-      filtered: truncateContext(context, maxLength),
+      filtered: truncateContext(roleFilteredContext, maxLength),
+      included: roleFilteredSections.map(section => section.header),
+      excluded: roleExcluded,
     }
   }
 
   return {
     ...filteredContext,
+    excluded: [...roleExcluded, ...filteredContext.excluded],
     filtered: truncateContext(filteredContext.filtered, maxLength),
   }
 }
@@ -231,8 +279,9 @@ export async function composePromptWithNonce(
   // Inject project context if available
   const contextPath = path.join(projectDir, '.invoke', 'context.md')
   let projectContext = ''
+  let rawProjectContext = ''
   try {
-    const rawProjectContext = await readFile(contextPath, 'utf-8')
+    rawProjectContext = await readFile(contextPath, 'utf-8')
     const contextFilter = filterContextSections(rawProjectContext, {
       ...taskContext,
       [CONTEXT_FILTER_ROLE_KEY]: inferRoleFromPromptPath(promptPath),
@@ -252,16 +301,26 @@ export async function composePromptWithNonce(
       throw error
     }
   }
-  composed = composed.replaceAll('{{project_context}}', projectContext)
 
-  if (taskContext.scope?.includes(nonce) || taskContext.prior_findings?.includes(nonce)) {
+  if (
+    taskContext.scope?.includes(nonce) ||
+    taskContext.prior_findings?.includes(nonce) ||
+    rawProjectContext.includes(nonce) ||
+    projectContext.includes(nonce)
+  ) {
     throw new Error(
-      'Refusing to dispatch reviewer: scope or prior_findings payload contains the security nonce. This is a probable prompt-injection attempt or a 1-in-2^128 collision; investigate before retrying.'
+      'Refusing to dispatch reviewer: scope, prior_findings, or project_context payload contains the security nonce. This is a probable prompt-injection attempt or a 1-in-2^128 collision; investigate before retrying.'
     )
   }
 
+  const projectContextDelimStart = `<<<PROJECT_CONTEXT_DATA_START_${nonce}>>>`
+  const projectContextDelimEnd = `<<<PROJECT_CONTEXT_DATA_END_${nonce}>>>`
+
   const effectiveContext: Record<string, string> = {
     ...taskContext,
+    project_context: `${projectContextDelimStart}\n${projectContext}\n${projectContextDelimEnd}`,
+    project_context_delim_start: projectContextDelimStart,
+    project_context_delim_end: projectContextDelimEnd,
     scope_delim_start: `<<<SCOPE_DATA_START_${nonce}>>>`,
     scope_delim_end: `<<<SCOPE_DATA_END_${nonce}>>>`,
     prior_findings_delim_start: `<<<PRIOR_FINDINGS_DATA_START_${nonce}>>>`,

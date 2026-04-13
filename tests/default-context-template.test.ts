@@ -13,6 +13,7 @@ describe('default context template', () => {
     expect(content).toContain('## Purpose')
     expect(content).toContain('## Tech Stack')
     expect(content).toContain('## Conventions')
+    expect(content).toContain('## Session Discoveries')
     expect(content).toContain('## Constraints')
     expect(content).not.toContain('## Project Overview')
     expect(content).not.toContain('## Active Decisions')

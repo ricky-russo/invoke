@@ -63,11 +63,22 @@ describe('ContextManager', () => {
     expect(content).toContain('Second item')
   })
 
-  it('throws when updating nonexistent section', async () => {
+  it('creates a missing section at the end in replace mode', async () => {
     await manager.initialize('# Project Context\n\n## Architecture\n\nContent')
-    await expect(
-      manager.updateSection('Nonexistent', 'content', 'replace')
-    ).rejects.toThrow()
+    await manager.updateSection('New Section', 'content', 'replace')
+    const content = await manager.get()
+    expect(content).toBe(
+      '# Project Context\n\n## Architecture\n\nContent\n\n## New Section\n\ncontent\n'
+    )
+  })
+
+  it('creates a missing section at the end in append mode', async () => {
+    await manager.initialize('# Project Context\n\n## Architecture\n\nContent')
+    await manager.updateSection('New Section', 'content', 'append')
+    const content = await manager.get()
+    expect(content).toBe(
+      '# Project Context\n\n## Architecture\n\nContent\n\n## New Section\n\ncontent\n'
+    )
   })
 
   it('truncates content when getting with maxLength', async () => {

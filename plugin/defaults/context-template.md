@@ -23,6 +23,10 @@
 
 <!-- Automatically updated by invoke after each pipeline completes -->
 
+## Session Discoveries
+
+<!-- Automatically updated during pipeline sessions to capture emergent patterns, new conventions, and architectural decisions; cleared at pipeline completion -->
+
 ## Constraints
 
 <!-- Non-negotiable requirements, operational limits, and important trade-offs -->

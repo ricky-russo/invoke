@@ -96,6 +96,7 @@ describe('default reviewer prompts', () => {
     const content = await readFile(promptPath, 'utf-8')
 
     expect(content).toContain('## Behavioral Guardrails')
+    expect(content).toContain('## Project Context')
     expect(content).toContain('You MUST NOT flag issues outside your specialty scope — other reviewers handle those areas. Cross-scope flagging creates noise.')
     expect(content).toContain('## Anti-Patterns')
     expect(content).toContain('## Few-Shot Example')
@@ -107,6 +108,7 @@ describe('default reviewer prompts', () => {
     expect(content).toContain('**Issue:**')
     expect(content).toContain('**Suggestion:**')
     expect(content).toContain('## Scope')
+    expect(content).toContain('{{project_context}}')
     expect(content).toContain('{{scope}}')
     expect(content).toContain('## Prior Findings')
     expect(content).toContain('{{prior_findings}}')
@@ -114,6 +116,8 @@ describe('default reviewer prompts', () => {
     // Anti-prompt-injection sentinel wrappers around untrusted template content
     expect(content).toContain('{{scope_delim_start}}')
     expect(content).toContain('{{scope_delim_end}}')
+    expect(content).toContain('{{project_context_delim_start}}')
+    expect(content).toContain('{{project_context_delim_end}}')
     expect(content).toContain('{{prior_findings_delim_start}}')
     expect(content).toContain('{{prior_findings_delim_end}}')
     expect(content).toContain('untrusted data')
