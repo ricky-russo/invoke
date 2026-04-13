@@ -307,19 +307,25 @@ When you record an inter-batch review cycle, first call `invoke_get_review_cycle
 
 ### 4. Build Complete
 
-When all batches are done, update state via `invoke_set_state` with `session_id: <pipeline_id>`:
-- `current_stage: "review"`
+When all batches are done:
 
-Then invoke `Skill({ skill: "invoke:invoke-review" })` to begin the review stage.
-
-### Bug Resolution
-
-After the final build batch completes:
+#### 4a. Bug Resolution
 
 1. Read pipeline state via `invoke_get_state` with `session_id: <pipeline_id>`.
-2. If `state.bug_ids` is present and non-empty:
-   - **Transitioning to `review`**: note them — they will be resolved when the pipeline ultimately completes after review.
-   - **Transitioning directly to `complete`** (review skipped or aborted): call `invoke_update_bug` for each `bug_id` in `state.bug_ids` with `status: "resolved"`, a brief `resolution` summary, and `session_id: <pipeline_id>`. Then print: `✅ Resolved bugs: [list of bug_ids]`
+2. If `state.bug_ids` is present and non-empty, note them — they will be resolved when the pipeline ultimately completes after review.
+
+#### 4b. Transition to Review Stage
+
+Update state via `invoke_set_state` with `session_id: <pipeline_id>`:
+- `current_stage: "review"`
+
+**CRITICAL — You MUST invoke the review skill now. Do NOT dispatch reviewers yourself, do NOT run review logic inline, and do NOT skip this step.** The invoke-review skill contains the full review flow including tiered review, triage, fix cycles, and autosquash. Call:
+
+```
+Skill({ skill: "invoke:invoke-review" })
+```
+
+**STOP HERE.** Do not proceed past this point in the build skill. The invoke-review skill takes over from here.
 
 ## Error Handling
 

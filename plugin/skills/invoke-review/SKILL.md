@@ -54,6 +54,60 @@ Skip any named tier that is not configured. `polish` is optional even when confi
 
 Before dispatching reviewers, call `invoke_get_review_cycle_count` with the `session_id`. If the count meets or exceeds the configured `max_review_cycles`, inform the user: "Review cycle limit reached ([count]/[max]). Findings from this point will be advisory only — no further fix cycles will be dispatched." This is the same guard rail used in invoke-build for inter-batch review. When the limit is reached, findings are advisory only. Do NOT dispatch builder fix agents or re-review loops. Present the findings to the user but skip steps 7 (Auto-Fix) and 8 (Next Cycle fix loops). The user can still read and act on findings manually.
 
+### 3.5 Determine Current Tier (tiered mode only)
+
+Skip this step entirely if `review_tiers` is not configured (fallback mode). Also set `currentScope = undefined` — it is only set to `'final'` when recording the very last review cycle in step 6.
+
+Scan `state.review_cycles` to determine which tier to run next:
+
+1. For each configured tier in order (`critical` → `quality` → `polish`), find the most recent `review_cycle` entry where `rc.tier === tier` AND `rc.batch_id === orchestrationBatchId`.
+   - **No matching cycle exists:** this tier has not been started — set `currentTier` to this tier and stop scanning.
+   - **A matching cycle exists but the tier has NOT cleared** (unresolved in-scope findings remain — see clearing rules below): set `currentTier` to this tier (re-review needed after fixes) and stop scanning.
+   - **The tier has cleared:** continue to the next tier.
+
+2. **Clearing rules** (same as step 8, restated here for the algorithm):
+   - `critical` clears when the latest critical-tier cycle has no unresolved `critical` or `high` in-scope accepted findings after triage and any accepted fixes have been re-reviewed.
+   - `quality` clears when the latest quality-tier cycle has no unresolved in-scope accepted findings remaining.
+   - `polish` clears when the latest polish-tier cycle has no unresolved in-scope accepted findings remaining.
+
+3. **If `currentTier` is `polish`:** before proceeding, ask the user whether to run it or skip:
+
+```
+AskUserQuestion({
+  questions: [{
+    question: 'Critical and quality tiers have cleared. Run the polish tier?',
+    header: 'Polish tier',
+    multiSelect: false,
+    options: [
+      { label: 'Run polish tier', description: 'Dispatch polish reviewers: [list names from config]' },
+      { label: 'Skip — complete pipeline', description: 'Skip polish and proceed to completion' }
+    ]
+  }]
+})
+```
+
+If the user skips polish, jump directly to step 8.5 (Autosquash) and then step 9 (Complete Pipeline).
+
+4. **If all configured tiers have cleared**, skip review entirely — jump to step 8.5 and then step 9.
+
+5. **Confirm the tier dispatch** with the user via `AskUserQuestion`:
+
+```
+AskUserQuestion({
+  questions: [{
+    question: 'Ready to dispatch the [currentTier] tier reviewers?',
+    header: '[CurrentTier] tier review',
+    multiSelect: false,
+    options: [
+      { label: 'Dispatch [currentTier] tier', description: 'Reviewers: [list reviewer names from tier config]' },
+      { label: 'Skip — complete pipeline', description: 'Skip remaining review and proceed to completion' }
+    ]
+  }]
+})
+```
+
+If the user skips, jump to step 8.5 and then step 9.
+
 ### Pre-Dispatch Preparation
 
 Before dispatching reviewers, complete these three substeps in order.
