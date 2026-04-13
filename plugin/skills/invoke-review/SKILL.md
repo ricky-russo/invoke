@@ -577,7 +577,7 @@ If the user picks Create PR or Push only, call `invoke_pr_create` with:
 
 The tool detects gh availability and degrades gracefully — if gh is missing or unauthenticated, it falls back to push + printing a compare URL. Print the response (pr_url or compare_url) to the user.
 
-After all review cycles complete and the user approves the final result, update state with `current_stage: "complete"` via `invoke_set_state` with `session_id: <pipeline_id>`.
+After all review cycles complete and the user approves the final result, update state with `current_stage: "complete"` via `invoke_set_state` with `session_id: <pipeline_id>`. The server validates the transition; because `complete` is terminal, do not expect a `next_step` field after this update.
 
 ### 11. Bug Resolution
 

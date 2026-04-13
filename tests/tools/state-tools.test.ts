@@ -118,6 +118,19 @@ function registerFreshStateTools() {
   registerStateTools(server, new StateManager(TEST_DIR), TEST_DIR, new SessionManager(TEST_DIR))
 }
 
+async function initializeSessionState(
+  sessionId: string,
+  currentStage: PipelineState['current_stage'] = 'scope'
+): Promise<string> {
+  const sessionDir = await sessionManager.create(sessionId)
+  const sessionStateManager = new StateManager(TEST_DIR, sessionDir)
+  await sessionStateManager.initialize(sessionId)
+  if (currentStage !== 'scope') {
+    await sessionStateManager.update({ current_stage: currentStage })
+  }
+  return sessionDir
+}
+
 beforeEach(async () => {
   await mkdir(path.join(TEST_DIR, '.invoke'), { recursive: true })
   stateManager = new StateManager(TEST_DIR)
@@ -1143,6 +1156,187 @@ describe('registerStateTools', () => {
       expect(result.isError).toBe(true)
       expect(result.content[0].text).toBe(testCase.message)
     }
+  })
+
+  it('rejects invalid stage transitions in invoke_set_state', async () => {
+    const sessionDir = await initializeSessionState('session-stage-invalid', 'scope')
+
+    const result = await getTool('invoke_set_state').handler({
+      session_id: 'session-stage-invalid',
+      current_stage: 'build',
+    })
+
+    expect(result.isError).toBe(true)
+    expect(parseResponseText(result)).toEqual({
+      error: 'Invalid stage transition',
+      from: 'scope',
+      to: 'build',
+    })
+    expect((await new StateManager(TEST_DIR, sessionDir).get())?.current_stage).toBe('scope')
+  })
+
+  it('rejects invalid stage transitions for newly initialized sessions in invoke_set_state', async () => {
+    const cases = [
+      { sessionId: 'session-stage-new-build', to: 'build' },
+      { sessionId: 'session-stage-new-review', to: 'review' },
+    ] as const satisfies Array<{
+      sessionId: string
+      to: Extract<PipelineState['current_stage'], 'build' | 'review'>
+    }>
+
+    for (const testCase of cases) {
+      const result = await getTool('invoke_set_state').handler({
+        session_id: testCase.sessionId,
+        current_stage: testCase.to,
+      })
+
+      expect(result.isError).toBe(true)
+      expect(parseResponseText(result)).toEqual({
+        error: 'Invalid stage transition',
+        from: 'scope',
+        to: testCase.to,
+      })
+      expect((await new StateManager(TEST_DIR, sessionManager.resolve(testCase.sessionId)).get())?.current_stage)
+        .toBe('scope')
+    }
+  })
+
+  it('allows valid stage transitions for newly initialized sessions in invoke_set_state', async () => {
+    const result = await getTool('invoke_set_state').handler({
+      session_id: 'session-stage-new-plan',
+      current_stage: 'plan',
+    })
+
+    expect(result.isError).toBeUndefined()
+    expect(parseResponseText(result)).toMatchObject({
+      current_stage: 'plan',
+      next_step: 'Skill({ skill: "invoke:invoke-plan" })',
+    })
+    expect((await new StateManager(TEST_DIR, sessionManager.resolve('session-stage-new-plan')).get())?.current_stage)
+      .toBe('plan')
+  })
+
+  it('allows valid stage transitions and self-transitions in invoke_set_state', async () => {
+    const cases = [
+      {
+        sessionId: 'session-stage-scope-plan',
+        from: 'scope',
+        to: 'plan',
+        nextStep: 'Skill({ skill: "invoke:invoke-plan" })',
+      },
+      {
+        sessionId: 'session-stage-build-review',
+        from: 'build',
+        to: 'review',
+        nextStep: 'Skill({ skill: "invoke:invoke-review" })',
+      },
+      {
+        sessionId: 'session-stage-review-build',
+        from: 'review',
+        to: 'build',
+        nextStep: 'Skill({ skill: "invoke:invoke-build" })',
+      },
+      {
+        sessionId: 'session-stage-plan-plan',
+        from: 'plan',
+        to: 'plan',
+        nextStep: 'Skill({ skill: "invoke:invoke-plan" })',
+      },
+      {
+        sessionId: 'session-stage-complete-complete',
+        from: 'complete',
+        to: 'complete',
+        nextStep: undefined,
+      },
+    ] as const satisfies Array<{
+      sessionId: string
+      from: PipelineState['current_stage']
+      to: PipelineState['current_stage']
+      nextStep?: string
+    }>
+
+    for (const testCase of cases) {
+      const sessionDir = await initializeSessionState(testCase.sessionId, testCase.from)
+      const result = await getTool('invoke_set_state').handler({
+        session_id: testCase.sessionId,
+        current_stage: testCase.to,
+      })
+
+      expect(result.isError, `expected transition ${testCase.from}->${testCase.to} to succeed`).toBeUndefined()
+      expect(parseResponseText(result)).toMatchObject({
+        current_stage: testCase.to,
+      })
+      if (testCase.nextStep !== undefined) {
+        expect(parseResponseText(result)).toMatchObject({
+          next_step: testCase.nextStep,
+        })
+      } else {
+        expect(result.content[0].text.includes('"next_step"')).toBe(false)
+      }
+      expect((await new StateManager(TEST_DIR, sessionDir).get())?.current_stage).toBe(testCase.to)
+    }
+  })
+
+  it('rejects complete to scope transitions in invoke_set_state', async () => {
+    const sessionDir = await initializeSessionState('session-stage-complete-scope', 'complete')
+
+    const result = await getTool('invoke_set_state').handler({
+      session_id: 'session-stage-complete-scope',
+      current_stage: 'scope',
+    })
+
+    expect(result.isError).toBe(true)
+    expect(parseResponseText(result)).toEqual({
+      error: 'Invalid stage transition',
+      from: 'complete',
+      to: 'scope',
+    })
+    expect((await new StateManager(TEST_DIR, sessionDir).get())?.current_stage).toBe('complete')
+  })
+
+  it('returns next_step as the first JSON key for non-complete stage changes', async () => {
+    await initializeSessionState('session-stage-next-step', 'scope')
+
+    const result = await getTool('invoke_set_state').handler({
+      session_id: 'session-stage-next-step',
+      current_stage: 'plan',
+    })
+
+    expect(result.isError).toBeUndefined()
+    expect(result.content[0].text.startsWith('{\n  "next_step":')).toBe(true)
+    expect(parseResponseText(result)).toMatchObject({
+      next_step: 'Skill({ skill: "invoke:invoke-plan" })',
+      current_stage: 'plan',
+    })
+  })
+
+  it('omits next_step for complete stage changes and non-stage updates', async () => {
+    await initializeSessionState('session-stage-complete', 'review')
+
+    const completeResult = await getTool('invoke_set_state').handler({
+      session_id: 'session-stage-complete',
+      current_stage: 'complete',
+    })
+
+    expect(completeResult.isError).toBeUndefined()
+    expect(completeResult.content[0].text.includes('"next_step"')).toBe(false)
+    expect(parseResponseText(completeResult)).toMatchObject({
+      current_stage: 'complete',
+    })
+
+    await initializeSessionState('session-non-stage-update', 'build')
+
+    const nonStageResult = await getTool('invoke_set_state').handler({
+      session_id: 'session-non-stage-update',
+      strategy: 'tdd',
+    })
+
+    expect(nonStageResult.isError).toBeUndefined()
+    expect(nonStageResult.content[0].text.includes('"next_step"')).toBe(false)
+    expect(parseResponseText(nonStageResult)).toMatchObject({
+      current_stage: 'build',
+      strategy: 'tdd',
+    })
   })
 
   it('rejects traversal-style session_id in invoke_get_state via SessionManager validation', async () => {

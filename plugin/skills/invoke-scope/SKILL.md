@@ -257,7 +257,7 @@ Call `invoke_set_state` with `session_id: <pipeline_id>` and:
 
 Once approved, update state via `invoke_set_state` with `session_id: <pipeline_id>` and `current_stage: "plan"`. If the user wants changes, revise the spec and repeat.
 
-After approval, update state with `current_stage: "plan"` via `invoke_set_state`, then invoke the plan stage by calling `Skill({ skill: "invoke:invoke-plan" })`.
+After approval, update state with `current_stage: "plan"` via `invoke_set_state`. The server validates the transition and the response includes a `next_step` field — execute it immediately to invoke the plan stage.
 
 ## Error Handling
 

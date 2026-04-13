@@ -53,6 +53,22 @@ const WORK_BRANCH_PATTERN = /^(?!.*\.\.)[A-Za-z0-9][A-Za-z0-9._/-]{0,255}$/
 //   - whitespace / shell metacharacters
 // Separate checks in consumers still reject `..` and `@{` constructs.
 const BASE_BRANCH_PATTERN = /^(?![-.])[A-Za-z0-9_.][A-Za-z0-9._/-]{0,254}$/
+const VALID_TRANSITIONS: Record<string, ReadonlySet<string>> = {
+  scope: new Set(['scope', 'plan']),
+  plan: new Set(['scope', 'plan', 'orchestrate']),
+  orchestrate: new Set(['plan', 'orchestrate', 'build']),
+  build: new Set(['build', 'review']),
+  review: new Set(['build', 'review', 'complete']),
+  complete: new Set(['complete']),
+}
+const NEXT_STEP: Record<string, string | null> = {
+  scope: 'Skill({ skill: "invoke:invoke-scope" })',
+  plan: 'Skill({ skill: "invoke:invoke-plan" })',
+  orchestrate: 'Skill({ skill: "invoke:invoke-orchestrate" })',
+  build: 'Skill({ skill: "invoke:invoke-build" })',
+  review: 'Skill({ skill: "invoke:invoke-review" })',
+  complete: null,
+}
 
 const SetStateInputSchema = z.object({
   session_id: z.string().regex(SESSION_ID_PATTERN, 'invalid session id format').optional(),
@@ -185,10 +201,29 @@ export function registerStateTools(
 
         const scopedStateManager = await resolveWritableStateManager(resolvedSessionId)
         let state = await scopedStateManager.get()
+        const currentStage = state?.current_stage
         if (!state) {
           state = await scopedStateManager.initialize(
             resolvedSessionId ?? `pipeline-${Date.now()}`
           )
+        }
+        const effectiveStage = currentStage ?? state.current_stage
+
+        if (stateUpdates.current_stage !== undefined && effectiveStage) {
+          const validTransitions = VALID_TRANSITIONS[effectiveStage]
+          if (validTransitions && !validTransitions.has(stateUpdates.current_stage)) {
+            return {
+              content: [{
+                type: 'text',
+                text: JSON.stringify({
+                  error: 'Invalid stage transition',
+                  from: effectiveStage,
+                  to: stateUpdates.current_stage,
+                }, null, 2),
+              }],
+              isError: true,
+            }
+          }
         }
 
         if (stateUpdates.batches !== undefined && stateUpdates.batch_update !== undefined) {
@@ -208,6 +243,14 @@ export function registerStateTools(
           reviewCycleUpdate: review_cycle_update,
           partial: rest,
         })
+        if (stateUpdates.current_stage !== undefined) {
+          const nextStep = NEXT_STEP[stateUpdates.current_stage]
+          if (nextStep !== null) {
+            return {
+              content: [{ type: 'text', text: JSON.stringify({ next_step: nextStep, ...updated }, null, 2) }],
+            }
+          }
+        }
         return {
           content: [{ type: 'text', text: JSON.stringify(updated, null, 2) }],
         }
