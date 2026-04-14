@@ -1,7 +1,7 @@
 {
   "name": "invoke",
   "description": "AI-assisted development pipeline — scope, plan, orchestrate, build, review with multi-provider agent dispatch",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "author": {
     "name": "Ricky Russo"
   },

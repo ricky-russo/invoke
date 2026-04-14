@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { cpSync, mkdirSync } from 'node:fs';
+import { cpSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -14,4 +14,12 @@ for (const file of ['index.js', 'init-cli.js']) {
   cpSync(join(root, 'dist', file), join(plugin, 'dist', file));
 }
 
-console.log('Bundle complete → plugin/dist/');
+const packageJson = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
+const pluginJsonPath = join(plugin, '.claude-plugin', 'plugin.json');
+const pluginJson = JSON.parse(readFileSync(pluginJsonPath, 'utf8'));
+
+pluginJson.version = packageJson.version;
+
+writeFileSync(pluginJsonPath, `${JSON.stringify(pluginJson, null, 2)}\n`);
+
+console.log(`Bundle complete → plugin/dist/ (version ${packageJson.version})`);
