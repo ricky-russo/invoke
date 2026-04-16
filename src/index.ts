@@ -33,6 +33,7 @@ import { registerBugTools } from './tools/bug-tools.js'
 import { registerRebaseTools } from './tools/rebase-tools.js'
 import { registerReviewDiffTools } from './tools/review-diff-tools.js'
 import { checkForNewDefaults } from './defaults-checker.js'
+import { VERSION } from './version.js'
 import { writeFile } from 'fs/promises'
 import path from 'path'
 
@@ -41,7 +42,7 @@ async function main() {
 
   const server = new McpServer({
     name: 'invoke-mcp',
-    version: '0.1.0',
+    version: VERSION,
   })
 
   // Load config — tools will fail gracefully if config is missing
