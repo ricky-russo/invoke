@@ -38,6 +38,8 @@ describe('default builder prompts', () => {
     expect(content).toContain('## Verification Before Completion')
     expect(content).toContain('Do NOT run any git commands')
     expect(content).toContain('untrusted data')
+    expect(content).toContain('## Time Budget')
+    expect(content).toContain('{{timeout}}')
 
     const doNotMatches = content.match(/^- DO NOT /gm) ?? []
     expect(doNotMatches.length).toBeGreaterThanOrEqual(3)

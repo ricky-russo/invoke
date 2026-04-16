@@ -156,9 +156,30 @@ The server validates the transition and the response includes a `next_step` fiel
 
 ## Task Sizing Guidelines
 
-- If a task touches more than 3 files, it's probably too big. Split it.
+### Traffic-Light Rubric
+
+| Dimension | Green | Yellow | Red |
+|---|---|---|---|
+| Files with substantive edits | 1–3 | 4–6 | 7+ |
+| Estimated net code delta | ≤50 LOC | 50–150 LOC | >150 LOC |
+| Scope verb | add, rename, validate, guard, wire, cover-with-test | extract, update, extend | refactor, migrate, overhaul, generalize, rework |
+| Dependency shape | None or one upstream | Two sequential layers | Branching DAG or unclear order |
+
+### Legacy heuristics (still valid as quick checks):
+
 - If a task requires understanding more than 500 lines of existing code, it's probably too big. Split it.
-- If you can't write clear acceptance criteria in 3-5 bullet points, the task is too vague. Refine it.
+- If you can't write clear acceptance criteria in 3–5 bullet points, the task is too vague. Refine it.
+
+### Timeout-Aware Sizing
+
+Builders have a hard time limit (default 300s, configurable via `agent_timeout` in settings or per-provider `timeout`). Tasks must be sized to complete well within this budget. A task that would take a human more than 30 minutes of focused coding is too large for a single builder dispatch. Prefer tasks with one primary verb and one clear proof obligation.
+
+### Mandatory Self-Check
+
+1. Apply the traffic-light rubric to each task across all four dimensions.
+2. Report the classification for each task in the approval presentation (example: `task-1: Files=Green, LOC=Yellow, Scope verb=Green, Dependency shape=Green`).
+3. Split any task with a Red classification in ANY dimension before proceeding.
+4. Provide explicit justification for every Yellow-classified task.
 
 ## CRITICAL: Dependency Validation
 

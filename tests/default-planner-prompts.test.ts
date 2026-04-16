@@ -28,6 +28,8 @@ describe('default planner prompts', () => {
     expect(content).toContain('## Anti-Patterns')
     expect(content).toContain('No Placeholders')
     expect(content).toContain('bite-sized')
+    expect(content).toContain('scope verb complexity')
+    expect(content).not.toContain('File count is not a useful unit')
 
     const doNotMatches = content.match(/^- DO NOT /gm) ?? []
     expect(doNotMatches.length).toBeGreaterThanOrEqual(3)
