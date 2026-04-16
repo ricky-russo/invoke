@@ -76,6 +76,8 @@ For a new batch, call `invoke_dispatch_batch` with:
 
 Always include `prior_findings: ''` (empty string) in each initial builder task's `task_context`. This substitutes to empty on R1, and the builder's `## Handling Prior Review Findings` section falls through silently when there are no prior findings. This prevents the composer from leaving an unresolved `{{prior_findings}}` literal in the rendered prompt.
 
+For each task, include `timeout` in `task_context`. Before calling `invoke_dispatch_batch`, read the builder subrole's provider entry timeout from the config (via `invoke_get_config`): use the `timeout` field from `roles.builder.<subrole>.providers[0]`. If the provider entry has no `timeout`, fall back to `settings.agent_timeout`. If neither is set, use `'300'`. The value must be a string (e.g., `timeout: '900'`). This substitutes into `{{timeout}}` in the builder prompt template, giving the builder awareness of its time budget.
+
 The response includes the **resolved provider/model/effort** for each task (read from the current pipeline.yaml). Use this info for your dispatch message — do NOT guess the provider before the tool returns. Display the dispatch summary AFTER receiving the response.
 
 After dispatching, note that `invoke_get_metrics` can be called with `session_id: <pipeline_id>` at any time to inspect current pipeline usage and dispatch limits.

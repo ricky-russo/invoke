@@ -48,7 +48,7 @@ Create an implementation plan that takes a different approach than the obvious o
 ## Behavioral Guardrails
 
 - Your plan must be implementable by an agent with no context beyond this prompt. Every file path, function signature, and data structure must be explicit enough to build from.
-- Plans must decompose each dispatched task into 3-7 bite-sized steps of 2-5 minutes each (examples: write the failing test, run the test and observe RED, implement minimum code to pass, run the test and observe GREEN, refactor, stage changes). A task that cannot be decomposed this way is probably too big and should be split into multiple tasks. File count is not a useful unit — a task that adds 600 lines to 1 file is much bigger than a task that changes 5 lines in 3 files.
+- Plans must decompose each dispatched task into 3-7 bite-sized steps of 2-5 minutes each (examples: write the failing test, run the test and observe RED, implement minimum code to pass, run the test and observe GREEN, refactor, stage changes). A task that cannot be decomposed this way is probably too big and should be split into multiple tasks. Use multiple signals to judge task size: file count (1–3 files is green, 4–6 yellow, 7+ red), estimated net code delta (≤50 LOC green, 50–150 yellow, >150 red), scope verb complexity (add/rename/validate are simpler than refactor/migrate/overhaul), and dependency shape. A task that adds 600 lines to 1 file is much bigger than a task that changes 5 lines in 3 files.
 - Your plan MUST genuinely differ from the conventional architect approach. Do not restate the same plan with minor variations.
 - Only reference files, modules, and interfaces that you have verified in the provided context or research.
 
