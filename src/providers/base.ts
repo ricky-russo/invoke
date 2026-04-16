@@ -3,6 +3,7 @@ export interface CommandSpec {
   args: string[]
   cwd?: string
   env?: Record<string, string>
+  stdinPrompt?: string
 }
 
 export interface Provider {

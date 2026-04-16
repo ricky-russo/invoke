@@ -26,7 +26,8 @@ describe('ClaudeProvider', () => {
     expect(cmd.args).toContain('opus-4.6')
     expect(cmd.args).not.toContain('--directory')
     expect(cmd.cwd).toBe('/tmp/worktree-1')
-    expect(cmd.args[cmd.args.length - 1]).toBe('Build the auth module')
+    expect(cmd.stdinPrompt).toBe('Build the auth module')
+    expect(cmd.args).not.toContain('Build the auth module')
   })
 
   it('substitutes all template variables', () => {
@@ -44,5 +45,6 @@ describe('ClaudeProvider', () => {
 
     expect(cmd.args).toContain('sonnet-4.6')
     expect(cmd.args).toContain('medium')
+    expect(cmd.stdinPrompt).toBe('test prompt')
   })
 })

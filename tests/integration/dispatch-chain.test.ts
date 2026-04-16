@@ -112,7 +112,8 @@ describe('Dispatch Chain Integration', () => {
     expect(cmd.args).toContain('--model')
     expect(cmd.args).toContain('opus-4.6')
     expect(cmd.cwd).toBe('/tmp/worktree')
-    expect(cmd.args[cmd.args.length - 1]).toBe('Test prompt')
+    expect(cmd.stdinPrompt).toBe('Test prompt')
+    expect(cmd.args).not.toContain('Test prompt')
   })
 
   it('builds correct CLI command for Codex', async () => {
@@ -133,7 +134,8 @@ describe('Dispatch Chain Integration', () => {
     expect(cmd.args).toContain('gpt-5.4')
     expect(cmd.args).toContain('--skip-git-repo-check')
     expect(cmd.cwd).toBe('/tmp/worktree')
-    expect(cmd.args[cmd.args.length - 1]).toBe('Review prompt')
+    expect(cmd.stdinPrompt).toBe('Review prompt')
+    expect(cmd.args).not.toContain('Review prompt')
   })
 
   it('composes prompt with template variables injected', async () => {
@@ -264,7 +266,8 @@ describe('Dispatch Chain Integration', () => {
       })
       expect(cmd.cmd).toBeTruthy()
       expect(cmd.args.length).toBeGreaterThan(0)
-      expect(cmd.args[cmd.args.length - 1]).toBe(prompt)
+      expect(cmd.stdinPrompt).toBe(prompt)
+      expect(cmd.args).not.toContain(prompt)
 
       const parser = parsers.get(entry.provider)!
       const result = parser.parse('No issues found.', 0, {

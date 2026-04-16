@@ -111,6 +111,7 @@ function createTestContext({
   const tools = new Map<string, RegisteredTool>()
   const dispatchedStateManagers: unknown[] = []
   const rootStateManager = new StateManager(projectDir)
+  const engineDispatch = vi.fn()
   const dispatchBatch = vi.fn((_request: unknown, options?: { stateManager?: unknown }) => {
     dispatchedStateManagers.push(options?.stateManager)
     return Promise.resolve('batch-123')
@@ -127,7 +128,7 @@ function createTestContext({
   } as unknown as McpServer
 
   const engine = {
-    dispatch: vi.fn(),
+    dispatch: engineDispatch,
   } as unknown as DispatchEngine
 
   const batchManager = {
@@ -143,6 +144,7 @@ function createTestContext({
 
   return {
     tools,
+    engineDispatch,
     dispatchBatch,
     getBatchOwner,
     getStatus,
@@ -158,6 +160,54 @@ function createTestContext({
 describe('registerDispatchTools', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+  })
+
+  it('rejects task_refs in invoke_dispatch and still dispatches without them', async () => {
+    const taskRefs = {
+      diff: {
+        type: 'full_diff' as const,
+        session_id: 'session-1',
+        base_branch: 'main',
+      },
+    }
+    const result: AgentResult = {
+      role: 'builder',
+      subrole: 'parallel',
+      provider: 'claude',
+      model: 'claude-sonnet-4-6',
+      status: 'success',
+      output: {
+        summary: 'done',
+      },
+      duration: 1000,
+    }
+
+    const { tools, engineDispatch } = createTestContext()
+    const invokeDispatch = tools.get('invoke_dispatch')
+
+    engineDispatch.mockResolvedValue(result)
+
+    expect(invokeDispatch).toBeDefined()
+    expect(() => invokeDispatch!.config.inputSchema.parse({
+      role: 'builder',
+      subrole: 'parallel',
+      task_context: {},
+      task_refs: taskRefs,
+    })).toThrowError(/task_refs/)
+
+    const response = await invokeDispatch!.handler({
+      role: 'builder',
+      subrole: 'parallel',
+      task_context: {},
+    })
+
+    expect(engineDispatch).toHaveBeenCalledWith({
+      role: 'builder',
+      subrole: 'parallel',
+      taskContext: {},
+      workDir: undefined,
+    })
+    expect(JSON.parse(response.content[0].text)).toEqual(result)
   })
 
   it('includes provider_mode in the batch response and estimates dispatches by mode without metrics', async () => {
@@ -233,6 +283,198 @@ describe('registerDispatchTools', () => {
       ],
       dispatch_estimate: 4,
     })
+  })
+
+  it('accepts task_refs in invoke_dispatch_batch and forwards them to batchManager', async () => {
+    vi.mocked(loadConfig).mockResolvedValue(createConfig())
+    const sessionManager = {
+      exists: vi.fn().mockReturnValue(true),
+      resolve: vi.fn().mockReturnValue('/tmp/validated/session-1'),
+    } as unknown as SessionManager
+    const { tools, dispatchBatch } = createTestContext({ sessionManager })
+    const invokeDispatchBatch = tools.get('invoke_dispatch_batch')
+    const taskRefs = {
+      diff: {
+        type: 'full_diff' as const,
+        session_id: 'session-1',
+        base_branch: 'main',
+      },
+    }
+
+    expect(invokeDispatchBatch!.config.inputSchema.parse({
+      session_id: 'session-1',
+      tasks: [
+        {
+          task_id: 'task-1',
+          role: 'builder',
+          subrole: 'parallel',
+          task_context: {},
+          task_refs: taskRefs,
+        },
+      ],
+      create_worktrees: false,
+    })).toEqual({
+      session_id: 'session-1',
+      tasks: [
+        {
+          task_id: 'task-1',
+          role: 'builder',
+          subrole: 'parallel',
+          task_context: {},
+          task_refs: taskRefs,
+        },
+      ],
+      create_worktrees: false,
+    })
+
+    await invokeDispatchBatch!.handler({
+      tasks: [
+        {
+          task_id: 'task-1',
+          role: 'builder',
+          subrole: 'parallel',
+          task_context: {},
+          task_refs: taskRefs,
+        },
+      ],
+      create_worktrees: false,
+      session_id: 'session-1',
+    })
+
+    expect(dispatchBatch).toHaveBeenCalledWith(expect.objectContaining({
+      sessionId: 'session-1',
+      boundPipelineId: null,
+      tasks: [
+        {
+          taskId: 'task-1',
+          role: 'builder',
+          subrole: 'parallel',
+          taskContext: {},
+          taskRefs,
+        },
+      ],
+    }), {
+      stateManager: expect.any(StateManager),
+    })
+  })
+
+  it('accepts an empty task_refs object in invoke_dispatch_batch', async () => {
+    vi.mocked(loadConfig).mockResolvedValue(createConfig())
+    const sessionManager = {
+      exists: vi.fn().mockReturnValue(true),
+      resolve: vi.fn().mockReturnValue('/tmp/validated/session-1'),
+    } as unknown as SessionManager
+    const { tools, dispatchBatch } = createTestContext({ sessionManager })
+    const invokeDispatchBatch = tools.get('invoke_dispatch_batch')
+
+    expect(invokeDispatchBatch!.config.inputSchema.parse({
+      session_id: 'session-1',
+      tasks: [
+        {
+          task_id: 'task-1',
+          role: 'builder',
+          subrole: 'parallel',
+          task_context: {},
+          task_refs: {},
+        },
+      ],
+      create_worktrees: false,
+    })).toEqual({
+      session_id: 'session-1',
+      tasks: [
+        {
+          task_id: 'task-1',
+          role: 'builder',
+          subrole: 'parallel',
+          task_context: {},
+          task_refs: {},
+        },
+      ],
+      create_worktrees: false,
+    })
+
+    await invokeDispatchBatch!.handler({
+      tasks: [
+        {
+          task_id: 'task-1',
+          role: 'builder',
+          subrole: 'parallel',
+          task_context: {},
+          task_refs: {},
+        },
+      ],
+      create_worktrees: false,
+      session_id: 'session-1',
+    })
+
+    expect(dispatchBatch).toHaveBeenCalledWith(expect.objectContaining({
+      sessionId: 'session-1',
+      boundPipelineId: null,
+      tasks: [
+        {
+          taskId: 'task-1',
+          role: 'builder',
+          subrole: 'parallel',
+          taskContext: {},
+          taskRefs: {},
+        },
+      ],
+    }), {
+      stateManager: expect.any(StateManager),
+    })
+  })
+
+  it('rejects invoke_dispatch_batch when task_refs.diff.session_id does not match session_id', async () => {
+    const { tools, dispatchBatch } = createTestContext()
+    const response = await tools.get('invoke_dispatch_batch')!.handler({
+      tasks: [
+        {
+          task_id: 'task-1',
+          role: 'builder',
+          subrole: 'parallel',
+          task_context: {},
+          task_refs: {
+            diff: {
+              type: 'delta_diff',
+              session_id: 'session-2',
+              reviewed_sha: 'abcdef1234567890abcdef1234567890abcdef12',
+            },
+          },
+        },
+      ],
+      create_worktrees: false,
+      session_id: 'session-1',
+    })
+
+    expect(response.isError).toBe(true)
+    expect(response.content[0].text).toBe(
+      'Dispatch error: task_refs.diff.session_id must match session_id for task task-1'
+    )
+    expect(dispatchBatch).not.toHaveBeenCalled()
+  })
+
+  it('rejects unsafe base_branch values in task_refs full_diff', async () => {
+    const invokeDispatchBatch = createTestContext().tools.get('invoke_dispatch_batch')
+
+    expect(() => invokeDispatchBatch!.config.inputSchema.parse({
+      session_id: 'session-1',
+      tasks: [
+        {
+          task_id: 'task-1',
+          role: 'builder',
+          subrole: 'parallel',
+          task_context: {},
+          task_refs: {
+            diff: {
+              type: 'full_diff',
+              session_id: 'session-1',
+              base_branch: '--main',
+            },
+          },
+        },
+      ],
+      create_worktrees: false,
+    })).toThrowError(/base_branch/)
   })
 
   it('adds an approaching max_dispatches warning when the projected usage exceeds 80 percent', async () => {

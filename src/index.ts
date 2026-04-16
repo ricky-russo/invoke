@@ -8,6 +8,7 @@ import { createProviderRegistry } from './providers/registry.js'
 import { createParserRegistry } from './parsers/registry.js'
 import { DispatchEngine } from './dispatch/engine.js'
 import { BatchManager } from './dispatch/batch-manager.js'
+import { DiffRefResolver } from './dispatch/diff-ref-resolver.js'
 import { WorktreeManager } from './worktree/manager.js'
 import { SessionWorktreeManager } from './worktree/session-worktree.js'
 import { MetricsManager } from './metrics/manager.js'
@@ -89,6 +90,7 @@ async function main() {
   const contextManager = new ContextManager(projectDir)
   const metricsManager = new MetricsManager(projectDir)
   const sessionManager = new SessionManager(projectDir)
+  const diffRefResolver = new DiffRefResolver(sessionManager, projectDir)
   const bugManager = new BugManager(projectDir)
 
   // Run session migration and register tools
@@ -121,6 +123,7 @@ async function main() {
       parsers,
       projectDir,
       onDispatchComplete: (metric) => metricsManager.record(metric),
+      diffRefResolver,
     })
     const batchManager = new BatchManager(engine, worktreeManager, stateManager, {
       repoDir: projectDir,

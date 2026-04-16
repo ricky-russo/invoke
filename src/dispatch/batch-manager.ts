@@ -582,6 +582,7 @@ export class BatchManager {
           role: task.role,
           subrole: task.subrole,
           taskContext: task.taskContext,
+          taskRefs: task.taskRefs,
           workDir,
           sessionId: request.sessionId,
           boundPipelineId: request.boundPipelineId,

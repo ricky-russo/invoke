@@ -4,6 +4,7 @@ import { DispatchEngine } from '../../src/dispatch/engine.js'
 import type { InvokeConfig, AgentResult, ProviderEntry } from '../../src/types.js'
 import type { Provider } from '../../src/providers/base.js'
 import type { Parser, ParseContext } from '../../src/parsers/base.js'
+import type { DiffRefResolver } from '../../src/dispatch/diff-ref-resolver.js'
 
 vi.mock('child_process', () => ({
   spawn: vi.fn(),
@@ -67,7 +68,12 @@ function queueSpawnBehaviors(...behaviors: SpawnBehavior[]): void {
     const proc = new EventEmitter() as any
     proc.stdout = new EventEmitter()
     proc.stderr = new EventEmitter()
-    proc.stdin = { end: vi.fn() }
+    proc.stdin = new EventEmitter() as EventEmitter & {
+      write: ReturnType<typeof vi.fn>
+      end: ReturnType<typeof vi.fn>
+    }
+    proc.stdin.write = vi.fn(() => true)
+    proc.stdin.end = vi.fn()
     proc.pid = 12345
     proc.kill = vi.fn(() => {
       if (behavior.closeOnKill) {
@@ -206,6 +212,7 @@ function createEngine(
     onDispatchComplete?: (metric: any) => void
     providers?: Map<string, Provider>
     parsers?: Map<string, Parser>
+    diffRefResolver?: DiffRefResolver
   } = {}
 ) {
   vi.mocked(loadConfig).mockResolvedValue(config)
@@ -230,6 +237,7 @@ function createEngine(
     parsers,
     projectDir: TEST_PROJECT_DIR,
     onDispatchComplete: options.onDispatchComplete,
+    diffRefResolver: options.diffRefResolver,
   })
 
   return {
@@ -282,7 +290,7 @@ describe('DispatchEngine', () => {
       },
     })
 
-    expect(composePrompt).toHaveBeenCalledWith({
+    expect(composePrompt).toHaveBeenCalledWith(expect.objectContaining({
       projectDir: TEST_PROJECT_DIR,
       promptPath: '.invoke/roles/researcher/codebase.md',
       strategyPath: '.invoke/strategies/tdd.md',
@@ -290,7 +298,34 @@ describe('DispatchEngine', () => {
         task_description: 'Analyze',
         strategy: 'tdd',
       },
+    }))
+  })
+
+  it('passes taskRefs and diffRefResolver to composePrompt', async () => {
+    queueSpawnBehaviors({ stdout: 'Research output', exitCode: 0 })
+    const config = makeConfig()
+    const taskRefs = {
+      diff: {
+        type: 'full_diff' as const,
+        session_id: 'session-1',
+        base_branch: 'main',
+      },
+    }
+    const diffRefResolver = { resolve: vi.fn() } as unknown as DiffRefResolver
+    const { engine } = createEngine(config, { diffRefResolver })
+
+    await engine.dispatch({
+      role: 'researcher',
+      subrole: 'codebase',
+      taskContext: { task_description: 'Analyze' },
+      taskRefs,
     })
+
+    expect(composePrompt).toHaveBeenCalledWith(expect.objectContaining({
+      taskContext: { task_description: 'Analyze' },
+      taskRefs,
+      diffRefResolver,
+    }))
   })
 
   it('dispatches to multiple providers in parallel and merges the results', async () => {
@@ -612,6 +647,127 @@ describe('DispatchEngine', () => {
     expect(result.status).toBe('timeout')
     expect(result.output.summary).toContain('10ms')
     expect(claudeParse).not.toHaveBeenCalled()
+  })
+
+  it('does not throw when stdin emits EPIPE before the provider consumes the prompt', async () => {
+    const stdinEvents = new EventEmitter() as EventEmitter & {
+      write: ReturnType<typeof vi.fn>
+      end: ReturnType<typeof vi.fn>
+    }
+    const writeOrder: string[] = []
+
+    stdinEvents.write = vi.fn(() => {
+      writeOrder.push('write')
+      stdinEvents.emit('error', Object.assign(new Error('broken pipe'), { code: 'EPIPE' }))
+      return true
+    })
+    stdinEvents.end = vi.fn(() => {
+      writeOrder.push('end')
+    })
+
+    vi.mocked(spawn).mockImplementation(() => {
+      const proc = new EventEmitter() as any
+      proc.stdout = new EventEmitter()
+      proc.stderr = new EventEmitter()
+      proc.stdin = stdinEvents
+      proc.kill = vi.fn(() => true)
+
+      setTimeout(() => {
+        proc.emit('close', 0)
+      }, 0)
+
+      return proc
+    })
+
+    const config = makeConfig()
+    const stdinProvider = {
+      name: 'claude',
+      buildCommand: vi.fn().mockImplementation(({ prompt }: { prompt: string }) => ({
+        cmd: 'claude',
+        args: ['--prompt', prompt],
+        stdinPrompt: prompt,
+      })),
+    } satisfies Provider
+    const parser = makeParser('claude')
+    const { engine } = createEngine(config, {
+      providers: new Map([['claude', stdinProvider]]),
+      parsers: new Map([['claude', parser.parser]]),
+    })
+
+    await expect(
+      engine.dispatch({
+        role: 'researcher',
+        subrole: 'codebase',
+        taskContext: { task_description: 'Analyze' },
+      })
+    ).resolves.toMatchObject({
+      status: 'success',
+      provider: 'claude',
+    })
+
+    expect(stdinEvents.write).toHaveBeenCalledWith(MOCK_PROMPT)
+    expect(writeOrder).toEqual(['write', 'end'])
+  })
+
+  it('logs unexpected stdin errors before the provider consumes the prompt', async () => {
+    const stdinEvents = new EventEmitter() as EventEmitter & {
+      write: ReturnType<typeof vi.fn>
+      end: ReturnType<typeof vi.fn>
+    }
+    const stdinError = Object.assign(new Error('input/output error'), { code: 'EIO' })
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    stdinEvents.write = vi.fn(() => {
+      stdinEvents.emit('error', stdinError)
+      return true
+    })
+    stdinEvents.end = vi.fn()
+
+    vi.mocked(spawn).mockImplementation(() => {
+      const proc = new EventEmitter() as any
+      proc.stdout = new EventEmitter()
+      proc.stderr = new EventEmitter()
+      proc.stdin = stdinEvents
+      proc.kill = vi.fn(() => true)
+
+      setTimeout(() => {
+        proc.emit('close', 0)
+      }, 0)
+
+      return proc
+    })
+
+    const config = makeConfig()
+    const stdinProvider = {
+      name: 'claude',
+      buildCommand: vi.fn().mockImplementation(({ prompt }: { prompt: string }) => ({
+        cmd: 'claude',
+        args: ['--prompt', prompt],
+        stdinPrompt: prompt,
+      })),
+    } satisfies Provider
+    const parser = makeParser('claude')
+    const { engine } = createEngine(config, {
+      providers: new Map([['claude', stdinProvider]]),
+      parsers: new Map([['claude', parser.parser]]),
+    })
+
+    try {
+      await expect(
+        engine.dispatch({
+          role: 'researcher',
+          subrole: 'codebase',
+          taskContext: { task_description: 'Analyze' },
+        })
+      ).resolves.toMatchObject({
+        status: 'success',
+        provider: 'claude',
+      })
+
+      expect(errorSpy).toHaveBeenCalledWith('[engine] stdin error:', stdinError)
+    } finally {
+      errorSpy.mockRestore()
+    }
   })
 
   it('calls onDispatchComplete after each provider dispatch completes', async () => {

@@ -38584,8 +38584,7 @@ var ClaudeProvider = class {
     const args = this.config.args.map(
       (arg) => arg.replace("{{model}}", params.model).replace("{{effort}}", params.effort)
     );
-    args.push(params.prompt);
-    return { cmd: this.config.cli, args, cwd: params.workDir };
+    return { cmd: this.config.cli, args, cwd: params.workDir, stdinPrompt: params.prompt };
   }
 };
 
@@ -38601,8 +38600,7 @@ var CodexProvider = class {
       (arg) => arg.replace("{{model}}", params.model).replace("{{effort}}", params.effort)
     );
     args.push("--skip-git-repo-check");
-    args.push(params.prompt);
-    return { cmd: this.config.cli, args, cwd: params.workDir };
+    return { cmd: this.config.cli, args, cwd: params.workDir, stdinPrompt: params.prompt };
   }
 };
 
@@ -38618,8 +38616,15 @@ var ConfigDrivenProvider = class {
     const args = this.config.args.map(
       (arg) => arg.replace("{{model}}", params.model).replace("{{effort}}", params.effort)
     );
-    args.push(params.prompt);
-    return { cmd: this.config.cli, args, cwd: params.workDir };
+    return {
+      cmd: this.config.cli,
+      // Config-driven CLIs may require the prompt as an arg instead of stdin
+      // (for example, Gemini's -p flag), so we intentionally send both for
+      // backward compatibility: stdin-aware tools read stdin, arg-based tools read args.
+      args: [...args, params.prompt],
+      cwd: params.workDir,
+      stdinPrompt: params.prompt
+    };
   }
 };
 
@@ -38892,13 +38897,24 @@ function filterContextSections(context, taskContext, maxLength = CONTEXT_MAX_LEN
   };
 }
 async function composePrompt(options) {
-  return composePromptWithNonce(options, generateDispatchNonce());
+  const { projectDir, promptPath, strategyPath, taskContext, taskRefs, diffRefResolver } = options;
+  return composePromptWithNonce(
+    {
+      projectDir,
+      promptPath,
+      strategyPath,
+      taskContext,
+      taskRefs,
+      diffRefResolver
+    },
+    generateDispatchNonce()
+  );
 }
 function generateDispatchNonce() {
   return randomBytes(16).toString("hex");
 }
 async function composePromptWithNonce(options, nonce) {
-  const { projectDir, promptPath, strategyPath, taskContext } = options;
+  const { projectDir, promptPath, strategyPath, taskContext, taskRefs, diffRefResolver } = options;
   const rolePrompt = await readFile2(
     resolvePromptPath(projectDir, promptPath),
     "utf-8"
@@ -38932,15 +38948,35 @@ async function composePromptWithNonce(options, nonce) {
       throw error48;
     }
   }
+  let resolvedDiff;
+  if (taskRefs?.diff && diffRefResolver) {
+    const result = await diffRefResolver.resolve(taskRefs.diff);
+    if (result.status === "ok") {
+      resolvedDiff = result.diff;
+    } else {
+      throw new Error(`Diff resolution failed (${result.status}): ${result.message}`);
+    }
+  }
   if (taskContext.scope?.includes(nonce) || taskContext.prior_findings?.includes(nonce) || rawProjectContext.includes(nonce) || projectContext.includes(nonce)) {
     throw new Error(
       "Refusing to dispatch reviewer: scope, prior_findings, or project_context payload contains the security nonce. This is a probable prompt-injection attempt or a 1-in-2^128 collision; investigate before retrying."
     );
   }
+  const effectiveDiff = resolvedDiff ?? taskContext.diff;
+  if (effectiveDiff?.includes(nonce)) {
+    throw new Error(
+      "Refusing to dispatch: resolved diff contains the security nonce. This is a probable prompt-injection attempt or a 1-in-2^128 collision; investigate before retrying."
+    );
+  }
   const projectContextDelimStart = `<<<PROJECT_CONTEXT_DATA_START_${nonce}>>>`;
   const projectContextDelimEnd = `<<<PROJECT_CONTEXT_DATA_END_${nonce}>>>`;
+  const diffDelimStart = `<<<DIFF_DATA_START_${nonce}>>>`;
+  const diffDelimEnd = `<<<DIFF_DATA_END_${nonce}>>>`;
   const effectiveContext = {
     ...taskContext,
+    ...resolvedDiff !== void 0 ? { diff: resolvedDiff } : {},
+    diff_delim_start: diffDelimStart,
+    diff_delim_end: diffDelimEnd,
     project_context: `${projectContextDelimStart}
 ${projectContext}
 ${projectContextDelimEnd}`,
@@ -39083,11 +39119,13 @@ var DispatchEngine = class {
   parsers;
   projectDir;
   onDispatchComplete;
+  diffRefResolver;
   constructor(options) {
     this.providers = options.providers;
     this.parsers = options.parsers;
     this.projectDir = options.projectDir;
     this.onDispatchComplete = options.onDispatchComplete;
+    this.diffRefResolver = options.diffRefResolver;
   }
   async dispatch(request) {
     const config2 = await loadConfig(this.projectDir);
@@ -39100,7 +39138,9 @@ var DispatchEngine = class {
       projectDir: this.projectDir,
       promptPath: roleConfig.prompt,
       strategyPath,
-      taskContext: request.taskContext
+      taskContext: request.taskContext,
+      taskRefs: request.taskRefs,
+      diffRefResolver: this.diffRefResolver
     });
     const workDir = request.workDir ?? this.projectDir;
     const mode = this.resolveProviderMode(roleConfig, config2);
@@ -39165,7 +39205,8 @@ var DispatchEngine = class {
       commandSpec.cmd,
       commandSpec.args,
       timeoutMs,
-      commandSpec.cwd
+      commandSpec.cwd,
+      commandSpec.stdinPrompt
     );
     const duration3 = Date.now() - startTime;
     let result;
@@ -39264,9 +39305,17 @@ ${r.output.raw}`).join("\n\n"),
       duration: Math.max(...results.map((r) => r.duration))
     };
   }
-  runProcess(cmd, args, timeout, cwd) {
+  runProcess(cmd, args, timeout, cwd, stdinPrompt) {
     return new Promise((resolve, reject) => {
       const proc = spawn(cmd, args, { stdio: ["pipe", "pipe", "pipe"], cwd });
+      proc.stdin.on("error", (err) => {
+        if (err.code !== "EPIPE" && err.code !== "EOF") {
+          console.error("[engine] stdin error:", err);
+        }
+      });
+      if (stdinPrompt) {
+        proc.stdin.write(stdinPrompt);
+      }
       proc.stdin.end();
       let stdout = "";
       let stderr = "";
@@ -40129,6 +40178,7 @@ var BatchManager = class {
           role: task.role,
           subrole: task.subrole,
           taskContext: task.taskContext,
+          taskRefs: task.taskRefs,
           workDir,
           sessionId: request.sessionId,
           boundPipelineId: request.boundPipelineId
@@ -40189,6 +40239,159 @@ function cloneAgentResult(result) {
     }
   };
 }
+
+// src/dispatch/diff-ref-resolver.ts
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+var MAX_DIFF_BUFFER_BYTES = 50 * 1024 * 1024;
+var DIFF_SIZE_WARN_BYTES = 48 * 1024 * 1024;
+var execFileAsync = promisify(execFile);
+function formatExecError(error48) {
+  if (typeof error48 === "object" && error48 !== null && "stderr" in error48) {
+    const stderr = error48.stderr;
+    if (Buffer.isBuffer(stderr)) {
+      const message = stderr.toString().trim();
+      if (message) {
+        return message;
+      }
+    } else if (typeof stderr === "string" && stderr.trim()) {
+      return stderr.trim();
+    }
+  }
+  return error48 instanceof Error ? error48.message : String(error48);
+}
+var DiffRefResolver = class {
+  constructor(sessionManager, projectDir) {
+    this.sessionManager = sessionManager;
+    this.projectDir = projectDir;
+  }
+  sessionManager;
+  projectDir;
+  async resolve(ref) {
+    switch (ref.type) {
+      case "full_diff":
+        return this.resolveFullDiff(ref);
+      case "delta_diff":
+        return this.resolveDeltaDiff(ref);
+    }
+  }
+  async resolveFullDiff(ref) {
+    const worktreePath = await this.resolveWorktreePath(ref.session_id);
+    if (typeof worktreePath !== "string") {
+      return worktreePath;
+    }
+    const baseBranch = await this.resolveBaseBranch(ref.session_id);
+    if (typeof baseBranch !== "string") {
+      return baseBranch;
+    }
+    let mergeBase;
+    try {
+      const { stdout } = await execFileAsync("git", ["merge-base", baseBranch, "HEAD"], {
+        cwd: worktreePath,
+        timeout: 1e4,
+        maxBuffer: MAX_DIFF_BUFFER_BYTES
+      });
+      mergeBase = stdout.toString().trim();
+    } catch (error48) {
+      return {
+        status: "commit_not_found",
+        message: formatExecError(error48)
+      };
+    }
+    return this.computeDiff(worktreePath, [`${mergeBase}...HEAD`]);
+  }
+  async resolveDeltaDiff(ref) {
+    const sanitizedReviewedSha = sanitizeReviewedSha(ref.reviewed_sha);
+    if (sanitizedReviewedSha === void 0) {
+      return {
+        status: "resolve_error",
+        message: "reviewed_sha failed hex validation"
+      };
+    }
+    const worktreePath = await this.resolveWorktreePath(ref.session_id);
+    if (typeof worktreePath !== "string") {
+      return worktreePath;
+    }
+    try {
+      await execFileAsync("git", ["rev-parse", "--verify", `${sanitizedReviewedSha}^{commit}`], {
+        cwd: worktreePath,
+        timeout: 1e4,
+        maxBuffer: MAX_DIFF_BUFFER_BYTES
+      });
+    } catch (error48) {
+      return {
+        status: "commit_not_found",
+        message: formatExecError(error48)
+      };
+    }
+    return this.computeDiff(worktreePath, [`${sanitizedReviewedSha}...HEAD`]);
+  }
+  async resolveWorktreePath(sessionId) {
+    try {
+      const worktreePath = await resolveSessionWorkBranchPath(
+        this.sessionManager,
+        this.projectDir,
+        sessionId
+      );
+      if (!worktreePath) {
+        return {
+          status: "resolve_error",
+          message: "Session worktree path could not be resolved"
+        };
+      }
+      return worktreePath;
+    } catch (error48) {
+      return {
+        status: "resolve_error",
+        message: error48 instanceof Error ? error48.message : String(error48)
+      };
+    }
+  }
+  async resolveBaseBranch(sessionId) {
+    try {
+      const state = await this.sessionManager.readState(sessionId);
+      if (!state.base_branch) {
+        return {
+          status: "resolve_error",
+          message: "Session base branch could not be resolved"
+        };
+      }
+      return state.base_branch;
+    } catch (error48) {
+      return {
+        status: "resolve_error",
+        message: error48 instanceof Error ? error48.message : String(error48)
+      };
+    }
+  }
+  async computeDiff(worktreePath, args) {
+    let diff;
+    try {
+      const { stdout } = await execFileAsync("git", ["diff", ...args], {
+        cwd: worktreePath,
+        timeout: 3e4,
+        maxBuffer: MAX_DIFF_BUFFER_BYTES
+      });
+      diff = stdout.toString();
+    } catch (error48) {
+      return {
+        status: "diff_error",
+        message: formatExecError(error48)
+      };
+    }
+    const diffBytes = Buffer.byteLength(diff);
+    if (diffBytes > DIFF_SIZE_WARN_BYTES) {
+      return {
+        status: "diff_too_large",
+        message: `Diff is ${diffBytes} bytes (threshold ${DIFF_SIZE_WARN_BYTES})`
+      };
+    }
+    return {
+      status: "ok",
+      diff
+    };
+  }
+};
 
 // src/worktree/manager.ts
 import { execFileSync as execFileSync4 } from "child_process";
@@ -41053,6 +41256,7 @@ var SessionManager = class {
     return path10.join(this.invokeDir, "metrics.json");
   }
   async readState(sessionId) {
+    validateSessionIdForRead(sessionId);
     const content = await readFile5(this.getStatePath(sessionId), "utf-8");
     return JSON.parse(content);
   }
@@ -41506,6 +41710,24 @@ function isMissingFileError(error48) {
 }
 
 // src/tools/dispatch-tools.ts
+var BASE_BRANCH_PATTERN = /^(?![-.])[A-Za-z0-9_.][A-Za-z0-9._/-]{0,254}$/;
+var TaskRefsSchema = external_exports3.object({
+  diff: external_exports3.discriminatedUnion("type", [
+    external_exports3.object({
+      type: external_exports3.literal("full_diff"),
+      session_id: external_exports3.string(),
+      base_branch: external_exports3.string().regex(BASE_BRANCH_PATTERN, "base_branch must be a safe git ref name (no leading -, no whitespace, no shell metacharacters)").refine(
+        (value) => !value.includes("..") && !value.includes("@{"),
+        'base_branch must not contain ".." or "@{" revspec constructs'
+      )
+    }),
+    external_exports3.object({
+      type: external_exports3.literal("delta_diff"),
+      session_id: external_exports3.string(),
+      reviewed_sha: external_exports3.string()
+    })
+  ]).optional()
+});
 function registerDispatchTools(server, engine, batchManager, projectDir, metricsManager, sessionManager) {
   const scopedStateManagers = /* @__PURE__ */ new Map();
   function getScopedStateManager(sessionDir) {
@@ -41581,7 +41803,7 @@ function registerDispatchTools(server, engine, batchManager, projectDir, metrics
         subrole: external_exports3.string().describe("Specific sub-role (e.g. security, codebase, default)"),
         task_context: external_exports3.record(external_exports3.string(), external_exports3.string()).describe("Template variables to inject into the prompt"),
         work_dir: external_exports3.string().optional().describe("Override working directory for the agent")
-      })
+      }).strict()
     },
     async ({ role, subrole, task_context, work_dir }) => {
       try {
@@ -41611,7 +41833,8 @@ function registerDispatchTools(server, engine, batchManager, projectDir, metrics
           task_id: external_exports3.string(),
           role: external_exports3.string(),
           subrole: external_exports3.string(),
-          task_context: external_exports3.record(external_exports3.string(), external_exports3.string())
+          task_context: external_exports3.record(external_exports3.string(), external_exports3.string()),
+          task_refs: TaskRefsSchema.optional()
         })),
         create_worktrees: external_exports3.boolean().describe("Whether to create git worktrees for each task"),
         session_id: external_exports3.string().optional()
@@ -41619,6 +41842,14 @@ function registerDispatchTools(server, engine, batchManager, projectDir, metrics
     },
     async ({ tasks, create_worktrees, session_id }) => {
       try {
+        for (const task of tasks) {
+          const diffSessionId = task.task_refs?.diff?.session_id;
+          if (diffSessionId !== void 0 && diffSessionId !== session_id) {
+            return errorResponse4(
+              `Dispatch error: task_refs.diff.session_id must match session_id for task ${task.task_id}`
+            );
+          }
+        }
         const sessionScope = await resolveSessionScope(session_id);
         const sessionStateManager = sessionScope?.stateManager;
         let boundPipelineId;
@@ -41681,7 +41912,8 @@ function registerDispatchTools(server, engine, batchManager, projectDir, metrics
             taskId: t.task_id,
             role: t.role,
             subrole: t.subrole,
-            taskContext: t.task_context
+            taskContext: t.task_context,
+            ...t.task_refs ? { taskRefs: t.task_refs } : {}
           })),
           createWorktrees: create_worktrees,
           maxParallel,
@@ -42836,7 +43068,7 @@ var ReviewCycleSchema = external_exports3.object({
   }).optional()
 });
 var WORK_BRANCH_PATTERN = /^(?!.*\.\.)[A-Za-z0-9][A-Za-z0-9._/-]{0,255}$/;
-var BASE_BRANCH_PATTERN = /^(?![-.])[A-Za-z0-9_.][A-Za-z0-9._/-]{0,254}$/;
+var BASE_BRANCH_PATTERN2 = /^(?![-.])[A-Za-z0-9_.][A-Za-z0-9._/-]{0,254}$/;
 var VALID_TRANSITIONS = {
   scope: /* @__PURE__ */ new Set(["scope", "plan"]),
   plan: /* @__PURE__ */ new Set(["scope", "plan", "orchestrate"]),
@@ -42858,7 +43090,7 @@ var SetStateInputSchema = external_exports3.object({
   pipeline_id: external_exports3.string().optional(),
   current_stage: external_exports3.enum(["scope", "plan", "orchestrate", "build", "review", "complete"]).optional(),
   work_branch: external_exports3.string().regex(WORK_BRANCH_PATTERN, "invalid work_branch format").optional(),
-  base_branch: external_exports3.string().regex(BASE_BRANCH_PATTERN, "base_branch must be a safe git ref name (no leading -, no whitespace, no shell metacharacters)").refine((v) => !v.includes("..") && !v.includes("@{"), 'base_branch must not contain ".." or "@{" revspec constructs').optional(),
+  base_branch: external_exports3.string().regex(BASE_BRANCH_PATTERN2, "base_branch must be a safe git ref name (no leading -, no whitespace, no shell metacharacters)").refine((v) => !v.includes("..") && !v.includes("@{"), 'base_branch must not contain ".." or "@{" revspec constructs').optional(),
   work_branch_path: external_exports3.string().refine(
     (value) => path15.isAbsolute(value) && path15.basename(value).startsWith("invoke-session-"),
     "work_branch_path must be an absolute path with invoke-session- basename"
@@ -43693,7 +43925,7 @@ function countFixupCommits(cwd, baseRef) {
     return 0;
   }
 }
-function formatExecError(error48) {
+function formatExecError2(error48) {
   if (typeof error48 === "object" && error48 !== null && "stderr" in error48) {
     const stderr = error48.stderr;
     if (Buffer.isBuffer(stderr)) {
@@ -43709,7 +43941,7 @@ function formatExecError(error48) {
 }
 function isConflictFailure(rebaseError, conflictingFiles) {
   if (conflictingFiles.length > 0) return true;
-  const msg = formatExecError(rebaseError).toLowerCase();
+  const msg = formatExecError2(rebaseError).toLowerCase();
   return msg.includes("could not apply") || msg.includes("merge conflict") || msg.includes("needs merge") || msg.includes("cherry-pick") || msg.includes("resolve all conflicts");
 }
 function ok2(payload) {
@@ -43799,17 +44031,17 @@ function registerRebaseTools(server, sessionManager, projectDir) {
               return ok2({
                 status: "conflict_aborted",
                 conflicting_files: conflictingFiles,
-                message: formatExecError(error48)
+                message: formatExecError2(error48)
               });
             }
             return ok2({
               status: "error",
-              message: abortFailed ? `${formatExecError(error48)} (AND rebase --abort failed; session worktree may be in a mixed state)` : formatExecError(error48)
+              message: abortFailed ? `${formatExecError2(error48)} (AND rebase --abort failed; session worktree may be in a mixed state)` : formatExecError2(error48)
             });
           }
         });
       } catch (error48) {
-        return errorResponse3(formatExecError(error48));
+        return errorResponse3(formatExecError2(error48));
       }
     }
   );
@@ -43843,11 +44075,11 @@ function registerRebaseTools(server, sessionManager, projectDir) {
               commit_sha: commitSha
             });
           } catch (error48) {
-            return errorResponse3(formatExecError(error48));
+            return errorResponse3(formatExecError2(error48));
           }
         });
       } catch (error48) {
-        return errorResponse3(formatExecError(error48));
+        return errorResponse3(formatExecError2(error48));
       }
     }
   );
@@ -43875,7 +44107,7 @@ function registerRebaseTools(server, sessionManager, projectDir) {
         ]).trim();
         return ok2({ title });
       } catch (error48) {
-        return errorResponse3(formatExecError(error48));
+        return errorResponse3(formatExecError2(error48));
       }
     }
   );
@@ -43884,8 +44116,8 @@ function registerRebaseTools(server, sessionManager, projectDir) {
 // src/tools/review-diff-tools.ts
 init_zod();
 import { execFileSync as execFileSync9 } from "node:child_process";
-var MAX_DIFF_BUFFER_BYTES = 50 * 1024 * 1024;
-var DIFF_SIZE_WARN_BYTES = 48 * 1024 * 1024;
+var MAX_DIFF_BUFFER_BYTES2 = 50 * 1024 * 1024;
+var DIFF_SIZE_WARN_BYTES2 = 48 * 1024 * 1024;
 var ReviewDiffInputSchema = external_exports3.object({
   session_id: external_exports3.string(),
   reviewed_sha: external_exports3.string()
@@ -43896,7 +44128,7 @@ function ok3(result) {
     content: [{ type: "text", text: JSON.stringify(result) }]
   };
 }
-function formatExecError2(error48) {
+function formatExecError3(error48) {
   if (typeof error48 === "object" && error48 !== null && "stderr" in error48) {
     const stderr = error48.stderr;
     if (Buffer.isBuffer(stderr)) {
@@ -43945,12 +44177,12 @@ function registerReviewDiffTools(server, sessionManager, projectDir) {
           cwd: worktreePath,
           stdio: "pipe",
           timeout: 1e4,
-          maxBuffer: MAX_DIFF_BUFFER_BYTES
+          maxBuffer: MAX_DIFF_BUFFER_BYTES2
         });
       } catch (error48) {
         return ok3({
           status: "commit_not_found",
-          message: formatExecError2(error48)
+          message: formatExecError3(error48)
         });
       }
       let diffBuffer;
@@ -43959,18 +44191,18 @@ function registerReviewDiffTools(server, sessionManager, projectDir) {
           cwd: worktreePath,
           stdio: "pipe",
           timeout: 3e4,
-          maxBuffer: MAX_DIFF_BUFFER_BYTES
+          maxBuffer: MAX_DIFF_BUFFER_BYTES2
         });
       } catch (error48) {
         return ok3({
           status: "diff_error",
-          message: formatExecError2(error48)
+          message: formatExecError3(error48)
         });
       }
-      if (diffBuffer.length > DIFF_SIZE_WARN_BYTES) {
+      if (diffBuffer.length > DIFF_SIZE_WARN_BYTES2) {
         return ok3({
           status: "diff_too_large",
-          message: `Review diff is ${diffBuffer.length} bytes (threshold ${DIFF_SIZE_WARN_BYTES}); reviewer will fall back to full diff`
+          message: `Review diff is ${diffBuffer.length} bytes (threshold ${DIFF_SIZE_WARN_BYTES2}); reviewer will fall back to full diff`
         });
       }
       return ok3({
@@ -44072,6 +44304,7 @@ async function main() {
   const contextManager = new ContextManager(projectDir);
   const metricsManager = new MetricsManager(projectDir);
   const sessionManager = new SessionManager(projectDir);
+  const diffRefResolver = new DiffRefResolver(sessionManager, projectDir);
   const bugManager = new BugManager(projectDir);
   const migration = await sessionManager.migrate();
   if (migration.migrated) {
@@ -44098,7 +44331,8 @@ async function main() {
       providers,
       parsers,
       projectDir,
-      onDispatchComplete: (metric) => metricsManager.record(metric)
+      onDispatchComplete: (metric) => metricsManager.record(metric),
+      diffRefResolver
     });
     const batchManager = new BatchManager(engine, worktreeManager, stateManager, {
       repoDir: projectDir

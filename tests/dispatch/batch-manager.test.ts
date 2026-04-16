@@ -125,6 +125,38 @@ describe('BatchManager', () => {
     }, { timeout: 2000 })
   })
 
+  it('passes taskRefs through to the engine dispatch request', async () => {
+    const taskRefs = {
+      diff: {
+        type: 'delta_diff' as const,
+        session_id: 'session-A',
+        reviewed_sha: 'abcdef1234567890abcdef1234567890abcdef12',
+      },
+    }
+
+    await manager.dispatchBatch({
+      tasks: [
+        {
+          taskId: 'task-1',
+          role: 'builder',
+          subrole: 'default',
+          taskContext: {},
+          taskRefs,
+        },
+      ],
+      createWorktrees: false,
+    })
+
+    await vi.waitFor(() => {
+      expect(mockEngine.dispatch).toHaveBeenCalledWith(expect.objectContaining({
+        role: 'builder',
+        subrole: 'default',
+        taskContext: {},
+        taskRefs,
+      }))
+    }, { timeout: 2000 })
+  })
+
   it('stores a null owner when a batch is dispatched without a session', async () => {
     const batchId = await manager.dispatchBatch({
       tasks: [
