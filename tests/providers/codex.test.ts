@@ -26,6 +26,7 @@ describe('CodexProvider', () => {
     expect(cmd.args).toContain('reasoning_effort=high')
     expect(cmd.args).toContain('--skip-git-repo-check')
     expect(cmd.cwd).toBe('/tmp/worktree-2')
-    expect(cmd.args[cmd.args.length - 1]).toBe('Review for security issues')
+    expect(cmd.stdinPrompt).toBe('Review for security issues')
+    expect(cmd.args).not.toContain('Review for security issues')
   })
 })

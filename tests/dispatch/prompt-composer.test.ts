@@ -1,5 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { composePrompt, composePromptWithNonce } from '../../src/dispatch/prompt-composer.js'
+import type { DiffRefResolver } from '../../src/dispatch/diff-ref-resolver.js'
+import type { DiffRef } from '../../src/types.js'
 import { mkdir, writeFile, rm } from 'fs/promises'
 import path from 'path'
 
@@ -280,6 +282,205 @@ Review for OWASP top 10 vulnerabilities.`
     expect(result).toContain(`<<<PROJECT_CONTEXT_DATA_START_${nonce}>>>`)
     expect(result).toContain('This is a REST API')
     expect(result).toContain(`<<<PROJECT_CONTEXT_DATA_END_${nonce}>>>`)
+  })
+
+  it('renders resolved diff ref content inside nonce-scoped diff delimiters', async () => {
+    const nonce = '11223344556677889900aabbccddeeff'
+    const diffRef: DiffRef = {
+      type: 'full_diff',
+      session_id: 'session-1',
+      base_branch: 'main',
+    }
+    const resolve = vi.fn().mockResolvedValue({
+      status: 'ok',
+      diff: 'diff --git a/src/app.ts b/src/app.ts\n+resolved change\n',
+    })
+    const diffRefResolver = { resolve } as unknown as DiffRefResolver
+
+    await writeFile(
+      path.join(TEST_DIR, '.invoke', 'roles', 'test', 'diff.md'),
+      '# Test Role\n\n## Diff\n{{diff_delim_start}}\n{{diff}}\n{{diff_delim_end}}\n'
+    )
+
+    const result = await composePromptWithNonce(
+      {
+        projectDir: TEST_DIR,
+        promptPath: '.invoke/roles/test/diff.md',
+        taskContext: {},
+        taskRefs: { diff: diffRef },
+        diffRefResolver,
+      },
+      nonce
+    )
+
+    expect(resolve).toHaveBeenCalledWith(diffRef)
+    expect(result).toContain(`<<<DIFF_DATA_START_${nonce}>>>`)
+    expect(result).toContain('diff --git a/src/app.ts b/src/app.ts')
+    expect(result).toContain('+resolved change')
+    expect(result).toContain(`<<<DIFF_DATA_END_${nonce}>>>`)
+  })
+
+  it('uses resolved diff refs instead of task_context.diff', async () => {
+    const diffRef: DiffRef = {
+      type: 'full_diff',
+      session_id: 'session-2',
+      base_branch: 'main',
+    }
+    const diffRefResolver = {
+      resolve: vi.fn().mockResolvedValue({
+        status: 'ok',
+        diff: 'resolved diff payload',
+      }),
+    } as unknown as DiffRefResolver
+
+    await writeFile(
+      path.join(TEST_DIR, '.invoke', 'roles', 'test', 'diff.md'),
+      '# Test Role\n\n## Diff\n{{diff}}\n'
+    )
+
+    const result = await composePrompt({
+      projectDir: TEST_DIR,
+      promptPath: '.invoke/roles/test/diff.md',
+      taskContext: {
+        diff: 'plain task context diff',
+      },
+      taskRefs: { diff: diffRef },
+      diffRefResolver,
+    })
+
+    expect(result).toContain('resolved diff payload')
+    expect(result).not.toContain('plain task context diff')
+  })
+
+  it('throws when diff ref resolution fails', async () => {
+    const diffRef: DiffRef = {
+      type: 'full_diff',
+      session_id: 'session-2',
+      base_branch: 'main',
+    }
+    const resolve = vi.fn().mockResolvedValue({
+      status: 'resolve_error',
+      message: 'Session worktree path could not be resolved',
+    })
+    const diffRefResolver = { resolve } as unknown as DiffRefResolver
+
+    await writeFile(
+      path.join(TEST_DIR, '.invoke', 'roles', 'test', 'diff.md'),
+      '# Test Role\n\n## Diff\n{{diff}}\n'
+    )
+
+    await expect(
+      composePrompt({
+        projectDir: TEST_DIR,
+        promptPath: '.invoke/roles/test/diff.md',
+        taskContext: {},
+        taskRefs: { diff: diffRef },
+        diffRefResolver,
+      })
+    ).rejects.toThrow(
+      'Diff resolution failed (resolve_error): Session worktree path could not be resolved'
+    )
+
+    expect(resolve).toHaveBeenCalledWith(diffRef)
+  })
+
+  it('keeps plain task_context.diff when no diff ref is provided', async () => {
+    await writeFile(
+      path.join(TEST_DIR, '.invoke', 'roles', 'test', 'diff.md'),
+      '# Test Role\n\n## Diff\n{{diff}}\n'
+    )
+
+    const result = await composePrompt({
+      projectDir: TEST_DIR,
+      promptPath: '.invoke/roles/test/diff.md',
+      taskContext: {
+        diff: 'plain task context diff',
+      },
+    })
+
+    expect(result).toContain('plain task context diff')
+  })
+
+  it('throws when inline task_context.diff contains the dispatch security nonce', async () => {
+    const nonce = '99887766554433221100ffeeddccbbaa'
+
+    await writeFile(
+      path.join(TEST_DIR, '.invoke', 'roles', 'test', 'diff.md'),
+      '# Test Role\n\n## Diff\n{{diff}}\n'
+    )
+
+    await expect(
+      composePromptWithNonce(
+        {
+          projectDir: TEST_DIR,
+          promptPath: '.invoke/roles/test/diff.md',
+          taskContext: {
+            diff: `diff --git a/file.ts b/file.ts\n+${nonce}\n`,
+          },
+        },
+        nonce
+      )
+    ).rejects.toThrow(
+      'Refusing to dispatch: resolved diff contains the security nonce. This is a probable prompt-injection attempt or a 1-in-2^128 collision; investigate before retrying.'
+    )
+  })
+
+  it('throws when resolved diff contains the dispatch security nonce', async () => {
+    const nonce = '99887766554433221100ffeeddccbbaa'
+    const diffRef: DiffRef = {
+      type: 'delta_diff',
+      session_id: 'session-3',
+      reviewed_sha: 'abcdef1234567890abcdef1234567890abcdef12',
+    }
+    const diffRefResolver = {
+      resolve: vi.fn().mockResolvedValue({
+        status: 'ok',
+        diff: `diff --git a/file.ts b/file.ts\n+${nonce}\n`,
+      }),
+    } as unknown as DiffRefResolver
+
+    await writeFile(
+      path.join(TEST_DIR, '.invoke', 'roles', 'test', 'diff.md'),
+      '# Test Role\n\n## Diff\n{{diff}}\n'
+    )
+
+    await expect(
+      composePromptWithNonce(
+        {
+          projectDir: TEST_DIR,
+          promptPath: '.invoke/roles/test/diff.md',
+          taskContext: {},
+          taskRefs: { diff: diffRef },
+          diffRefResolver,
+        },
+        nonce
+      )
+    ).rejects.toThrow(
+      'Refusing to dispatch: resolved diff contains the security nonce. This is a probable prompt-injection attempt or a 1-in-2^128 collision; investigate before retrying.'
+    )
+  })
+
+  it('substitutes diff delimiter variables in templates', async () => {
+    const nonce = 'aabbccddeeff00112233445566778899'
+
+    await writeFile(
+      path.join(TEST_DIR, '.invoke', 'roles', 'test', 'diff.md'),
+      '# Test Role\n\n{{diff_delim_start}}\n{{diff_delim_end}}\n'
+    )
+
+    const result = await composePromptWithNonce(
+      {
+        projectDir: TEST_DIR,
+        promptPath: '.invoke/roles/test/diff.md',
+        taskContext: {},
+      },
+      nonce
+    )
+
+    expect(result).toContain(`<<<DIFF_DATA_START_${nonce}>>>`)
+    expect(result).toContain(`<<<DIFF_DATA_END_${nonce}>>>`)
+    expect(result).not.toContain('{{diff_delim_start}}')
+    expect(result).not.toContain('{{diff_delim_end}}')
   })
 
   it('excludes session discoveries for reviewer and researcher even when context is under the size limit', async () => {

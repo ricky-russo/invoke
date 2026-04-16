@@ -1,6 +1,8 @@
 import { randomBytes } from 'crypto'
 import { readFile } from 'fs/promises'
 import path from 'path'
+import type { TaskRefs, DiffRefResult } from '../types.js'
+import type { DiffRefResolver } from './diff-ref-resolver.js'
 
 const CONTEXT_MAX_LENGTH = 4000
 const CONTEXT_FILTER_ROLE_KEY = '__context_filter_role'
@@ -25,6 +27,8 @@ interface ComposeOptions {
   promptPath: string
   strategyPath?: string
   taskContext: Record<string, string>
+  taskRefs?: TaskRefs
+  diffRefResolver?: DiffRefResolver
 }
 
 function resolvePromptPath(projectDir: string, promptPath: string): string {
@@ -248,7 +252,19 @@ function filterContextSections(
 }
 
 export async function composePrompt(options: ComposeOptions): Promise<string> {
-  return composePromptWithNonce(options, generateDispatchNonce())
+  const { projectDir, promptPath, strategyPath, taskContext, taskRefs, diffRefResolver } = options
+
+  return composePromptWithNonce(
+    {
+      projectDir,
+      promptPath,
+      strategyPath,
+      taskContext,
+      taskRefs,
+      diffRefResolver,
+    },
+    generateDispatchNonce()
+  )
 }
 
 export function generateDispatchNonce(): string {
@@ -259,7 +275,7 @@ export async function composePromptWithNonce(
   options: ComposeOptions,
   nonce: string
 ): Promise<string> {
-  const { projectDir, promptPath, strategyPath, taskContext } = options
+  const { projectDir, promptPath, strategyPath, taskContext, taskRefs, diffRefResolver } = options
 
   const rolePrompt = await readFile(
     resolvePromptPath(projectDir, promptPath),
@@ -302,6 +318,16 @@ export async function composePromptWithNonce(
     }
   }
 
+  let resolvedDiff: string | undefined
+  if (taskRefs?.diff && diffRefResolver) {
+    const result: DiffRefResult = await diffRefResolver.resolve(taskRefs.diff)
+    if (result.status === 'ok') {
+      resolvedDiff = result.diff
+    } else {
+      throw new Error(`Diff resolution failed (${result.status}): ${result.message}`)
+    }
+  }
+
   if (
     taskContext.scope?.includes(nonce) ||
     taskContext.prior_findings?.includes(nonce) ||
@@ -313,11 +339,24 @@ export async function composePromptWithNonce(
     )
   }
 
+  const effectiveDiff = resolvedDiff ?? taskContext.diff
+
+  if (effectiveDiff?.includes(nonce)) {
+    throw new Error(
+      'Refusing to dispatch: resolved diff contains the security nonce. This is a probable prompt-injection attempt or a 1-in-2^128 collision; investigate before retrying.'
+    )
+  }
+
   const projectContextDelimStart = `<<<PROJECT_CONTEXT_DATA_START_${nonce}>>>`
   const projectContextDelimEnd = `<<<PROJECT_CONTEXT_DATA_END_${nonce}>>>`
+  const diffDelimStart = `<<<DIFF_DATA_START_${nonce}>>>`
+  const diffDelimEnd = `<<<DIFF_DATA_END_${nonce}>>>`
 
   const effectiveContext: Record<string, string> = {
     ...taskContext,
+    ...(resolvedDiff !== undefined ? { diff: resolvedDiff } : {}),
+    diff_delim_start: diffDelimStart,
+    diff_delim_end: diffDelimEnd,
     project_context: `${projectContextDelimStart}\n${projectContext}\n${projectContextDelimEnd}`,
     project_context_delim_start: projectContextDelimStart,
     project_context_delim_end: projectContextDelimEnd,

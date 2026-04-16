@@ -20,8 +20,14 @@ export class ConfigDrivenProvider implements Provider {
         .replace('{{effort}}', params.effort)
     )
 
-    args.push(params.prompt)
-
-    return { cmd: this.config.cli, args, cwd: params.workDir }
+    return {
+      cmd: this.config.cli,
+      // Config-driven CLIs may require the prompt as an arg instead of stdin
+      // (for example, Gemini's -p flag), so we intentionally send both for
+      // backward compatibility: stdin-aware tools read stdin, arg-based tools read args.
+      args: [...args, params.prompt],
+      cwd: params.workDir,
+      stdinPrompt: params.prompt,
+    }
   }
 }

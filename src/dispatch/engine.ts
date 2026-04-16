@@ -14,12 +14,14 @@ import { composePrompt } from './prompt-composer.js'
 import { mergeFindings } from './merge-findings.js'
 import { loadConfig } from '../config.js'
 import { estimateCost } from '../metrics/pricing.js'
+import type { DiffRefResolver } from './diff-ref-resolver.js'
 
 interface DispatchEngineOptions {
   providers: Map<string, Provider>
   parsers: Map<string, Parser>
   projectDir: string
   onDispatchComplete?: (metric: DispatchMetric) => void
+  diffRefResolver?: DiffRefResolver
 }
 
 export class DispatchEngine {
@@ -27,12 +29,14 @@ export class DispatchEngine {
   private parsers: Map<string, Parser>
   private projectDir: string
   private onDispatchComplete?: (metric: DispatchMetric) => void
+  private diffRefResolver?: DiffRefResolver
 
   constructor(options: DispatchEngineOptions) {
     this.providers = options.providers
     this.parsers = options.parsers
     this.projectDir = options.projectDir
     this.onDispatchComplete = options.onDispatchComplete
+    this.diffRefResolver = options.diffRefResolver
   }
 
   async dispatch(request: DispatchRequest): Promise<AgentResult> {
@@ -53,6 +57,8 @@ export class DispatchEngine {
       promptPath: roleConfig.prompt,
       strategyPath,
       taskContext: request.taskContext,
+      taskRefs: request.taskRefs,
+      diffRefResolver: this.diffRefResolver,
     })
 
     const workDir = request.workDir ?? this.projectDir
@@ -153,7 +159,8 @@ export class DispatchEngine {
       commandSpec.cmd,
       commandSpec.args,
       timeoutMs,
-      commandSpec.cwd
+      commandSpec.cwd,
+      commandSpec.stdinPrompt
     )
     const duration = Date.now() - startTime
 
@@ -272,10 +279,19 @@ export class DispatchEngine {
     cmd: string,
     args: string[],
     timeout: number,
-    cwd?: string
+    cwd?: string,
+    stdinPrompt?: string
   ): Promise<{ stdout: string; stderr: string; exitCode: number; timedOut: boolean }> {
     return new Promise((resolve, reject) => {
       const proc = spawn(cmd, args, { stdio: ['pipe', 'pipe', 'pipe'], cwd })
+      proc.stdin.on('error', (err: NodeJS.ErrnoException) => {
+        if (err.code !== 'EPIPE' && err.code !== 'EOF') {
+          console.error('[engine] stdin error:', err)
+        }
+      })
+      if (stdinPrompt) {
+        proc.stdin.write(stdinPrompt)
+      }
       proc.stdin.end()
 
       let stdout = ''

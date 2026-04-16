@@ -125,7 +125,8 @@ export class SessionManager {
     return path.join(this.invokeDir, 'metrics.json')
   }
 
-  private async readState(sessionId: string): Promise<PipelineState> {
+  async readState(sessionId: string): Promise<PipelineState> {
+    validateSessionIdForRead(sessionId)
     const content = await readFile(this.getStatePath(sessionId), 'utf-8')
     return JSON.parse(content) as PipelineState
   }

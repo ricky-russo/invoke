@@ -23,6 +23,7 @@ describe('Gemini Dispatch Chain Integration', () => {
     expect(cmd.cmd).toBe('gemini')
     expect(cmd.args).toEqual(['-y', '--output-format', 'text', '-m', 'gemini-2.5-pro', '-p', 'Review this code'])
     expect(cmd.cwd).toBe('/tmp/test')
+    expect(cmd.stdinPrompt).toBe('Review this code')
   })
 
   it('MarkdownFindingParser parses Gemini reviewer output with findings', () => {
@@ -67,7 +68,8 @@ describe('Gemini Dispatch Chain Integration', () => {
     })
     expect(cmd.cmd).toBe('gemini')
     expect(cmd.args).toContain('gemini-2.5-pro')
-    expect(cmd.args[cmd.args.length - 1]).toBe('Check this')
+    expect(cmd.stdinPrompt).toBe('Check this')
+    expect(cmd.args).toContain('Check this')
   })
 
   it('parser registry round-trip returns MarkdownFindingParser with name gemini', () => {
@@ -97,7 +99,8 @@ describe('Gemini Dispatch Chain Integration', () => {
     })
 
     expect(commandSpec.cmd).toBe('gemini')
-    expect(commandSpec.args[commandSpec.args.length - 1]).toBe(prompt)
+    expect(commandSpec.stdinPrompt).toBe(prompt)
+    expect(commandSpec.args).toContain(prompt)
     expect(commandSpec.cwd).toBe('/tmp/worktree')
 
     const simulatedOutput = `### Finding 1

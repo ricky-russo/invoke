@@ -27,6 +27,28 @@ type ToolErrorResponse = {
   isError: true
 }
 
+const BASE_BRANCH_PATTERN = /^(?![-.])[A-Za-z0-9_.][A-Za-z0-9._/-]{0,254}$/
+
+const TaskRefsSchema = z.object({
+  diff: z.discriminatedUnion('type', [
+    z.object({
+      type: z.literal('full_diff'),
+      session_id: z.string(),
+      base_branch: z.string()
+        .regex(BASE_BRANCH_PATTERN, 'base_branch must be a safe git ref name (no leading -, no whitespace, no shell metacharacters)')
+        .refine(
+          value => !value.includes('..') && !value.includes('@{'),
+          'base_branch must not contain ".." or "@{" revspec constructs'
+        ),
+    }),
+    z.object({
+      type: z.literal('delta_diff'),
+      session_id: z.string(),
+      reviewed_sha: z.string(),
+    }),
+  ]).optional(),
+})
+
 export function registerDispatchTools(
   server: McpServer,
   engine: DispatchEngine,
@@ -137,7 +159,7 @@ export function registerDispatchTools(
         subrole: z.string().describe('Specific sub-role (e.g. security, codebase, default)'),
         task_context: z.record(z.string(), z.string()).describe('Template variables to inject into the prompt'),
         work_dir: z.string().optional().describe('Override working directory for the agent'),
-      }),
+      }).strict(),
     },
     async ({ role, subrole, task_context, work_dir }) => {
       try {
@@ -169,6 +191,7 @@ export function registerDispatchTools(
           role: z.string(),
           subrole: z.string(),
           task_context: z.record(z.string(), z.string()),
+          task_refs: TaskRefsSchema.optional(),
         })),
         create_worktrees: z.boolean().describe('Whether to create git worktrees for each task'),
         session_id: z.string().optional(),
@@ -176,6 +199,15 @@ export function registerDispatchTools(
     },
     async ({ tasks, create_worktrees, session_id }) => {
       try {
+        for (const task of tasks) {
+          const diffSessionId = task.task_refs?.diff?.session_id
+          if (diffSessionId !== undefined && diffSessionId !== session_id) {
+            return errorResponse(
+              `Dispatch error: task_refs.diff.session_id must match session_id for task ${task.task_id}`
+            )
+          }
+        }
+
         const sessionScope = await resolveSessionScope(session_id)
         const sessionStateManager = sessionScope?.stateManager
         let boundPipelineId: string | null | undefined
@@ -256,6 +288,7 @@ export function registerDispatchTools(
             role: t.role,
             subrole: t.subrole,
             taskContext: t.task_context,
+            ...(t.task_refs ? { taskRefs: t.task_refs } : {}),
           })),
           createWorktrees: create_worktrees,
           maxParallel,

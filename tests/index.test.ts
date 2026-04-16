@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   validateConfig: vi.fn(),
   createProviderRegistry: vi.fn(),
   createParserRegistry: vi.fn(),
+  diffRefResolverInstances: [] as any[],
   registerConfigTools: vi.fn(),
   registerDispatchTools: vi.fn(),
   registerWorktreeTools: vi.fn(),
@@ -82,6 +83,17 @@ vi.mock('../src/dispatch/engine.js', () => ({
     constructor(options: unknown) {
       this.options = options
       mocks.dispatchEngineInstances.push(this)
+    }
+  },
+}))
+
+vi.mock('../src/dispatch/diff-ref-resolver.js', () => ({
+  DiffRefResolver: class {
+    args: unknown[]
+
+    constructor(...args: unknown[]) {
+      this.args = args
+      mocks.diffRefResolverInstances.push(this)
     }
   },
 }))
@@ -287,6 +299,7 @@ describe('index bootstrap', () => {
     mocks.serverInstances.length = 0
     mocks.transportInstances.length = 0
     mocks.dispatchEngineInstances.length = 0
+    mocks.diffRefResolverInstances.length = 0
     mocks.batchManagerInstances.length = 0
     mocks.worktreeManagerInstances.length = 0
     mocks.sessionWorktreeManagerInstances.length = 0
@@ -390,6 +403,7 @@ describe('index bootstrap', () => {
     const server = mocks.serverInstances[0]
     const metricsManager = mocks.metricsManagerInstances[0]
     const dispatchEngine = mocks.dispatchEngineInstances[0]
+    const diffRefResolver = mocks.diffRefResolverInstances[0]
     const batchManager = mocks.batchManagerInstances[0]
     const sessionManager = mocks.sessionManagerInstances[0]
 
@@ -408,6 +422,10 @@ describe('index bootstrap', () => {
       metricsManager,
       sessionManager
     )
+    expect(diffRefResolver.args).toEqual([sessionManager, process.cwd()])
+    expect(dispatchEngine.options).toMatchObject({
+      diffRefResolver,
+    })
 
     const metric: DispatchMetric = {
       pipeline_id: 'pipeline-123',

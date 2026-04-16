@@ -75,9 +75,25 @@ export interface DispatchRequest {
   role: string
   subrole: string
   taskContext: Record<string, string>
+  taskRefs?: TaskRefs
   workDir?: string
   sessionId?: string
   boundPipelineId?: string | null
+}
+
+export type DiffRef =
+  | { type: 'full_diff'; session_id: string; base_branch: string }
+  | { type: 'delta_diff'; session_id: string; reviewed_sha: string }
+
+export type DiffRefResult =
+  | { status: 'ok'; diff: string }
+  | { status: 'resolve_error'; message: string }
+  | { status: 'commit_not_found'; message: string }
+  | { status: 'diff_too_large'; message: string }
+  | { status: 'diff_error'; message: string }
+
+export interface TaskRefs {
+  diff?: DiffRef
 }
 
 export interface AgentResult {
@@ -160,6 +176,7 @@ export interface BatchTask {
   role: string
   subrole: string
   taskContext: Record<string, string>
+  taskRefs?: TaskRefs
   depends_on?: string[]
 }
 

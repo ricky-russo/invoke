@@ -129,28 +129,50 @@ Call `invoke_get_review_cycle_count` with `session_id: <pipeline_id>` to get an 
 
 Only an exact match on all three keys triggers the cycle ≥ 2 path. A non-empty `state.review_cycles` from earlier or unrelated batches does NOT. If `orchestrationBatchId` is undefined (empty-batches case), skip this lookup entirely and treat every cycle as cycle-1.
 
-- **No matching prior cycle (treat as cycle 1):** Set `priorFindings = '(first review cycle — no prior findings)'`. Use the full `git diff main...HEAD` (or `git diff $(git merge-base HEAD main)...HEAD`) as the diff.
+- **Legacy fallback first:** If `state.work_branch_path` is not set, this is a legacy session without a per-session worktree. Emit `⚠️ Legacy session — using inline diff (no worktree for server-side resolution)`. In this branch only, keep the old inline-diff behavior: run `git diff main...HEAD`, store the result as `legacyInlineDiff`, pass it later as `task_context.diff`, and do **not** construct `diffRef`.
 
-- **Matching prior cycle exists (cycle ≥ 2):** Read its `reviewed_sha`.
-  - **If `reviewed_sha` is undefined or missing** (legacy ReviewCycles may not carry one): emit ⚠️ `Prior cycle has no reviewed_sha — falling back to full diff`, skip the tool call entirely, use the full `git diff main...HEAD` as the diff, and set `priorFindings = '(prior cycle has no reviewed_sha — full diff being reviewed)'`.
-  - **If `reviewed_sha` is defined:** Call `invoke_compute_review_diff({ session_id: <pipeline_id>, reviewed_sha: <prior cycle reviewed_sha> })`.
-    - If the tool returns `{ status: 'ok', reviewed_sha, diff }`: use `result.diff` as the delta diff for this cycle. Build `priorFindings` as a numbered checklist of that cycle's `triaged.accepted` findings, **excluding any with `out_of_scope === true`**:
+- **No matching prior cycle (treat as cycle 1, non-legacy only):** Set `priorFindings = '(first review cycle — no prior findings)'`. Construct:
+  ```json
+  { "type": "full_diff", "session_id": "<pipeline_id>", "base_branch": "<state.base_branch>" }
+  ```
+  Store this object as `diffRef` for step 4.
+
+- **Matching prior cycle exists (cycle ≥ 2, non-legacy only):** Read its `reviewed_sha`.
+  - **If `reviewed_sha` is undefined or missing** (legacy ReviewCycles may not carry one): emit ⚠️ `Prior cycle has no reviewed_sha — falling back to full diff`, set `priorFindings = '(prior cycle has no reviewed_sha — full diff being reviewed)'`, and construct:
+    ```json
+    { "type": "full_diff", "session_id": "<pipeline_id>", "base_branch": "<state.base_branch>" }
+    ```
+    Store this object as `diffRef`.
+  - **If `reviewed_sha` is defined:** Call `invoke_compute_review_diff({ session_id: <pipeline_id>, reviewed_sha: <prior cycle reviewed_sha> })` to validate whether a delta diff is usable for this cycle. Use the returned `status` only for branch selection here; do **not** read, copy, print, or pass through the returned diff content.
+    - If the tool returns `{ status: 'ok', ... }`: construct:
+      ```json
+      { "type": "delta_diff", "session_id": "<pipeline_id>", "reviewed_sha": "<prior cycle reviewed_sha>" }
+      ```
+      Store this object as `diffRef`. Build `priorFindings` as a numbered checklist of that cycle's `triaged.accepted` findings, **excluding any with `out_of_scope === true`**:
       ```
       1. [HIGH] src/auth/token.ts:42 — SQL injection
          Fix: Use parameterized queries
       ```
       **Cap the checklist at 20 entries OR 4000 characters, whichever comes first.** If the prior cycle's accepted-and-in-scope findings exceed either limit, truncate and append a single overflow line: `(N more prior findings truncated — review the delta diff for full context)`. Prefer to filter the checklist to findings relevant to the current reviewer's specialty when reviewer-relevance metadata is available; otherwise use the natural order from `triaged.accepted`.
-    - If the tool returns any other status (`invalid_reviewed_sha`, `commit_not_found`, `diff_error`, `diff_too_large`, `resolve_error`, `not_supported`): emit ⚠️ `No prior review SHA (tool returned <status>) — falling back to full diff`, use `git diff main...HEAD` as the diff, and set `priorFindings = '(prior cycle had no usable reviewed_sha — full diff being reviewed)'`.
+    - If the tool returns any other status (`invalid_reviewed_sha`, `commit_not_found`, `diff_error`, `diff_too_large`, `resolve_error`, `not_supported`): emit ⚠️ `No prior review SHA (tool returned <status>) — falling back to full diff`, set `priorFindings = '(prior cycle had no usable reviewed_sha — full diff being reviewed)'`, and construct:
+      ```json
+      { "type": "full_diff", "session_id": "<pipeline_id>", "base_branch": "<state.base_branch>" }
+      ```
+      Store this object as `diffRef`.
 
-Both `specContext` and `priorFindings` **MUST** always be set to a non-empty string before dispatching — never `undefined`.
+In non-legacy sessions, `diffRef` **MUST** be set before dispatching. In legacy sessions, `legacyInlineDiff` **MUST** be set instead. `specContext` and `priorFindings` **MUST** always be non-empty strings before dispatching — never `undefined`.
 
 ### 4. Dispatch Reviewers
 
 Dispatch either the selected reviewers from the fallback flow or the reviewers from the current tier using `invoke_dispatch_batch`:
 - `create_worktrees: false` (reviewers don't modify code)
-- `task_context: { task_description: "<what was built — summary from plan>", diff: "<delta diff or full diff per step 3.3>", scope: specContext, prior_findings: priorFindings }`
+- **Non-legacy sessions:** use
+  - `task_context: { task_description: "<what was built — summary from plan>", scope: specContext, prior_findings: priorFindings }`
+  - `task_refs: { diff: diffRef }`
+- **Legacy sessions without `state.work_branch_path`:** omit `task_refs` and keep the inline fallback:
+  - `task_context: { task_description: "<what was built — summary from plan>", diff: legacyInlineDiff, scope: specContext, prior_findings: priorFindings }`
 
-Use the diff computed in step 3.3 (delta diff for cycle ≥ 2 when `reviewed_sha` is available, full `git diff main...HEAD` for cycle 1 or when no prior SHA exists). `scope` and `prior_findings` MUST always be the strings resolved in pre-dispatch steps 3.1 and 3.3 — never `undefined`.
+In non-legacy sessions, pass the diff only via `task_refs.diff = diffRef`; do **not** include `task_context.diff`. The actual diff content is resolved server-side. The orchestrator should never run `git diff` or read diff payloads except in the explicit legacy fallback above. `scope` and `prior_findings` MUST always be the strings resolved in pre-dispatch steps 3.1 and 3.3 — never `undefined`.
 
 Check the batch response before moving on. It includes `dispatch_estimate`, and may include `warning` when the projected usage is approaching or exceeding `max_dispatches`. Surface that warning to the user as an advisory notice before the dispatch summary and status polling.
 

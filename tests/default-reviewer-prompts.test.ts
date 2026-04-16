@@ -116,6 +116,8 @@ describe('default reviewer prompts', () => {
     // Anti-prompt-injection sentinel wrappers around untrusted template content
     expect(content).toContain('{{scope_delim_start}}')
     expect(content).toContain('{{scope_delim_end}}')
+    expect(content).toContain('{{diff_delim_start}}')
+    expect(content).toContain('{{diff_delim_end}}')
     expect(content).toContain('{{project_context_delim_start}}')
     expect(content).toContain('{{project_context_delim_end}}')
     expect(content).toContain('{{prior_findings_delim_start}}')
